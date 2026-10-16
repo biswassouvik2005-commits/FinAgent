@@ -1,18 +1,18 @@
-import { Stack } from 'expo-router';
-import * as SplashScreen from 'expo-splash-screen';
-import { useColorScheme } from 'react-native';
+import { Slot } from 'expo-router';
+import { createContext, useState } from 'react';
 
-import { GluestackUIProvider } from '@/components/ui/gluestack-ui-provider';
-import '@/src/global.css';
-
-SplashScreen.preventAutoHideAsync();
+export const ThemeContext = createContext<any>(null);
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
-  
+  const [theme, setTheme] = useState('dark');
+
+  const toggleTheme = () => {
+    setTheme(prev => (prev === 'dark' ? 'light' : 'dark'));
+  };
+
   return (
-    <GluestackUIProvider mode={colorScheme === 'dark' ? 'dark' : 'light'}>
-      <Stack screenOptions={{ headerShown: false }} />
-    </GluestackUIProvider>
+    <ThemeContext.Provider value={{ theme, toggleTheme }}>
+      <Slot />
+    </ThemeContext.Provider>
   );
 }
