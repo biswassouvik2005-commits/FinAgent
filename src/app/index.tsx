@@ -6,263 +6,106 @@ import { Dimensions, FlatList, KeyboardAvoidingView, Platform, Pressable, SafeAr
 import { PieChart } from 'react-native-chart-kit';
 import { ThemeContext } from './_layout';
 
-const screenWidth = Dimensions.get("window").width;
-const chartColors = ['#1DA1F2', '#17BF63', '#F45D22', '#794BC4', '#E1E8ED'];
+const screenWidth = Dimensions.get('window').width;
+const chartColors = ['#55D187', '#8B7CFF', '#F2B84B', '#5BA7FF', '#E878A8'];
 
-// --- Dynamic Cross-Platform API URL Helper ---
 const getApiUrl = () => {
-  if (Platform.OS === 'web') {
-    return 'http://localhost:8000';
-  }
-  
-  // Extracts host IP automatically when using Expo Go on physical devices
+  if (Platform.OS === 'web') return 'http://localhost:8000';
   const debuggerHost = Constants.expoConfig?.hostUri || Constants.manifest?.debuggerHost;
-  if (debuggerHost) {
-    const hostIp = debuggerHost.split(':')[0];
-    return `http://${hostIp}:8000`;
-  }
-  
-  // Fallback network IP
+  if (debuggerHost) return `http://${debuggerHost.split(':')[0]}:8000`;
   return 'http://192.168.0.105:8000';
 };
 
 const API_BASE = getApiUrl();
+const spendingData = [
+  { name: 'Housing', population: 1850, color: chartColors[0], legendFontColor: '#A1A1AA', legendFontSize: 12 },
+  { name: 'Lifestyle', population: 920, color: chartColors[1], legendFontColor: '#A1A1AA', legendFontSize: 12 },
+  { name: 'Food', population: 640, color: chartColors[2], legendFontColor: '#A1A1AA', legendFontSize: 12 },
+  { name: 'Transport', population: 410, color: chartColors[3], legendFontColor: '#A1A1AA', legendFontSize: 12 },
+];
+const bills = [
+  { name: 'Rent payment', date: 'Tomorrow', amount: '$1,850.00', color: '#55D187' },
+  { name: 'Electricity', date: 'Oct 22', amount: '$84.20', color: '#F2B84B' },
+  { name: 'Internet', date: 'Oct 26', amount: '$59.99', color: '#8B7CFF' },
+];
 
 export default function Index() {
   const { theme, toggleTheme } = useContext(ThemeContext);
   const isDark = theme === 'dark';
-
-  // --- Authentication State ---
-  const [token, setToken] = useState(null);
+  const [token, setToken] = useState<string | null>('preview');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-
-  // --- Chat State ---
   const [inputText, setInputText] = useState('');
-  const [messages, setMessages] = useState<any[]>([
-    { id: '1', text: 'Hello! Please log in to view your finances.', sender: 'ai' }
-  ]);
+  const [messages, setMessages] = useState<any[]>([{ id: '1', text: 'Your financial snapshot is ready. Ask me anything about your budget.', sender: 'ai' }]);
 
-  // --- Login Function ---
   const handleLogin = async () => {
     try {
-      const res = await axios.post(`${API_BASE}/login`, 
-        { username: username, password: password }, 
-        { headers: { 'Content-Type': 'application/json' } }
-      );
+      const res = await axios.post(`${API_BASE}/login`, { username, password }, { headers: { 'Content-Type': 'application/json' } });
       setToken(res.data.access_token);
-      setMessages([{ id: '2', text: 'Authentication successful. How can I help with your budget today?', sender: 'ai' }]);
-    } catch (e) {
+    } catch {
       alert('Login failed. Please check your credentials or backend server.');
     }
   };
 
-  // --- Chat Function ---
   const sendMessage = () => {
-    if (inputText.trim() === '') return;
-
-    const userMessage = { id: Date.now().toString(), text: inputText, sender: 'user' };
-    setMessages(prevMessages => [...prevMessages, userMessage]);
-    const currentText = inputText; 
+    if (!inputText.trim()) return;
+    const currentText = inputText;
+    setMessages((items) => [...items, { id: Date.now().toString(), text: currentText, sender: 'user' }]);
     setInputText('');
-
-    axios.post(`${API_BASE}/api/chat`, 
-      { message: currentText },
-      { headers: { Authorization: `Bearer ${token}` } }
-    )
-      .then(response => {
-        const data = response.data;
-        const aiMessage = { 
-          id: (Date.now() + 1).toString(), 
-          text: data.ai_reply || "No text response", 
-          sender: 'ai',
-          totalBalance: data.total_balance,
-          budgetStatus: data.budget_status,
-          breakdown: data.category_breakdown || [],
-          upcomingBills: data.upcoming_bills || [],
-          portfolioHealth: data.portfolio_health
-        };
-        setMessages(prevMessages => [...prevMessages, aiMessage]);
-      })
-      .catch(error => {
-        console.error("Connection error:", error);
-        setMessages(prevMessages => [...prevMessages, { id: (Date.now() + 1).toString(), text: "Failed to connect to the backend.", sender: 'ai' }]);
-      });
+    axios.post(`${API_BASE}/api/chat`, { message: currentText }, { headers: { Authorization: `Bearer ${token}` } })
+      .then(({ data }) => setMessages((items) => [...items, { id: `${Date.now()}-ai`, text: data.ai_reply || 'No text response', sender: 'ai' }]))
+      .catch(() => setMessages((items) => [...items, { id: `${Date.now()}-error`, text: 'Unable to connect to the financial assistant.', sender: 'ai' }]));
   };
 
-  // --- Receipt OCR Function ---
   const uploadReceipt = async () => {
     const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (permissionResult.granted === false) {
-      alert("Permission to access camera roll is required!");
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      quality: 0.7,
-      base64: true, 
-    });
-
+    if (!permissionResult.granted) return alert('Permission to access your photos is required.');
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, quality: 0.7, base64: true });
     if (!result.canceled && result.assets[0].base64) {
+      setMessages((items) => [...items, { id: Date.now().toString(), text: 'Scanning receipt...', sender: 'user' }]);
       try {
-        setMessages(prev => [...prev, { id: Date.now().toString(), text: "📷 Scanning receipt...", sender: 'user' }]);
-        
-        const response = await axios.post(`${API_BASE}/api/receipt`, {
-          base64Image: result.assets[0].base64,
-          mimeType: result.assets[0].mimeType || 'image/jpeg'
-        });
-        
-        const data = response.data;
-        const aiMessage = { 
-          id: (Date.now() + 1).toString(), 
-          text: `Receipt Scanned!\nMerchant: ${data.merchant}\nTotal: $${data.total}\nCategory: ${data.category}`, 
-          sender: 'ai' 
-        };
-        setMessages(prev => [...prev, aiMessage]);
-      } catch (error) {
-        console.error("OCR Upload failed", error);
-        setMessages(prev => [...prev, { id: Date.now().toString(), text: "Failed to read the receipt.", sender: 'ai' }]);
-      }
+        const { data } = await axios.post(`${API_BASE}/api/receipt`, { base64Image: result.assets[0].base64, mimeType: result.assets[0].mimeType || 'image/jpeg' });
+        setMessages((items) => [...items, { id: `${Date.now()}-receipt`, text: `Receipt scanned. Merchant: ${data.merchant}. Total: $${data.total}.`, sender: 'ai' }]);
+      } catch { setMessages((items) => [...items, { id: `${Date.now()}-error`, text: 'Failed to read the receipt.', sender: 'ai' }]); }
     }
   };
 
-  const renderMessage = ({ item }: any) => (
-    <View style={[styles.messageBubble, item.sender === 'user' ? styles.userMessage : [styles.aiMessage, { backgroundColor: isDark ? '#27272a' : '#FFFFFF', borderColor: isDark ? '#3f3f46' : '#E1E8ED' }]]}>
-      <Text style={[styles.messageText, item.sender === 'user' ? styles.userMessageText : { color: isDark ? '#f4f4f5' : '#14171A' }]}>
-        {item.text}
-      </Text>
-
-      {item.budgetStatus && (
-        <View style={[styles.badgeContainer, { backgroundColor: isDark ? '#3f3f46' : '#F5F7FA' }]}>
-          <Text style={styles.badgeText}>Status: {item.budgetStatus}</Text>
-        </View>
-      )}
-
-      {item.portfolioHealth && (
-        <View style={[styles.badgeContainer, { backgroundColor: isDark ? '#3f3f46' : '#F5F7FA' }]}>
-          <Text style={styles.badgeText}>Portfolio: {item.portfolioHealth}</Text>
-        </View>
-      )}
-
-      {item.upcomingBills && item.upcomingBills.length > 0 && (
-        <View style={[styles.chartContainer, { borderColor: isDark ? '#3f3f46' : '#E1E8ED', alignSelf: 'stretch', alignItems: 'flex-start' }]}>
-          <Text style={[styles.breakdownTitle, { color: isDark ? '#f4f4f5' : '#14171A' }]}>Upcoming Bills:</Text>
-          {item.upcomingBills.map((bill: any, index: number) => (
-            <View key={index} style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%', paddingVertical: 4 }}>
-              <Text style={{ color: isDark ? '#a1a1aa' : '#555' }}>{bill.bill_name} ({bill.due_date})</Text>
-              <Text style={{ fontWeight: 'bold', color: isDark ? '#f4f4f5' : '#14171A' }}>${bill.amount.toFixed(2)}</Text>
-            </View>
-          ))}
-        </View>
-      )}
-
-      {item.breakdown && item.breakdown.length > 0 && (
-        <View style={[styles.chartContainer, { borderColor: isDark ? '#3f3f46' : '#E1E8ED' }]}>
-          <Text style={[styles.breakdownTitle, { color: isDark ? '#f4f4f5' : '#14171A' }]}>Spending Breakdown:</Text>
-          <PieChart
-            data={item.breakdown.map((cat: any, index: number) => ({
-              name: cat.category,
-              population: cat.amount,
-              color: chartColors[index % chartColors.length],
-              legendFontColor: isDark ? "#a1a1aa" : "#14171A",
-              legendFontSize: 12
-            }))}
-            width={screenWidth * 0.65}
-            height={150}
-            chartConfig={{ color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})` }}
-            accessor={"population"}
-            backgroundColor={"transparent"}
-            paddingLeft={"0"}
-            absolute
-          />
-        </View>
-      )}
+  if (!token) return (
+    <View style={styles.loginScreen}>
+      <Text style={styles.brand}>NOVA<Text style={styles.brandDot}>•</Text></Text>
+      <Text style={styles.loginTitle}>Welcome back</Text>
+      <Text style={styles.loginSubtitle}>Sign in to your financial command center.</Text>
+      <TextInput style={styles.loginInput} placeholder="Username" placeholderTextColor="#71717A" value={username} onChangeText={setUsername} autoCapitalize="none" />
+      <TextInput style={styles.loginInput} placeholder="Password" placeholderTextColor="#71717A" secureTextEntry value={password} onChangeText={setPassword} />
+      <TouchableOpacity style={styles.primaryButton} onPress={handleLogin}><Text style={styles.primaryButtonText}>Sign in</Text></TouchableOpacity>
     </View>
   );
 
-  // --- Render Login Screen if no token ---
-  if (!token) {
-    return (
-      <View style={[styles.center, { backgroundColor: isDark ? '#171717' : '#F5F7FA' }]}>
-        <Text style={[styles.title, { color: isDark ? '#ffffff' : '#14171A' }]}>Secure Login</Text>
-        <TextInput 
-          style={[styles.loginInput, { backgroundColor: isDark ? '#27272a' : '#FFF', color: isDark ? '#FFF' : '#000', borderColor: isDark ? '#3f3f46' : '#DDD' }]} 
-          placeholder="Username" 
-          placeholderTextColor={isDark ? "#a1a1aa" : "#888"}
-          value={username} 
-          onChangeText={setUsername} 
-          autoCapitalize="none" 
-        />
-        <TextInput 
-          style={[styles.loginInput, { backgroundColor: isDark ? '#27272a' : '#FFF', color: isDark ? '#FFF' : '#000', borderColor: isDark ? '#3f3f46' : '#DDD' }]} 
-          placeholder="Password" 
-          placeholderTextColor={isDark ? "#a1a1aa" : "#888"}
-          secureTextEntry 
-          value={password} 
-          onChangeText={setPassword} 
-        />
-        <TouchableOpacity style={styles.loginBtn} onPress={handleLogin}>
-          <Text style={styles.sendButtonText}>Login</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  // --- Render Main Chat Screen if logged in ---
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: isDark ? '#171717' : '#F5F7FA' }]}>
-      <Pressable onPress={toggleTheme} style={{ padding: 8, alignSelf: 'flex-end', marginRight: 20, marginTop: 10, backgroundColor: isDark ? '#3f3f46' : '#007AFF', borderRadius: 8 }}>
-        <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 12 }}>{isDark ? 'Light Mode' : 'Dark Mode'}</Text>
-      </Pressable>
-
-      <View style={[styles.header, { backgroundColor: isDark ? '#171717' : '#FFFFFF', borderBottomColor: isDark ? '#3f3f46' : '#E1E8ED' }]}>
-        <Text style={[styles.headerTitle, { color: isDark ? '#ffffff' : '#14171A' }]}>Financial Assistant</Text>
-        <Text style={styles.balanceText}>Total Balance: $10,950.00</Text>
-      </View>
-
-      <KeyboardAvoidingView style={styles.chatContainer} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <FlatList data={messages} keyExtractor={item => item.id} renderItem={renderMessage} contentContainerStyle={styles.messageList} />
-        <View style={[styles.inputContainer, { backgroundColor: isDark ? '#171717' : '#FFFFFF', borderTopColor: isDark ? '#3f3f46' : '#E1E8ED' }]}>
-          
-          <TouchableOpacity style={[styles.sendButton, { backgroundColor: '#17BF63', marginRight: 10 }]} onPress={uploadReceipt}>
-            <Text style={styles.sendButtonText}>📷</Text>
-          </TouchableOpacity>
-
-          <TextInput style={[styles.textInput, { backgroundColor: isDark ? '#27272a' : '#F5F7FA', color: isDark ? '#ffffff' : '#000000' }]} value={inputText} onChangeText={setInputText} placeholder="Ask about your budget..." placeholderTextColor={isDark ? "#a1a1aa" : "#888"} />
-          
-          <TouchableOpacity style={styles.sendButton} onPress={sendMessage}>
-            <Text style={styles.sendButtonText}>Send</Text>
-          </TouchableOpacity>
+    <SafeAreaView style={styles.container}>
+      <View style={styles.shell}>
+        <View style={styles.topbar}>
+          <View><Text style={styles.brand}>NOVA<Text style={styles.brandDot}>•</Text></Text><Text style={styles.eyebrow}>PERSONAL FINANCE</Text></View>
+          <View style={styles.topActions}><Text style={styles.dateLabel}>Friday, October 17</Text><Pressable onPress={toggleTheme} style={styles.iconButton}><Text style={styles.iconText}>{isDark ? '◐' : '☾'}</Text></Pressable><View style={styles.avatar}><Text style={styles.avatarText}>JD</Text></View></View>
         </View>
-      </KeyboardAvoidingView>
+        <FlatList
+          data={[]}
+          renderItem={null}
+          contentContainerStyle={styles.content}
+          ListHeaderComponent={<>
+            <View style={styles.greetingRow}><View><Text style={styles.greeting}>Good morning, Jordan</Text><Text style={styles.muted}>Here&apos;s your financial overview.</Text></View><View style={styles.statusBadge}><View style={styles.statusDot} /><Text style={styles.statusText}>On track</Text></View></View>
+            <View style={styles.balanceCard}><View><Text style={styles.cardLabel}>TOTAL NET WORTH</Text><Text style={styles.balance}>$84,260<Text style={styles.cents}>.42</Text></Text><View style={styles.growthRow}><Text style={styles.growth}>+ $2,840.18</Text><Text style={styles.mutedSmall}>  this month</Text></View></View><View style={styles.balanceMeta}><Text style={styles.metaLabel}>PORTFOLIO HEALTH</Text><Text style={styles.metaValue}>Excellent</Text><View style={styles.progressTrack}><View style={styles.progressFill} /></View><Text style={styles.mutedSmall}>92 / 100</Text></View></View>
+            <View style={styles.statGrid}><View style={styles.statCard}><Text style={styles.cardLabel}>CASH AVAILABLE</Text><Text style={styles.statValue}>$12,480.00</Text><Text style={styles.positive}>+4.8%</Text></View><View style={styles.statCard}><Text style={styles.cardLabel}>INVESTMENTS</Text><Text style={styles.statValue}>$71,780.42</Text><Text style={styles.positive}>+8.2%</Text></View><View style={styles.statCard}><Text style={styles.cardLabel}>MONTHLY SAVINGS</Text><Text style={styles.statValue}>$2,840.18</Text><Text style={styles.positive}>+12.4%</Text></View></View>
+            <View style={styles.sectionGrid}><View style={styles.panel}><View style={styles.panelHeader}><View><Text style={styles.panelTitle}>Spending breakdown</Text><Text style={styles.muted}>October 2026</Text></View><Text style={styles.panelAction}>View report</Text></View><View style={styles.chartRow}><PieChart data={spendingData} width={Math.min(screenWidth * 0.42, 260)} height={185} chartConfig={{ color: () => '#FFF' }} accessor="population" backgroundColor="transparent" paddingLeft="0" hasLegend={false} absolute /><View style={styles.legend}>{spendingData.map((item) => <View style={styles.legendRow} key={item.name}><View style={[styles.legendDot, { backgroundColor: item.color }]} /><Text style={styles.legendName}>{item.name}</Text><Text style={styles.legendAmount}>${item.population.toLocaleString()}</Text></View>)}</View></View></View><View style={styles.panel}><View style={styles.panelHeader}><View><Text style={styles.panelTitle}>Upcoming bills</Text><Text style={styles.muted}>Next 30 days</Text></View><Text style={styles.panelAction}>See all</Text></View>{bills.map((bill) => <View style={styles.billRow} key={bill.name}><View style={[styles.billIcon, { backgroundColor: `${bill.color}22` }]}><View style={[styles.billIconDot, { backgroundColor: bill.color }]} /></View><View style={styles.billInfo}><Text style={styles.billName}>{bill.name}</Text><Text style={styles.muted}>{bill.date}</Text></View><Text style={styles.billAmount}>{bill.amount}</Text></View>)}</View></View>
+            <View style={styles.assistantPanel}><View style={styles.assistantHeader}><View><Text style={styles.panelTitle}>Ask Nova</Text><Text style={styles.muted}>Your personal financial assistant</Text></View><View style={styles.aiBadge}><Text style={styles.aiBadgeText}>AI ONLINE</Text></View></View><FlatList data={messages} keyExtractor={(item) => item.id} renderItem={({ item }) => <View style={[styles.message, item.sender === 'user' && styles.userMessage]}><Text style={styles.messageText}>{item.text}</Text></View>} scrollEnabled={false} /><View style={styles.inputRow}><TouchableOpacity style={styles.receiptButton} onPress={uploadReceipt}><Text style={styles.receiptText}>+</Text></TouchableOpacity><TextInput style={styles.chatInput} value={inputText} onChangeText={setInputText} onSubmitEditing={(event) => { const nativeEvent = event.nativeEvent as unknown as { isComposing?: boolean; keyCode?: number }; if (nativeEvent.isComposing || nativeEvent.keyCode === 229) return; sendMessage(); }} placeholder="Ask about your finances..." placeholderTextColor="#71717A" /><TouchableOpacity style={styles.sendButton} onPress={sendMessage}><Text style={styles.sendText}>→</Text></TouchableOpacity></View></View>
+          </>}
+        />
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
-  title: { fontSize: 24, fontWeight: 'bold', marginBottom: 20 },
-  loginInput: { width: '100%', padding: 15, borderRadius: 8, marginBottom: 10, borderWidth: 1 },
-  loginBtn: { backgroundColor: '#007AFF', padding: 15, borderRadius: 8, justifyContent: 'center', alignItems: 'center', width: '100%' },
-  header: { padding: 20, borderBottomWidth: 1, alignItems: 'center' },
-  headerTitle: { fontSize: 18, fontWeight: 'bold' },
-  balanceText: { fontSize: 24, fontWeight: '800', color: '#1DA1F2', marginTop: 5 },
-  chatContainer: { flex: 1 },
-  messageList: { padding: 15 },
-  messageBubble: { maxWidth: '85%', padding: 14, borderRadius: 16, marginBottom: 12 },
-  userMessage: { alignSelf: 'flex-end', backgroundColor: '#1DA1F2', borderBottomRightRadius: 4 },
-  aiMessage: { alignSelf: 'flex-start', borderBottomLeftRadius: 4, borderWidth: 1 },
-  messageText: { fontSize: 16, lineHeight: 22 },
-  userMessageText: { color: '#FFFFFF' },
-  inputContainer: { flexDirection: 'row', padding: 10, borderTopWidth: 1 },
-  textInput: { flex: 1, borderRadius: 20, paddingHorizontal: 15, paddingVertical: 10, fontSize: 16, marginRight: 10 },
-  sendButton: { backgroundColor: '#1DA1F2', borderRadius: 20, paddingHorizontal: 20, justifyContent: 'center' },
-  sendButtonText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: 16 },
-  chartContainer: { marginTop: 15, paddingTop: 15, borderTopWidth: 1, alignItems: 'center' },
-  breakdownTitle: { fontWeight: '700', marginBottom: 10, alignSelf: 'flex-start' },
-  badgeContainer: { marginTop: 10, paddingVertical: 6, paddingHorizontal: 12, borderRadius: 12, alignSelf: 'flex-start' },
-  badgeText: { fontSize: 14, fontWeight: '600', color: '#F45D22' }
+  container: { flex: 1, backgroundColor: '#121212' }, shell: { flex: 1, maxWidth: 1240, width: '100%', alignSelf: 'center' }, topbar: { paddingHorizontal: 28, paddingTop: 24, paddingBottom: 18, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#2A2A2A' }, brand: { color: '#F5F5F5', fontSize: 20, fontWeight: '800', letterSpacing: 2 }, brandDot: { color: '#55D187' }, eyebrow: { color: '#71717A', fontSize: 9, letterSpacing: 2, marginTop: 5 }, topActions: { flexDirection: 'row', alignItems: 'center', gap: 16 }, dateLabel: { color: '#71717A', fontSize: 12 }, iconButton: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#1E1E1E', borderWidth: 1, borderColor: '#2A2A2A', alignItems: 'center', justifyContent: 'center' }, iconText: { color: '#A1A1AA', fontSize: 18 }, avatar: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#8B7CFF', alignItems: 'center', justifyContent: 'center' }, avatarText: { color: '#FFF', fontSize: 11, fontWeight: '700' }, content: { padding: 28, paddingBottom: 50 }, greetingRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 20 }, greeting: { color: '#F5F5F5', fontSize: 27, fontWeight: '700' }, muted: { color: '#71717A', fontSize: 12, marginTop: 5 }, mutedSmall: { color: '#71717A', fontSize: 11 }, statusBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#55D18718', paddingHorizontal: 11, paddingVertical: 7, borderRadius: 14 }, statusDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#55D187', marginRight: 6 }, statusText: { color: '#55D187', fontSize: 12, fontWeight: '700' }, balanceCard: { backgroundColor: '#1E1E1E', borderWidth: 1, borderColor: '#2A2A2A', borderRadius: 16, padding: 24, flexDirection: 'row', justifyContent: 'space-between', minHeight: 170 }, cardLabel: { color: '#71717A', fontSize: 10, letterSpacing: 1.3, fontWeight: '700' }, balance: { color: '#F5F5F5', fontSize: 43, fontWeight: '700', marginTop: 12, letterSpacing: -1 }, cents: { color: '#71717A', fontSize: 24 }, growthRow: { flexDirection: 'row', alignItems: 'center', marginTop: 10 }, growth: { color: '#55D187', fontSize: 13, fontWeight: '700' }, balanceMeta: { justifyContent: 'center', width: 190 }, metaLabel: { color: '#71717A', fontSize: 10, letterSpacing: 1.1 }, metaValue: { color: '#55D187', fontSize: 18, fontWeight: '700', marginTop: 8 }, progressTrack: { height: 5, backgroundColor: '#2A2A2A', borderRadius: 3, marginTop: 14, marginBottom: 7 }, progressFill: { width: '92%', height: 5, backgroundColor: '#55D187', borderRadius: 3 }, statGrid: { flexDirection: 'row', gap: 14, marginTop: 14 }, statCard: { flex: 1, backgroundColor: '#1E1E1E', borderWidth: 1, borderColor: '#2A2A2A', borderRadius: 13, padding: 18 }, statValue: { color: '#F5F5F5', fontSize: 20, fontWeight: '700', marginTop: 10 }, positive: { color: '#55D187', fontSize: 11, marginTop: 7, fontWeight: '600' }, sectionGrid: { flexDirection: 'row', gap: 14, marginTop: 14 }, panel: { flex: 1, backgroundColor: '#1E1E1E', borderWidth: 1, borderColor: '#2A2A2A', borderRadius: 13, padding: 20, minHeight: 255 }, panelHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }, panelTitle: { color: '#F5F5F5', fontSize: 16, fontWeight: '700' }, panelAction: { color: '#8B7CFF', fontSize: 11, fontWeight: '700' }, chartRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', flex: 1 }, legend: { gap: 11, flex: 1 }, legendRow: { flexDirection: 'row', alignItems: 'center' }, legendDot: { width: 7, height: 7, borderRadius: 4, marginRight: 8 }, legendName: { color: '#A1A1AA', fontSize: 11, flex: 1 }, legendAmount: { color: '#F5F5F5', fontSize: 11, fontWeight: '700' }, billRow: { flexDirection: 'row', alignItems: 'center', marginTop: 18 }, billIcon: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' }, billIconDot: { width: 9, height: 9, borderRadius: 5 }, billInfo: { marginLeft: 11, flex: 1 }, billName: { color: '#F5F5F5', fontSize: 13, fontWeight: '600' }, billAmount: { color: '#F5F5F5', fontSize: 13, fontWeight: '700' }, assistantPanel: { backgroundColor: '#1E1E1E', borderWidth: 1, borderColor: '#2A2A2A', borderRadius: 13, padding: 20, marginTop: 14 }, assistantHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }, aiBadge: { backgroundColor: '#55D18718', paddingHorizontal: 9, paddingVertical: 5, borderRadius: 10 }, aiBadgeText: { color: '#55D187', fontSize: 9, fontWeight: '800' }, message: { backgroundColor: '#262626', borderRadius: 10, padding: 11, alignSelf: 'flex-start', maxWidth: '80%', marginBottom: 8 }, userMessage: { backgroundColor: '#8B7CFF', alignSelf: 'flex-end' }, messageText: { color: '#F5F5F5', fontSize: 12, lineHeight: 18 }, inputRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8 }, receiptButton: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#2A2A2A', alignItems: 'center', justifyContent: 'center' }, receiptText: { color: '#A1A1AA', fontSize: 21 }, chatInput: { flex: 1, marginHorizontal: 10, height: 38, backgroundColor: '#262626', borderRadius: 19, paddingHorizontal: 15, color: '#F5F5F5', fontSize: 12 }, sendButton: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#55D187', alignItems: 'center', justifyContent: 'center' }, sendText: { color: '#121212', fontSize: 22, fontWeight: '700' }, loginScreen: { flex: 1, backgroundColor: '#121212', justifyContent: 'center', alignItems: 'center', padding: 28 }, loginTitle: { color: '#F5F5F5', fontSize: 30, fontWeight: '700', marginTop: 55 }, loginSubtitle: { color: '#71717A', marginTop: 8, marginBottom: 28 }, loginInput: { width: '100%', maxWidth: 400, backgroundColor: '#1E1E1E', borderColor: '#2A2A2A', borderWidth: 1, borderRadius: 10, padding: 15, color: '#F5F5F5', marginBottom: 12 }, primaryButton: { width: '100%', maxWidth: 400, backgroundColor: '#55D187', borderRadius: 10, padding: 15, alignItems: 'center', marginTop: 5 }, primaryButtonText: { color: '#121212', fontWeight: '800' }
 });
+
