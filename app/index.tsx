@@ -1,4 +1,5 @@
-import "../src/global.css";
-import App from "../src/App";
+import FinAgentApp from "../src/components/FinAgentApp";
 
-export default function Index() { return <App />; }
+export default function Index() {
+  return <FinAgentApp />;
+}

@@ -1,6 +1,15 @@
 {
   "plugins": [
     "expo-router",
-    "expo-status-bar"
+    "expo-status-bar",
+    [
+      "expo-image-picker",
+      {
+        "photosPermission": "Allow FinAgent to choose receipt photos.",
+        "cameraPermission": "Allow FinAgent to take receipt photos.",
+        "microphonePermission": false
+      }
+    ],
+    "expo-font"
   ]
 }
