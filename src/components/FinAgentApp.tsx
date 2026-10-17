@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  Easing,
   Keyboard,
   KeyboardAvoidingView,
   LayoutAnimation,
@@ -85,56 +86,9 @@ interface ScannedReceipt {
   date: string;
 }
 
-const defaultCards: CreditCardItem[] = [
-  {
-    id: 'c-1',
-    cardName: 'Chase Sapphire Preferred',
-    network: 'visa',
-    last4: '4821',
-    balance: 1420,
-    creditLimit: 10000,
-    apr: 22.49,
-    dueDate: 'Nov 14',
-    minPayment: 45,
-  },
-  {
-    id: 'c-2',
-    cardName: 'American Express Gold',
-    network: 'amex',
-    last4: '1004',
-    balance: 680,
-    creditLimit: 8000,
-    apr: 19.99,
-    dueDate: 'Nov 22',
-    minPayment: 35,
-  },
-  {
-    id: 'c-3',
-    cardName: 'Apple Card Titanium',
-    network: 'mastercard',
-    last4: '7729',
-    balance: 240,
-    creditLimit: 5000,
-    apr: 15.99,
-    dueDate: 'Nov 30',
-    minPayment: 25,
-  },
-];
-
-const defaultTransactions: TransactionItem[] = [
-  { id: 'tx-1', title: 'Salary Direct Deposit', category: 'Income', date: 'Oct 16', amount: 2700, type: 'income', source: 'Primary Checking' },
-  { id: 'tx-2', title: 'Apartment Rent ACH', category: 'Housing', date: 'Oct 15', amount: 1850, type: 'expense', source: 'Primary Checking' },
-  { id: 'tx-3', title: 'Whole Foods Market', category: 'Groceries', date: 'Oct 14', amount: 142.85, type: 'expense', source: 'Chase Sapphire Preferred' },
-  { id: 'tx-4', title: 'Blue Bottle Coffee', category: 'Dining', date: 'Oct 12', amount: 14.5, type: 'expense', source: 'American Express Gold' },
-  { id: 'tx-5', title: 'Equinox Gym Membership', category: 'Health', date: 'Oct 10', amount: 195, type: 'expense', source: 'Chase Sapphire Preferred' },
-];
-
-const defaultBills: UpcomingBill[] = [
-  { id: 'b-1', bill_name: 'Chase Sapphire Min Payment', due_date: 'Nov 14', amount: 45, paid: false, category: 'Credit Card' },
-  { id: 'b-2', bill_name: 'High-Speed Fiber Internet', due_date: 'Nov 05', amount: 80, paid: false, category: 'Utilities' },
-  { id: 'b-3', bill_name: 'Electric Utility Grid', due_date: 'Nov 02', amount: 145, paid: false, category: 'Utilities' },
-  { id: 'b-4', bill_name: 'Health Care Premium', due_date: 'Nov 15', amount: 260, paid: false, category: 'Healthcare' },
-];
+const defaultCards: CreditCardItem[] = [];
+const defaultTransactions: TransactionItem[] = [];
+const defaultBills: UpcomingBill[] = [];
 
 const categories = ['Groceries', 'Dining', 'Housing', 'Utilities', 'Transportation', 'Entertainment', 'Health', 'Income'];
 const categoryColors = ['#60a5fa', '#c084fc', '#fb923c', '#34d399', '#fbbf24', '#f472b6', '#22d3ee', '#a3e635'];
@@ -144,7 +98,7 @@ const cardColors: Record<CardNetwork, string> = {
   amex: '#654b17',
   discover: '#155e55',
 };
-const storageKeys = ['fin_theme', 'fin_cards', 'fin_transactions', 'fin_bills', 'fin_monthly_income', 'fin_liquid_cash'] as const;
+const storageKeys = ['fin_theme', 'fin_cards', 'fin_transactions', 'fin_bills', 'fin_monthly_income', 'fin_liquid_cash', 'fin_user_name'] as const;
 
 const formatCurrency = (value: number, decimals = 2) =>
   `$${value.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}`;
@@ -242,7 +196,12 @@ function AppButton({
       style={({ pressed }) => [
         styles.button,
         compact && styles.buttonCompact,
-        { backgroundColor, borderColor: palette.border, opacity: disabled ? 0.45 : pressed ? 0.78 : 1 },
+        {
+          backgroundColor,
+          borderColor: palette.border,
+          opacity: disabled ? 0.45 : pressed ? 0.8 : 1,
+          transform: [{ scale: pressed && !disabled ? 0.97 : 1 }],
+        },
         variant === 'secondary' && styles.buttonBorder,
       ]}
     >
@@ -412,17 +371,19 @@ function FinAgentApp() {
   };
 
   useEffect(() => {
-    screenFadeAnim.setValue(0.35);
-    screenSlideAnim.setValue(10);
+    screenFadeAnim.setValue(0.2);
+    screenSlideAnim.setValue(12);
     Animated.parallel([
       Animated.timing(screenFadeAnim, {
         toValue: 1,
-        duration: 220,
+        duration: 260,
+        easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
       }),
-      Animated.timing(screenSlideAnim, {
+      Animated.spring(screenSlideAnim, {
         toValue: 0,
-        duration: 220,
+        friction: 9,
+        tension: 85,
         useNativeDriver: true,
       }),
     ]).start();
@@ -447,11 +408,12 @@ function FinAgentApp() {
     []
   );
 
-  const [monthlyIncome, setMonthlyIncome] = useState(5400);
-  const [liquidCash, setLiquidCash] = useState(12850);
-  const [cards, setCards] = useState(defaultCards);
-  const [transactions, setTransactions] = useState(defaultTransactions);
-  const [bills, setBills] = useState(defaultBills);
+  const [userName, setUserName] = useState('');
+  const [monthlyIncome, setMonthlyIncome] = useState(0);
+  const [liquidCash, setLiquidCash] = useState(0);
+  const [cards, setCards] = useState<CreditCardItem[]>([]);
+  const [transactions, setTransactions] = useState<TransactionItem[]>([]);
+  const [bills, setBills] = useState<UpcomingBill[]>([]);
   const [modal, setModal] = useState<ModalType>(null);
   const [editingCardId, setEditingCardId] = useState<string | null>(null);
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
@@ -460,8 +422,8 @@ function FinAgentApp() {
   const [cardLast4, setCardLast4] = useState('');
   const [cardBalance, setCardBalance] = useState('');
   const [cardLimit, setCardLimit] = useState('');
-  const [cardApr, setCardApr] = useState('21.99');
-  const [cardDueDate, setCardDueDate] = useState('Nov 15');
+  const [cardApr, setCardApr] = useState('');
+  const [cardDueDate, setCardDueDate] = useState('');
   const [txTitle, setTxTitle] = useState('');
   const [txAmount, setTxAmount] = useState('');
   const [txCategory, setTxCategory] = useState('Groceries');
@@ -487,6 +449,7 @@ function FinAgentApp() {
   const [isScanning, setIsScanning] = useState(false);
   const [scannedReceipt, setScannedReceipt] = useState<ScannedReceipt | null>(null);
   const [toast, setToast] = useState('');
+  const toastAnim = useRef(new Animated.Value(0)).current;
   const [apiError, setApiError] = useState('');
   const insets = useSafeAreaInsets();
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
@@ -511,11 +474,12 @@ function FinAgentApp() {
         if (!mounted) return;
         const stored = Object.fromEntries(entries);
         if (stored.fin_theme === 'dark' || stored.fin_theme === 'light') setTheme(stored.fin_theme);
-        setCards(parseArray(stored.fin_cards ?? null, defaultCards, 'fin_cards'));
-        setTransactions(parseArray(stored.fin_transactions ?? null, defaultTransactions, 'fin_transactions'));
-        setBills(parseArray(stored.fin_bills ?? null, defaultBills, 'fin_bills'));
-        setMonthlyIncome(parseNumber(stored.fin_monthly_income ?? null, 5400, 'fin_monthly_income'));
-        setLiquidCash(parseNumber(stored.fin_liquid_cash ?? null, 12850, 'fin_liquid_cash'));
+        if (stored.fin_user_name) setUserName(stored.fin_user_name);
+        setCards(parseArray(stored.fin_cards ?? null, [], 'fin_cards'));
+        setTransactions(parseArray(stored.fin_transactions ?? null, [], 'fin_transactions'));
+        setBills(parseArray(stored.fin_bills ?? null, [], 'fin_bills'));
+        setMonthlyIncome(parseNumber(stored.fin_monthly_income ?? null, 0, 'fin_monthly_income'));
+        setLiquidCash(parseNumber(stored.fin_liquid_cash ?? null, 0, 'fin_liquid_cash'));
         setStorageStatus('ready');
       } catch (error) {
         console.error('Failed to load app data from AsyncStorage', error);
@@ -533,6 +497,7 @@ function FinAgentApp() {
     if (storageStatus !== 'ready') return;
     void AsyncStorage.multiSet([
       ['fin_theme', theme],
+      ['fin_user_name', userName],
       ['fin_cards', JSON.stringify(cards)],
       ['fin_transactions', JSON.stringify(transactions)],
       ['fin_bills', JSON.stringify(bills)],
@@ -542,7 +507,7 @@ function FinAgentApp() {
       console.error('Failed to save app data to AsyncStorage', error);
       setStorageStatus('failed');
     });
-  }, [storageStatus, theme, cards, transactions, bills, monthlyIncome, liquidCash]);
+  }, [storageStatus, theme, userName, cards, transactions, bills, monthlyIncome, liquidCash]);
 
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -578,8 +543,21 @@ function FinAgentApp() {
 
   const showToast = (message: string) => {
     setToast(message);
+    toastAnim.setValue(0);
+    Animated.spring(toastAnim, {
+      toValue: 1,
+      friction: 7,
+      tension: 100,
+      useNativeDriver: true,
+    }).start();
     if (toastTimer.current) clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(''), 2800);
+    toastTimer.current = setTimeout(() => {
+      Animated.timing(toastAnim, {
+        toValue: 0,
+        duration: 220,
+        useNativeDriver: true,
+      }).start(() => setToast(''));
+    }, 2800);
   };
 
   const openNewCard = () => {
@@ -589,8 +567,8 @@ function FinAgentApp() {
     setCardLast4('');
     setCardBalance('');
     setCardLimit('');
-    setCardApr('21.99');
-    setCardDueDate('Nov 15');
+    setCardApr('');
+    setCardDueDate('');
     setModal('card');
   };
 
@@ -612,11 +590,11 @@ function FinAgentApp() {
       return;
     }
     const balance = Number.parseFloat(cardBalance) || 0;
-    const limit = Number.parseFloat(cardLimit) || 1000;
-    const apr = Number.parseFloat(cardApr) || 21.99;
+    const limit = Number.parseFloat(cardLimit) || 0;
+    const apr = Number.parseFloat(cardApr) || 0;
     if (editingCardId) {
       setCards(previous => previous.map(card => card.id === editingCardId
-        ? { ...card, cardName: cardName.trim(), network: cardNetwork, last4: cardLast4 || card.last4, balance, creditLimit: limit, apr, dueDate: cardDueDate }
+        ? { ...card, cardName: cardName.trim(), network: cardNetwork, last4: cardLast4.trim() || card.last4, balance, creditLimit: limit, apr, dueDate: cardDueDate.trim() || card.dueDate }
         : card));
       showToast('Card updated');
     } else {
@@ -624,12 +602,12 @@ function FinAgentApp() {
         id: `c-${Date.now()}`,
         cardName: cardName.trim(),
         network: cardNetwork,
-        last4: cardLast4 || String(Math.floor(1000 + Math.random() * 9000)),
+        last4: cardLast4.trim() || '0000',
         balance,
         creditLimit: limit,
         apr,
-        dueDate: cardDueDate || 'Nov 15',
-        minPayment: Math.max(25, balance * 0.025),
+        dueDate: cardDueDate.trim() || 'End of month',
+        minPayment: Math.round(Math.max(15, balance * 0.025)),
       }]);
       showToast(`Added ${cardName.trim()}`);
     }
@@ -932,7 +910,7 @@ function FinAgentApp() {
     <>
       <View style={styles.welcomeBlock}>
         <Text style={[styles.eyebrow, { color: palette.muted }]}>PERSONAL FINANCE OVERVIEW</Text>
-        <Text style={[styles.pageTitle, { color: palette.text }]}>Welcome back, Souvik</Text>
+        <Text style={[styles.pageTitle, { color: palette.text }]}>Welcome{userName ? `, ${userName}` : ''}</Text>
       </View>
       <Panel palette={palette}>
         <View style={styles.rowBetween}>
@@ -966,7 +944,16 @@ function FinAgentApp() {
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.cardCarousel}>
           {cards.map(card => renderCard(card))}
-          {!cards.length ? <Text style={[styles.emptyText, { color: palette.muted }]}>Add a card to track balances and payoff progress.</Text> : null}
+          {!cards.length ? (
+            <Pressable
+              onPress={openNewCard}
+              style={[styles.emptyCardPrompt, { backgroundColor: palette.surface, borderColor: palette.border }]}
+            >
+              <Ionicons name="card-outline" size={24} color={palette.accent} />
+              <Text style={[styles.bodyStrong, { color: palette.text, marginTop: 6 }]}>Add your first card</Text>
+              <Text style={[styles.caption, { color: palette.muted, textAlign: 'center', marginTop: 2 }]}>Track limits & payoff progress</Text>
+            </Pressable>
+          ) : null}
         </ScrollView>
       </View>
 
@@ -1033,7 +1020,14 @@ function FinAgentApp() {
           <View style={styles.flex}>{renderCard(card, true)}</View>
         </View>
       ))}
-      {!cards.length ? <Panel palette={palette}><Text style={[styles.emptyText, { color: palette.muted }]}>No cards yet. Add one to start tracking debt.</Text></Panel> : null}
+      {!cards.length ? (
+        <Panel palette={palette} style={styles.centerPanel}>
+          <Ionicons name="card-outline" size={32} color={palette.accent} />
+          <Text style={[styles.bodyStrong, { color: palette.text, marginTop: 8 }]}>No cards connected</Text>
+          <Text style={[styles.caption, { color: palette.muted, textAlign: 'center', marginTop: 4, marginBottom: 12 }]}>Add your credit cards to optimize payoff order and minimize interest.</Text>
+          <AppButton label="Add your first card" icon="add" onPress={openNewCard} palette={palette} />
+        </Panel>
+      ) : null}
     </>
   );
 
@@ -1178,9 +1172,10 @@ function FinAgentApp() {
         <Text style={[styles.caption, { color: palette.muted }]}>Review your cash flow and transaction ledger.</Text>
       </View>
       <Panel palette={palette}>
-        <SectionTitle title="Monthly profile" subtitle="Update your current figures." palette={palette} />
-        <Field label="Monthly income" value={String(monthlyIncome)} onChangeText={value => setMonthlyIncome(Number.parseFloat(value) || 0)} palette={palette} keyboardType="decimal-pad" />
-        <Field label="Liquid cash" value={String(liquidCash)} onChangeText={value => setLiquidCash(Number.parseFloat(value) || 0)} palette={palette} keyboardType="decimal-pad" />
+        <SectionTitle title="Your profile & cash flow" subtitle="Update your profile, income, and cash reserves." palette={palette} />
+        <Field label="Your name" value={userName} onChangeText={setUserName} palette={palette} placeholder="e.g. Alex" />
+        <Field label="Monthly income" value={monthlyIncome ? String(monthlyIncome) : ''} onChangeText={value => setMonthlyIncome(Number.parseFloat(value) || 0)} palette={palette} placeholder="0.00" keyboardType="decimal-pad" />
+        <Field label="Liquid cash reserve" value={liquidCash ? String(liquidCash) : ''} onChangeText={value => setLiquidCash(Number.parseFloat(value) || 0)} palette={palette} placeholder="0.00" keyboardType="decimal-pad" />
         <View style={styles.rowBetween}>
           <Text style={[styles.bodyStrong, { color: palette.muted }]}>Estimated net worth</Text>
           <Text style={[styles.bodyStrong, { color: palette.green }]}>{formatCurrency(netWorth)}</Text>
@@ -1236,7 +1231,14 @@ function FinAgentApp() {
             </View>
             <Text style={[styles.bodyStrong, { color: palette.accent }]}>{formatCurrency(bill.amount)}</Text>
           </View>
-        )) : <Text style={[styles.emptyText, { color: palette.muted }]}>No bills added yet.</Text>}
+        )) : (
+          <View style={styles.centerPanel}>
+            <Ionicons name="calendar-outline" size={28} color={palette.muted} />
+            <Text style={[styles.bodyStrong, { color: palette.text, marginTop: 8 }]}>No upcoming bills</Text>
+            <Text style={[styles.caption, { color: palette.muted, textAlign: 'center', marginTop: 4, marginBottom: 10 }]}>Track credit card dues, rent, and utility bill dates.</Text>
+            <AppButton label="Add a bill" icon="add" onPress={() => setModal('bill')} palette={palette} compact />
+          </View>
+        )}
       </Panel>
       <Panel palette={palette} style={styles.summaryPanel}>
         <Text style={[styles.caption, { color: palette.muted }]}>Unpaid upcoming bills</Text>
@@ -1546,10 +1548,33 @@ function FinAgentApp() {
       </View>
 
       {toast ? (
-        <View pointerEvents="none" style={[styles.toast, { backgroundColor: palette.accent }]}>
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.toast,
+            {
+              backgroundColor: palette.accent,
+              opacity: toastAnim,
+              transform: [
+                {
+                  translateY: toastAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [18, 0],
+                  }),
+                },
+                {
+                  scale: toastAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0.93, 1],
+                  }),
+                },
+              ],
+            },
+          ]}
+        >
           <Ionicons name="checkmark-circle" size={18} color="#fff" />
           <Text style={styles.toastText}>{toast}</Text>
-        </View>
+        </Animated.View>
       ) : null}
 
       <Modal visible={modal !== null} transparent animationType="slide" onRequestClose={() => setModal(null)}>
@@ -1681,6 +1706,8 @@ const styles = StyleSheet.create({
   modalButtons: { flexDirection: 'row', gap: 9, marginTop: 12, marginBottom: 8 },
   modalTextArea: { minHeight: 140, maxHeight: 220, paddingTop: 12, fontSize: 14 },
   modalChipsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 },
+  emptyCardPrompt: { width: 200, minHeight: 170, borderRadius: 20, borderWidth: 1, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', padding: 16 },
+  centerPanel: { alignItems: 'center', justifyContent: 'center', paddingVertical: 24, paddingHorizontal: 16 },
 });
 
 export default FinAgentApp;

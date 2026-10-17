@@ -6,21 +6,16 @@ interface NetWorthChartProps {
 }
 
 const dataFor = (period: string, value: number) => {
-  const offsets: Record<string, number[]> = {
-    '1W': [-320, -240, -410, -150, 80, -30, 0],
-    '1M': [-1850, -1200, -750, -420, 0],
-    '3M': [-3900, -2800, -1400, 0],
-    '1Y': [-8500, -6200, -3800, -1200, 0],
-  };
   const dates: Record<string, string[]> = {
     '1W': ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Today'],
-    '1M': ['Sep 18', 'Sep 25', 'Oct 02', 'Oct 09', 'Today'],
-    '3M': ['Jul', 'Aug', 'Sep', 'Today'],
-    '1Y': ['Q4 25', 'Q1 26', 'Q2 26', 'Q3 26', 'Now'],
+    '1M': ['W1', 'W2', 'W3', 'W4', 'Today'],
+    '3M': ['Month 1', 'Month 2', 'Month 3', 'Today'],
+    '1Y': ['Q1', 'Q2', 'Q3', 'Q4', 'Now'],
   };
-  return (offsets[period] ?? offsets['1M']).map((offset, index) => ({
-    date: dates[period]?.[index] ?? `Point ${index + 1}`,
-    value: value + offset,
+  const list = dates[period] ?? dates['1M'];
+  return list.map(date => ({
+    date,
+    value,
   }));
 };
 

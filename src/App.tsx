@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { NetWorthChart } from './components/NetWorthChart.web';
@@ -96,127 +96,9 @@ const parseStoredArray = <T,>(value: string | null, fallback: T[], key: string):
 };
 
 // Initial defaults
-const defaultCards: CreditCardItem[] = [
-  {
-    id: 'c-1',
-    cardName: 'Chase Sapphire Preferred',
-    network: 'visa',
-    last4: '4821',
-    balance: 1420.0,
-    creditLimit: 10000.0,
-    apr: 22.49,
-    dueDate: 'Nov 14',
-    minPayment: 45.0,
-    colorTheme: 'from-blue-900 via-indigo-900 to-slate-900',
-  },
-  {
-    id: 'c-2',
-    cardName: 'American Express Gold',
-    network: 'amex',
-    last4: '1004',
-    balance: 680.0,
-    creditLimit: 8000.0,
-    apr: 19.99,
-    dueDate: 'Nov 22',
-    minPayment: 35.0,
-    colorTheme: 'from-amber-700 via-yellow-800 to-amber-950',
-  },
-  {
-    id: 'c-3',
-    cardName: 'Apple Card Titanium',
-    network: 'mastercard',
-    last4: '7729',
-    balance: 240.0,
-    creditLimit: 5000.0,
-    apr: 15.99,
-    dueDate: 'Nov 30',
-    minPayment: 25.0,
-    colorTheme: 'from-zinc-700 via-neutral-800 to-stone-900',
-  },
-];
-
-const defaultTransactions: TransactionItem[] = [
-  {
-    id: 'tx-1',
-    title: 'Salary Direct Deposit',
-    category: 'Income',
-    date: 'Oct 16',
-    amount: 2700.0,
-    type: 'income',
-    source: 'Primary Checking',
-  },
-  {
-    id: 'tx-2',
-    title: 'Apartment Rent ACH',
-    category: 'Housing',
-    date: 'Oct 15',
-    amount: 1850.0,
-    type: 'expense',
-    source: 'Primary Checking',
-  },
-  {
-    id: 'tx-3',
-    title: 'Whole Foods Market',
-    category: 'Groceries',
-    date: 'Oct 14',
-    amount: 142.85,
-    type: 'expense',
-    source: 'Chase Sapphire',
-  },
-  {
-    id: 'tx-4',
-    title: 'Blue Bottle Coffee',
-    category: 'Dining',
-    date: 'Oct 12',
-    amount: 14.5,
-    type: 'expense',
-    source: 'Amex Gold',
-  },
-  {
-    id: 'tx-5',
-    title: 'Equinox Gym Membership',
-    category: 'Health',
-    date: 'Oct 10',
-    amount: 195.0,
-    type: 'expense',
-    source: 'Chase Sapphire',
-  },
-];
-
-const defaultBills: UpcomingBill[] = [
-  {
-    id: 'b-1',
-    bill_name: 'Chase Sapphire Min Payment',
-    due_date: 'Nov 14',
-    amount: 45.0,
-    paid: false,
-    category: 'Credit Card',
-  },
-  {
-    id: 'b-2',
-    bill_name: 'High-Speed Fiber Internet',
-    due_date: 'Nov 05',
-    amount: 80.0,
-    paid: false,
-    category: 'Utilities',
-  },
-  {
-    id: 'b-3',
-    bill_name: 'Electric Utility Grid',
-    due_date: 'Nov 02',
-    amount: 145.0,
-    paid: false,
-    category: 'Utilities',
-  },
-  {
-    id: 'b-4',
-    bill_name: 'Health Care Premium',
-    due_date: 'Nov 15',
-    amount: 260.0,
-    paid: false,
-    category: 'Healthcare',
-  },
-];
+const defaultCards: CreditCardItem[] = [];
+const defaultTransactions: TransactionItem[] = [];
+const defaultBills: UpcomingBill[] = [];
 
 export default function App() {
   const [storageReady, setStorageReady] = useState(false);
@@ -296,14 +178,14 @@ export default function App() {
   };
 
   // User Profile
-  const [userName, setUserName] = useState('Souvik');
-  const [monthlyIncome, setMonthlyIncome] = useState<number>(5400.0);
-  const [liquidCash, setLiquidCash] = useState<number>(12850.0);
+  const [userName, setUserName] = useState('');
+  const [monthlyIncome, setMonthlyIncome] = useState<number>(0);
+  const [liquidCash, setLiquidCash] = useState<number>(0);
 
   // Cards & Transactions
-  const [cards, setCards] = useState<CreditCardItem[]>(defaultCards);
-  const [transactions, setTransactions] = useState<TransactionItem[]>(defaultTransactions);
-  const [bills, setBills] = useState<UpcomingBill[]>(defaultBills);
+  const [cards, setCards] = useState<CreditCardItem[]>([]);
+  const [transactions, setTransactions] = useState<TransactionItem[]>([]);
+  const [bills, setBills] = useState<UpcomingBill[]>([]);
 
   useEffect(() => {
     let isMounted = true;
@@ -315,6 +197,9 @@ export default function App() {
           'fin_cards',
           'fin_transactions',
           'fin_bills',
+          'fin_monthly_income',
+          'fin_liquid_cash',
+          'fin_user_name',
         ]);
         if (!isMounted) return;
 
@@ -322,9 +207,12 @@ export default function App() {
         if (stored.fin_theme === 'dark' || stored.fin_theme === 'light') {
           setTheme(stored.fin_theme);
         }
-        setCards(parseStoredArray(stored.fin_cards, defaultCards, 'fin_cards'));
-        setTransactions(parseStoredArray(stored.fin_transactions, defaultTransactions, 'fin_transactions'));
-        setBills(parseStoredArray(stored.fin_bills, defaultBills, 'fin_bills'));
+        if (stored.fin_user_name) setUserName(stored.fin_user_name);
+        if (stored.fin_monthly_income) setMonthlyIncome(Number(stored.fin_monthly_income) || 0);
+        if (stored.fin_liquid_cash) setLiquidCash(Number(stored.fin_liquid_cash) || 0);
+        setCards(parseStoredArray(stored.fin_cards, [], 'fin_cards'));
+        setTransactions(parseStoredArray(stored.fin_transactions, [], 'fin_transactions'));
+        setBills(parseStoredArray(stored.fin_bills, [], 'fin_bills'));
         setStorageReady(true);
       } catch (error) {
         console.error('Failed to load app state from AsyncStorage', error);
@@ -366,11 +254,34 @@ export default function App() {
     });
   }, [storageReady, bills]);
 
+  useEffect(() => {
+    if (!storageReady) return;
+    void AsyncStorage.setItem('fin_monthly_income', String(monthlyIncome)).catch(error => {
+      console.error('Failed to save fin_monthly_income to AsyncStorage', error);
+    });
+    void AsyncStorage.setItem('fin_liquid_cash', String(liquidCash)).catch(error => {
+      console.error('Failed to save fin_liquid_cash to AsyncStorage', error);
+    });
+    void AsyncStorage.setItem('fin_user_name', userName).catch(error => {
+      console.error('Failed to save fin_user_name to AsyncStorage', error);
+    });
+  }, [storageReady, monthlyIncome, liquidCash, userName]);
+
   // Derived metrics
   const totalCardDebt = cards.reduce((acc, c) => acc + (c.balance || 0), 0);
   const totalCreditLimit = cards.reduce((acc, c) => acc + (c.creditLimit || 0), 0);
   const creditUtilization = totalCreditLimit > 0 ? (totalCardDebt / totalCreditLimit) * 100 : 0;
   const netWorth = liquidCash - totalCardDebt;
+
+  const categoryExpenses = useMemo(() => {
+    const map: Record<string, number> = {};
+    transactions
+      .filter(t => t.type === 'expense')
+      .forEach(t => {
+        map[t.category] = (map[t.category] || 0) + t.amount;
+      });
+    return Object.entries(map).map(([category, amount]) => ({ category, amount }));
+  }, [transactions]);
 
   // Modals
   const [showCardModal, setShowCardModal] = useState(false);
@@ -380,8 +291,8 @@ export default function App() {
   const [cardFormLast4, setCardFormLast4] = useState('');
   const [cardFormBalance, setCardFormBalance] = useState('');
   const [cardFormLimit, setCardFormLimit] = useState('');
-  const [cardFormApr, setCardFormApr] = useState('21.99');
-  const [cardFormDueDate, setCardFormDueDate] = useState('Nov 15');
+  const [cardFormApr, setCardFormApr] = useState('');
+  const [cardFormDueDate, setCardFormDueDate] = useState('');
 
   const [showTxModal, setShowTxModal] = useState(false);
   const [txFormTitle, setTxFormTitle] = useState('');
@@ -406,7 +317,7 @@ export default function App() {
       id: 'm-init',
       sender: 'ai',
       timestamp: 'Just now',
-      text: `Hello ${userName}! I am your **FinAgent AI Financial Advisor**.\n\nI have synced your live accounts:\n• **${cards.length} Credit Cards** with **$${totalCardDebt.toLocaleString()}** total balance (Utilization: **${creditUtilization.toFixed(1)}%**)\n• **Liquid Cash Reserve**: $${liquidCash.toLocaleString()}\n• **Monthly Take-Home Pay**: $${monthlyIncome.toLocaleString()}\n\nHow can I help optimize your cash flow, payoff strategy, or budget today?`,
+      text: 'Hello! I am your **FinAgent AI Financial Advisor**.\n\nAdd your credit cards, monthly income, and bills, or tell me your numbers directly in chat and I will calculate your optimal payoff schedule, budget ratios, and interest savings.',
     },
   ]);
 
@@ -526,7 +437,7 @@ export default function App() {
       const mimeType = file.type || 'image/jpeg';
 
       setIsScanning(true);
-      navigateToScreen('ocr');
+      setActiveScreen('ocr');
 
       try {
         const response = await axios.post('/api/receipt', {
@@ -535,9 +446,12 @@ export default function App() {
         });
 
         const data = response.data;
-        const totalNum = Number(data.total) || 47.82;
-        const merchant = data.merchant || 'Whole Foods Market';
-        const category = data.category || 'Groceries';
+        const totalNum = Number(data.total);
+        if (!Number.isFinite(totalNum) || totalNum <= 0 || !data.merchant) {
+          throw new Error('Unable to extract receipt details');
+        }
+        const merchant = data.merchant;
+        const category = data.category || 'General';
 
         setScannedReceipt({
           merchant,
@@ -548,12 +462,7 @@ export default function App() {
         showToast(`Receipt analyzed: ${merchant} ($${totalNum.toFixed(2)})`);
       } catch (err) {
         console.warn('OCR error:', err);
-        setScannedReceipt({
-          merchant: "Trader Joe's",
-          total: 54.3,
-          category: 'Groceries',
-          date: 'Today',
-        });
+        showToast('Could not read receipt image. Please try a clearer photo or enter details manually.');
       } finally {
         setIsScanning(false);
         if (fileInputRef.current) fileInputRef.current.value = '';
@@ -586,7 +495,7 @@ export default function App() {
 
     setScannedReceipt(null);
     showToast(`Logged $${amount.toFixed(2)} to ${targetCardName}`);
-    navigateToScreen('home');
+    setActiveScreen('home');
   };
 
   // Add / Edit Card
@@ -629,12 +538,12 @@ export default function App() {
         id: `c-${Date.now()}`,
         cardName: cardFormName,
         network: cardFormNetwork,
-        last4: cardFormLast4 || Math.floor(1000 + Math.random() * 9000).toString(),
+        last4: cardFormLast4.trim() || '0000',
         balance: bal,
         creditLimit: lim,
         apr,
-        dueDate: cardFormDueDate || 'Nov 15',
-        minPayment: Math.max(25, bal * 0.025),
+        dueDate: cardFormDueDate.trim() || 'End of month',
+        minPayment: Math.round(Math.max(15, bal * 0.025)),
         colorTheme: gradientMap[cardFormNetwork],
       };
       setCards(prev => [...prev, newCard]);
@@ -718,7 +627,7 @@ export default function App() {
 
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed bottom-20 md:bottom-8 right-6 z-50 bg-violet-600 text-white px-4 py-2.5 rounded-xl shadow-xl flex items-center gap-2 text-sm font-semibold animate-fade-in">
+        <div className="fixed bottom-20 md:bottom-8 right-6 z-50 bg-violet-600 text-white px-4 py-2.5 rounded-xl shadow-xl flex items-center gap-2 text-sm font-semibold animate-toast">
           <CheckCircle2 className="w-4 h-4" />
           <span>{toastMessage}</span>
         </div>
@@ -726,9 +635,9 @@ export default function App() {
 
       {/* Modal: Add/Edit Card */}
       {showCardModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-modal-backdrop">
           <div
-            className="w-full max-w-md rounded-2xl border p-6 shadow-2xl transition-all"
+            className="w-full max-w-md rounded-2xl border p-6 shadow-2xl transition-all animate-modal-content"
             style={{
               backgroundColor: isDark ? '#14141a' : '#ffffff',
               borderColor: isDark ? '#272733' : '#e2e8f0',
@@ -889,9 +798,9 @@ export default function App() {
 
       {/* Modal: Add Transaction */}
       {showTxModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-modal-backdrop">
           <div
-            className="w-full max-w-md rounded-2xl border p-6 shadow-2xl transition-all"
+            className="w-full max-w-md rounded-2xl border p-6 shadow-2xl transition-all animate-modal-content"
             style={{
               backgroundColor: isDark ? '#14141a' : '#ffffff',
               borderColor: isDark ? '#272733' : '#e2e8f0',
@@ -1006,17 +915,6 @@ export default function App() {
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
           {/* Brand Mark */}
           <div className="flex items-center gap-3">
-            {screenHistory.length > 1 && (
-              <button
-                type="button"
-                onClick={goBack}
-                className="w-8 h-8 rounded-xl border flex items-center justify-center hover:bg-neutral-800 transition-all text-neutral-400 hover:text-white"
-                style={{ borderColor: isDark ? '#262633' : '#e2e8f0' }}
-                title="Go back (or swipe right)"
-              >
-                <ChevronRight className="w-4 h-4 rotate-180" />
-              </button>
-            )}
             <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-violet-600 to-indigo-600 flex items-center justify-center text-white shadow-sm font-black text-base">
               F
             </div>
@@ -1040,7 +938,7 @@ export default function App() {
               return (
                 <button
                   key={tab.id}
-                  onClick={() => navigateToScreen(tab.id as any)}
+                  onClick={() => setActiveScreen(tab.id as any)}
                   className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
                     active
                       ? 'bg-violet-600 text-white shadow-xs font-bold'
@@ -1082,7 +980,7 @@ export default function App() {
       </header>
 
       {/* Main App Content Viewport */}
-      <main key={activeScreen} className="flex-1 max-w-6xl w-full mx-auto px-4 py-6 pb-24 md:pb-10 animate-screen-transition">
+      <main className="flex-1 max-w-6xl w-full mx-auto px-4 py-6 pb-24 md:pb-10">
         {/* ========================================================================= */}
         {/* VIEW 1: HOME / DASHBOARD */}
         {/* ========================================================================= */}
@@ -1146,7 +1044,7 @@ export default function App() {
                 </button>
 
                 <button
-                  onClick={() => navigateToScreen('agent')}
+                  onClick={() => setActiveScreen('agent')}
                   className="p-3 rounded-xl bg-violet-600/10 border border-violet-500/20 text-violet-400 flex items-center justify-center gap-2 text-xs font-bold hover:bg-violet-600/20 transition-all cursor-pointer"
                 >
                   <Sparkles className="w-4 h-4" />
@@ -1164,7 +1062,7 @@ export default function App() {
                   <span className="text-xs text-neutral-400">({cards.length} connected)</span>
                 </div>
                 <button
-                  onClick={() => navigateToScreen('cards')}
+                  onClick={() => setActiveScreen('cards')}
                   className="text-xs font-semibold text-violet-400 hover:underline flex items-center gap-1"
                 >
                   <span>Manage Cards</span>
@@ -1173,12 +1071,29 @@ export default function App() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {cards.map(c => {
-                  const util = c.creditLimit > 0 ? (c.balance / c.creditLimit) * 100 : 0;
-                  return (
-                    <div
-                      key={c.id}
-                      onClick={() => navigateToScreen('cards')}
+                {cards.length === 0 ? (
+                  <div
+                    onClick={() => {
+                      setEditingCardId(null);
+                      setCardFormName('');
+                      setCardFormBalance('');
+                      setCardFormLimit('');
+                      setShowCardModal(true);
+                    }}
+                    className="col-span-1 md:col-span-3 p-8 text-center rounded-2xl border border-dashed flex flex-col items-center justify-center gap-2 cursor-pointer transition-all hover:border-violet-500"
+                    style={{ borderColor: isDark ? '#262634' : '#cbd5e1' }}
+                  >
+                    <CreditCard className="w-8 h-8 text-violet-400 mb-1" />
+                    <span className="font-bold text-sm">Add your first credit card</span>
+                    <span className="text-xs text-neutral-400">Track limits, balances, and calculate optimal payoff strategies</span>
+                  </div>
+                ) : (
+                  cards.map(c => {
+                    const util = c.creditLimit > 0 ? (c.balance / c.creditLimit) * 100 : 0;
+                    return (
+                      <div
+                        key={c.id}
+                        onClick={() => navigateToScreen('cards')}
                       className={`p-5 rounded-2xl bg-gradient-to-br ${c.colorTheme} text-white shadow-md relative overflow-hidden flex flex-col justify-between min-h-[170px] cursor-pointer transition-transform hover:-translate-y-1`}
                     >
                       <div className="flex justify-between items-start">
@@ -1212,7 +1127,7 @@ export default function App() {
                       </div>
                     </div>
                   );
-                })}
+                }))}
               </div>
             </div>
 
@@ -1235,7 +1150,7 @@ export default function App() {
                 </div>
                 <button
                   onClick={() => {
-                    navigateToScreen('agent');
+                    setActiveScreen('agent');
                     handleSendMessage('Audit my 50/30/20 budget allocations and tell me where to cut.');
                   }}
                   className="text-xs text-violet-400 font-semibold hover:underline self-start sm:self-auto"
@@ -1318,7 +1233,12 @@ export default function App() {
               </div>
 
               <div className="divide-y text-xs sm:text-sm" style={{ borderColor: isDark ? '#1e1e28' : '#f1f5f9' }}>
-                {filteredTransactions.map(tx => (
+                {filteredTransactions.length === 0 ? (
+                  <div className="py-8 text-center text-neutral-400 text-xs">
+                    No transactions found. Click &quot;Add Entry&quot; above to log an expense or income.
+                  </div>
+                ) : (
+                  filteredTransactions.map(tx => (
                   <div key={tx.id} className="py-3 flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <div
@@ -1337,7 +1257,8 @@ export default function App() {
                       {tx.type === 'income' ? '+' : '-'}${tx.amount.toFixed(2)}
                     </div>
                   </div>
-                ))}
+                ))
+              )}
               </div>
             </div>
           </div>
@@ -1398,7 +1319,7 @@ export default function App() {
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => {
-                      navigateToScreen('agent');
+                      setActiveScreen('agent');
                       handleSendMessage('Which credit card should I pay off first to save the most on interest?');
                     }}
                     className="px-3.5 py-2 rounded-xl bg-violet-600/10 text-violet-400 border border-violet-500/20 text-xs font-bold hover:bg-violet-600/20 transition-all"
@@ -1460,54 +1381,73 @@ export default function App() {
               </div>
 
               <div className="space-y-3">
-                {sortedCards.map((card, idx) => (
+                {sortedCards.length === 0 ? (
                   <div
-                    key={card.id}
-                    className="p-4 rounded-xl border flex items-center justify-between"
-                    style={{ backgroundColor: isDark ? '#161620' : '#f8fafc', borderColor: isDark ? '#262634' : '#e2e8f0' }}
+                    onClick={() => {
+                      setEditingCardId(null);
+                      setCardFormName('');
+                      setCardFormBalance('');
+                      setCardFormLimit('');
+                      setShowCardModal(true);
+                    }}
+                    className="p-8 text-center rounded-2xl border border-dashed flex flex-col items-center justify-center gap-2 cursor-pointer transition-all hover:border-violet-500"
+                    style={{ borderColor: isDark ? '#262634' : '#cbd5e1' }}
                   >
-                    <div className="flex items-center gap-3">
-                      <div className="w-7 h-7 rounded-lg bg-violet-600/20 text-violet-400 font-bold text-xs flex items-center justify-center">
-                        #{idx + 1}
-                      </div>
-                      <div>
-                        <div className="font-bold text-sm">{card.cardName}</div>
-                        <div className="text-xs text-neutral-400">
-                          APR: <span className="text-amber-400 font-semibold">{card.apr}%</span> · Limit: ${card.creditLimit.toLocaleString()} · Due: {card.dueDate}
+                    <CreditCard className="w-8 h-8 text-violet-400 mb-1" />
+                    <span className="font-bold text-sm">No credit cards connected yet</span>
+                    <span className="text-xs text-neutral-400">Click to add your credit cards and plan payoff order</span>
+                  </div>
+                ) : (
+                  sortedCards.map((card, idx) => (
+                    <div
+                      key={card.id}
+                      className="p-4 rounded-xl border flex items-center justify-between"
+                      style={{ backgroundColor: isDark ? '#161620' : '#f8fafc', borderColor: isDark ? '#262634' : '#e2e8f0' }}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-7 h-7 rounded-lg bg-violet-600/20 text-violet-400 font-bold text-xs flex items-center justify-center">
+                          #{idx + 1}
+                        </div>
+                        <div>
+                          <div className="font-bold text-sm">{card.cardName}</div>
+                          <div className="text-xs text-neutral-400">
+                            APR: <span className="text-amber-400 font-semibold">{card.apr}%</span> · Limit: ${card.creditLimit.toLocaleString()} · Due: {card.dueDate}
+                          </div>
                         </div>
                       </div>
-                    </div>
 
-                    <div className="flex items-center gap-4">
-                      <div className="text-right">
-                        <div className="text-sm font-bold font-mono text-pink-400">${card.balance.toLocaleString()}</div>
-                        <div className="text-[10px] text-neutral-400">Min: ${card.minPayment.toFixed(2)}</div>
+                      <div className="flex items-center gap-4">
+                        <div className="text-right">
+                          <div className="text-sm font-bold font-mono text-pink-400">${card.balance.toLocaleString()}</div>
+                          <div className="text-[10px] text-neutral-400">Min: ${card.minPayment.toFixed(2)}</div>
+                        </div>
+
+                        <button
+                          onClick={() => {
+                            const payStr = prompt(`Enter amount to pay towards ${card.cardName}:`, card.minPayment.toString());
+                            const payNum = parseFloat(payStr || '0');
+                            if (payNum > 0) {
+                              setCards(prev =>
+                                prev.map(c => (c.id === card.id ? { ...c, balance: Math.max(0, c.balance - payNum) } : c))
+                              );
+                              setLiquidCash(prev => Math.max(0, prev - payNum));
+                              showToast(`Paid $${payNum.toFixed(2)} to ${card.cardName}`);
+                            }
+                          }}
+                          className="px-3 py-1.5 rounded-lg border text-xs font-semibold text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10 transition-all"
+                        >
+                          Pay Down
+                        </button>
                       </div>
-
-                      <button
-                        onClick={() => {
-                          const payStr = prompt(`Enter amount to pay towards ${card.cardName}:`, card.minPayment.toString());
-                          const payNum = parseFloat(payStr || '0');
-                          if (payNum > 0) {
-                            setCards(prev =>
-                              prev.map(c => (c.id === card.id ? { ...c, balance: Math.max(0, c.balance - payNum) } : c))
-                            );
-                            setLiquidCash(prev => Math.max(0, prev - payNum));
-                            showToast(`Paid $${payNum.toFixed(2)} to ${card.cardName}`);
-                          }
-                        }}
-                        className="px-3 py-1.5 rounded-lg border text-xs font-semibold text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10 transition-all"
-                      >
-                        Pay Down
-                      </button>
                     </div>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             </div>
 
             {/* Individual Card Details Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {cards.length > 0 && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {cards.map(c => (
                 <div
                   key={c.id}
@@ -1572,7 +1512,7 @@ export default function App() {
 
                   <button
                     onClick={() => {
-                      navigateToScreen('agent');
+                      setActiveScreen('agent');
                       handleSendMessage(`How can I optimize and lower interest on my ${c.cardName}?`);
                     }}
                     className="mt-4 py-2 rounded-xl text-xs font-semibold bg-violet-600/10 text-violet-400 hover:bg-violet-600/20 transition-all flex items-center justify-center gap-1"
@@ -1583,6 +1523,7 @@ export default function App() {
                 </div>
               ))}
             </div>
+            )}
           </div>
         )}
 
@@ -1649,10 +1590,10 @@ export default function App() {
               {messages.map(m => (
                 <div
                   key={m.id}
-                  className={`flex flex-col ${m.sender === 'user' ? 'items-end' : 'items-start'} animate-message-pop`}
+                  className={`flex flex-col ${m.sender === 'user' ? 'items-end' : 'items-start'}`}
                 >
                   <div className="flex items-center gap-1.5 mb-1 px-1 text-[11px] text-neutral-400">
-                    <span className="font-bold">{m.sender === 'ai' ? 'FinAgent AI' : userName}</span>
+                    <span className="font-bold">{m.sender === 'ai' ? 'FinAgent AI' : userName || 'You'}</span>
                     <span>· {m.timestamp}</span>
                   </div>
 
@@ -1790,12 +1731,25 @@ export default function App() {
               className="p-5 rounded-2xl border"
               style={{ backgroundColor: isDark ? '#111116' : '#ffffff', borderColor: isDark ? '#20202a' : '#e2e8f0' }}
             >
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                <div>
+                  <span className="text-xs text-neutral-400 font-semibold block mb-1">Your Name</span>
+                  <input
+                    type="text"
+                    value={userName}
+                    placeholder="e.g. Alex"
+                    onChange={e => setUserName(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border text-sm font-semibold"
+                    style={{ backgroundColor: isDark ? '#16161e' : '#f8fafc', borderColor: isDark ? '#262634' : '#cbd5e1' }}
+                  />
+                </div>
+
                 <div>
                   <span className="text-xs text-neutral-400 font-semibold block mb-1">Monthly Income ($)</span>
                   <input
                     type="number"
-                    value={monthlyIncome}
+                    value={monthlyIncome || ''}
+                    placeholder="0.00"
                     onChange={e => setMonthlyIncome(parseFloat(e.target.value) || 0)}
                     className="w-full px-3 py-2 rounded-xl border text-sm font-bold font-mono"
                     style={{ backgroundColor: isDark ? '#16161e' : '#f8fafc', borderColor: isDark ? '#262634' : '#cbd5e1' }}
@@ -1806,7 +1760,8 @@ export default function App() {
                   <span className="text-xs text-neutral-400 font-semibold block mb-1">Liquid Bank Cash ($)</span>
                   <input
                     type="number"
-                    value={liquidCash}
+                    value={liquidCash || ''}
+                    placeholder="0.00"
                     onChange={e => setLiquidCash(parseFloat(e.target.value) || 0)}
                     className="w-full px-3 py-2 rounded-xl border text-sm font-bold font-mono"
                     style={{ backgroundColor: isDark ? '#16161e' : '#f8fafc', borderColor: isDark ? '#262634' : '#cbd5e1' }}
@@ -1831,16 +1786,16 @@ export default function App() {
               style={{ backgroundColor: isDark ? '#111116' : '#ffffff', borderColor: isDark ? '#20202a' : '#e2e8f0' }}
             >
               <h3 className="text-sm font-bold mb-3">Category Distribution</h3>
-              <PieChart
-                data={[
-                  { category: 'Housing', amount: 1850 },
-                  { category: 'Groceries', amount: 580 },
-                  { category: 'Dining', amount: 340 },
-                  { category: 'Transportation', amount: 280 },
-                  { category: 'Utilities', amount: 270 },
-                ]}
-                isDark={isDark}
-              />
+              {categoryExpenses.length > 0 ? (
+                <PieChart
+                  data={categoryExpenses}
+                  isDark={isDark}
+                />
+              ) : (
+                <div className="py-8 text-center text-xs text-neutral-400">
+                  Log your first expenses to view real-time category distribution.
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -1880,36 +1835,42 @@ export default function App() {
               className="p-5 rounded-2xl border space-y-3"
               style={{ backgroundColor: isDark ? '#111116' : '#ffffff', borderColor: isDark ? '#20202a' : '#e2e8f0' }}
             >
-              {bills.map(b => (
-                <div
-                  key={b.id}
-                  className="p-3.5 rounded-xl border flex items-center justify-between"
-                  style={{
-                    backgroundColor: isDark ? '#16161e' : '#f8fafc',
-                    borderColor: b.paid ? '#10b98133' : isDark ? '#262634' : '#e2e8f0',
-                    opacity: b.paid ? 0.6 : 1,
-                  }}
-                >
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={() => {
-                        setBills(prev => prev.map(item => (item.id === b.id ? { ...item, paid: !item.paid } : item)));
-                        showToast('Status updated');
-                      }}
-                      className={`w-6 h-6 rounded-lg border flex items-center justify-center cursor-pointer ${
-                        b.paid ? 'bg-emerald-600 border-emerald-500 text-white' : 'border-neutral-500 hover:border-violet-500'
-                      }`}
-                    >
-                      {b.paid && <Check className="w-3.5 h-3.5" />}
-                    </button>
-                    <div>
-                      <div className={`text-sm font-bold ${b.paid ? 'line-through text-neutral-400' : ''}`}>{b.bill_name}</div>
-                      <div className="text-xs text-neutral-400">Due {b.due_date} · {b.category}</div>
-                    </div>
-                  </div>
-                  <span className="text-base font-black font-mono text-violet-400">${b.amount.toFixed(2)}</span>
+              {bills.length === 0 ? (
+                <div className="py-8 text-center text-neutral-400 text-xs">
+                  No upcoming bills scheduled. Click &quot;Add Bill&quot; to keep track of recurring payments.
                 </div>
-              ))}
+              ) : (
+                bills.map(b => (
+                  <div
+                    key={b.id}
+                    className="p-3.5 rounded-xl border flex items-center justify-between"
+                    style={{
+                      backgroundColor: isDark ? '#16161e' : '#f8fafc',
+                      borderColor: b.paid ? '#10b98133' : isDark ? '#262634' : '#e2e8f0',
+                      opacity: b.paid ? 0.6 : 1,
+                    }}
+                  >
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => {
+                          setBills(prev => prev.map(item => (item.id === b.id ? { ...item, paid: !item.paid } : item)));
+                          showToast('Status updated');
+                        }}
+                        className={`w-6 h-6 rounded-lg border flex items-center justify-center cursor-pointer ${
+                          b.paid ? 'bg-emerald-600 border-emerald-500 text-white' : 'border-neutral-500 hover:border-violet-500'
+                        }`}
+                      >
+                        {b.paid && <Check className="w-3.5 h-3.5" />}
+                      </button>
+                      <div>
+                        <div className={`text-sm font-bold ${b.paid ? 'line-through text-neutral-400' : ''}`}>{b.bill_name}</div>
+                        <div className="text-xs text-neutral-400">Due {b.due_date} · {b.category}</div>
+                      </div>
+                    </div>
+                    <span className="text-base font-black font-mono text-violet-400">${b.amount.toFixed(2)}</span>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         )}
@@ -2011,7 +1972,7 @@ export default function App() {
         }}
       >
         <button
-          onClick={() => navigateToScreen('home')}
+          onClick={() => setActiveScreen('home')}
           className={`flex flex-col items-center gap-1 py-1 px-2.5 rounded-lg text-[10px] font-bold ${
             activeScreen === 'home' ? 'text-violet-400' : 'text-neutral-400'
           }`}
@@ -2021,7 +1982,7 @@ export default function App() {
         </button>
 
         <button
-          onClick={() => navigateToScreen('cards')}
+          onClick={() => setActiveScreen('cards')}
           className={`flex flex-col items-center gap-1 py-1 px-2.5 rounded-lg text-[10px] font-bold ${
             activeScreen === 'cards' ? 'text-violet-400' : 'text-neutral-400'
           }`}
@@ -2032,7 +1993,7 @@ export default function App() {
 
         {/* Center Prominent AI Agent Button */}
         <button
-          onClick={() => navigateToScreen('agent')}
+          onClick={() => setActiveScreen('agent')}
           className="flex flex-col items-center gap-0.5 -mt-5"
         >
           <div className="w-12 h-12 rounded-full bg-violet-600 text-white flex items-center justify-center shadow-lg shadow-violet-600/40">
@@ -2042,7 +2003,7 @@ export default function App() {
         </button>
 
         <button
-          onClick={() => navigateToScreen('budget')}
+          onClick={() => setActiveScreen('budget')}
           className={`flex flex-col items-center gap-1 py-1 px-2.5 rounded-lg text-[10px] font-bold ${
             activeScreen === 'budget' ? 'text-violet-400' : 'text-neutral-400'
           }`}
@@ -2052,7 +2013,7 @@ export default function App() {
         </button>
 
         <button
-          onClick={() => navigateToScreen('ocr')}
+          onClick={() => setActiveScreen('ocr')}
           className={`flex flex-col items-center gap-1 py-1 px-2.5 rounded-lg text-[10px] font-bold ${
             activeScreen === 'ocr' ? 'text-violet-400' : 'text-neutral-400'
           }`}

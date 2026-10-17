@@ -18,38 +18,13 @@ type Period = typeof periods[number];
 const getPeriodData = (period: Period, value: number): DataPoint[] => {
   switch (period) {
     case '1W':
-      return [
-        { date: 'Mon', value: value - 320 },
-        { date: 'Tue', value: value - 240 },
-        { date: 'Wed', value: value - 410 },
-        { date: 'Thu', value: value - 150 },
-        { date: 'Fri', value: value + 80 },
-        { date: 'Sat', value: value - 30 },
-        { date: 'Today', value },
-      ];
+      return ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Today'].map(date => ({ date, value }));
     case '1M':
-      return [
-        { date: 'Sep 18', value: value - 1850 },
-        { date: 'Sep 25', value: value - 1200 },
-        { date: 'Oct 02', value: value - 750 },
-        { date: 'Oct 09', value: value - 420 },
-        { date: 'Today', value },
-      ];
+      return ['W1', 'W2', 'W3', 'W4', 'Today'].map(date => ({ date, value }));
     case '3M':
-      return [
-        { date: 'Jul', value: value - 3900 },
-        { date: 'Aug', value: value - 2800 },
-        { date: 'Sep', value: value - 1400 },
-        { date: 'Oct', value },
-      ];
+      return ['M1', 'M2', 'M3', 'Today'].map(date => ({ date, value }));
     case '1Y':
-      return [
-        { date: 'Q4 25', value: value - 8500 },
-        { date: 'Q1 26', value: value - 6200 },
-        { date: 'Q2 26', value: value - 3800 },
-        { date: 'Q3 26', value: value - 1200 },
-        { date: 'Now', value },
-      ];
+      return ['Q1', 'Q2', 'Q3', 'Q4', 'Now'].map(date => ({ date, value }));
   }
 };
 
