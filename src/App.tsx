@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
-import { NetWorthChart } from './components/NetWorthChart';
-import { PieChart } from './components/PieChart';
+import { NetWorthChart } from './components/NetWorthChart.web';
+import { PieChart } from './components/PieChart.web';
 import {
   Wallet,
   CreditCard,
@@ -78,6 +79,21 @@ export interface ChatMessage {
   timestamp: string;
   imagePreview?: string;
 }
+
+const parseStoredArray = <T,>(value: string | null, fallback: T[], key: string): T[] => {
+  if (!value) return fallback;
+
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!Array.isArray(parsed)) {
+      throw new Error(`Stored value for ${key} is not an array`);
+    }
+    return parsed as T[];
+  } catch (error) {
+    console.error(`Failed to parse ${key} from AsyncStorage`, error);
+    return fallback;
+  }
+};
 
 // Initial defaults
 const defaultCards: CreditCardItem[] = [
@@ -203,16 +219,15 @@ const defaultBills: UpcomingBill[] = [
 ];
 
 export default function App() {
+  const [storageReady, setStorageReady] = useState(false);
+
   // Theme state
-  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
-    return (localStorage.getItem('fin_theme') as 'dark' | 'light') || 'dark';
-  });
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const isDark = theme === 'dark';
 
   const toggleTheme = () => {
     const next = isDark ? 'light' : 'dark';
     setTheme(next);
-    localStorage.setItem('fin_theme', next);
   };
 
   useEffect(() => {
@@ -232,33 +247,70 @@ export default function App() {
   const [liquidCash, setLiquidCash] = useState<number>(12850.0);
 
   // Cards & Transactions
-  const [cards, setCards] = useState<CreditCardItem[]>(() => {
-    const saved = localStorage.getItem('fin_cards');
-    return saved ? JSON.parse(saved) : defaultCards;
-  });
-
-  const [transactions, setTransactions] = useState<TransactionItem[]>(() => {
-    const saved = localStorage.getItem('fin_transactions');
-    return saved ? JSON.parse(saved) : defaultTransactions;
-  });
-
-  const [bills, setBills] = useState<UpcomingBill[]>(() => {
-    const saved = localStorage.getItem('fin_bills');
-    return saved ? JSON.parse(saved) : defaultBills;
-  });
-
-  // Sync to localStorage
-  useEffect(() => {
-    localStorage.setItem('fin_cards', JSON.stringify(cards));
-  }, [cards]);
+  const [cards, setCards] = useState<CreditCardItem[]>(defaultCards);
+  const [transactions, setTransactions] = useState<TransactionItem[]>(defaultTransactions);
+  const [bills, setBills] = useState<UpcomingBill[]>(defaultBills);
 
   useEffect(() => {
-    localStorage.setItem('fin_transactions', JSON.stringify(transactions));
-  }, [transactions]);
+    let isMounted = true;
+
+    const loadStoredState = async () => {
+      try {
+        const entries = await AsyncStorage.multiGet([
+          'fin_theme',
+          'fin_cards',
+          'fin_transactions',
+          'fin_bills',
+        ]);
+        if (!isMounted) return;
+
+        const stored = Object.fromEntries(entries);
+        if (stored.fin_theme === 'dark' || stored.fin_theme === 'light') {
+          setTheme(stored.fin_theme);
+        }
+        setCards(parseStoredArray(stored.fin_cards, defaultCards, 'fin_cards'));
+        setTransactions(parseStoredArray(stored.fin_transactions, defaultTransactions, 'fin_transactions'));
+        setBills(parseStoredArray(stored.fin_bills, defaultBills, 'fin_bills'));
+        setStorageReady(true);
+      } catch (error) {
+        console.error('Failed to load app state from AsyncStorage', error);
+      }
+    };
+
+    void loadStoredState();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Persist only after stored values have been hydrated.
+  useEffect(() => {
+    if (!storageReady) return;
+    void AsyncStorage.setItem('fin_theme', theme).catch(error => {
+      console.error('Failed to save fin_theme to AsyncStorage', error);
+    });
+  }, [storageReady, theme]);
 
   useEffect(() => {
-    localStorage.setItem('fin_bills', JSON.stringify(bills));
-  }, [bills]);
+    if (!storageReady) return;
+    void AsyncStorage.setItem('fin_cards', JSON.stringify(cards)).catch(error => {
+      console.error('Failed to save fin_cards to AsyncStorage', error);
+    });
+  }, [storageReady, cards]);
+
+  useEffect(() => {
+    if (!storageReady) return;
+    void AsyncStorage.setItem('fin_transactions', JSON.stringify(transactions)).catch(error => {
+      console.error('Failed to save fin_transactions to AsyncStorage', error);
+    });
+  }, [storageReady, transactions]);
+
+  useEffect(() => {
+    if (!storageReady) return;
+    void AsyncStorage.setItem('fin_bills', JSON.stringify(bills)).catch(error => {
+      console.error('Failed to save fin_bills to AsyncStorage', error);
+    });
+  }, [storageReady, bills]);
 
   // Derived metrics
   const totalCardDebt = cards.reduce((acc, c) => acc + (c.balance || 0), 0);
