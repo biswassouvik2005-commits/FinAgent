@@ -1,43 +1,38 @@
-import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
+import {
+  ArrowDownLeft,
+  ArrowUpRight,
+  Bot,
+  Calendar,
+  Camera,
+  Check,
+  CheckCircle2,
+  ChevronRight,
+  Copy,
+  CreditCard,
+  Edit3,
+  Home,
+  Layers,
+  Moon,
+  Plus,
+  Receipt,
+  Search,
+  Send,
+  Sparkles,
+  Sun,
+  Trash2
+} from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
 import { NetWorthChart } from './components/NetWorthChart';
 import { PieChart } from './components/PieChart';
-import {
-  Wallet,
-  CreditCard,
-  Bot,
-  Layers,
-  Camera,
-  Calendar,
-  Plus,
-  Send,
-  Sun,
-  Moon,
-  Sparkles,
-  TrendingUp,
-  CheckCircle2,
-  AlertCircle,
-  ArrowUpRight,
-  ArrowDownLeft,
-  Search,
-  Filter,
-  Check,
-  Copy,
-  Trash2,
-  Edit3,
-  DollarSign,
-  ChevronRight,
-  ShieldCheck,
-  Zap,
-  Sliders,
-  Bell,
-  RefreshCw,
-  Home,
-  Receipt,
-  PiggyBank,
-  ArrowRight,
-  Share2
-} from 'lucide-react';
+if (typeof global.localStorage === 'undefined') {
+  (global as any).localStorage = {
+    getItem: () => null,
+    setItem: () => {},
+    removeItem: () => {},
+    clear: () => {}
+  };
+}
 
 export interface CreditCardItem {
   id: string;
@@ -339,47 +334,62 @@ export default function App() {
   });
 
   // Send message to AI Agent
-  const handleSendMessage = async (textOverride?: string) => {
-    const text = textOverride || inputText;
-    if (!text.trim() || isLoadingChat) return;
+  const handleSendMessage = async (userText: string = inputText) => {
+    if (!userText.trim()) return;
 
-    const userMsg: ChatMessage = {
-      id: `u-${Date.now()}`,
-      text,
+    // 1. Show the user's message with required ID and timestamp
+    const newMessage: ChatMessage = {
+      id: `m-${Date.now()}`,
+      text: userText,
       sender: 'user',
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     };
 
-    setMessages(prev => [...prev, userMsg]);
-    if (!textOverride) setInputText('');
+    setMessages((prev) => [...prev, newMessage]);
+    setInputText(''); // Clear the input field
     setIsLoadingChat(true);
 
     try {
-      const response = await axios.post('/api/chat', {
-        message: text,
-        userContext: getUserContext(),
+      // 2. Fetch Request to Gemini API
+      const API_KEY = "AQ.Ab8RN6J2p2avPS0x_golP47tuHGFHHZMJGeKmDtOZP7NdfMQmg"; 
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${API_KEY}`;
+
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{ text: userText }]
+          }]
+        })
       });
 
-      const data = response.data;
-      const aiMsg: ChatMessage = {
-        id: `ai-${Date.now()}`,
-        text: data.ai_reply || 'Analysis complete.',
-        sender: 'ai',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      };
+      const data = await response.json();
+      
+      if (data.error) {
+        throw new Error(data.error.message);
+      }
 
-      setMessages(prev => [...prev, aiMsg]);
-    } catch (err) {
-      console.warn('AI chat error:', err);
-      setMessages(prev => [
-        ...prev,
-        {
-          id: `ai-${Date.now()}`,
-          text: `Based on your ${cards.length} cards ($${totalCardDebt.toLocaleString()} balance across $${totalCreditLimit.toLocaleString()} limits), your credit utilization is ${creditUtilization.toFixed(1)}%. I recommend prioritizing the card with the highest APR to save on interest.`,
-          sender: 'ai',
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        },
-      ]);
+      const aiReply = data.candidates[0].content.parts[0].text;
+
+      // 3. Show the real AI response with required properties
+      setMessages((prev) => [...prev, { 
+        id: `ai-${Date.now()}`, 
+        text: aiReply, 
+        sender: 'ai', 
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
+      }]);
+
+    } catch (error) {
+      console.error("Error connecting to Gemini:", error);
+      setMessages((prev) => [...prev, { 
+        id: `err-${Date.now()}`, 
+        sender: 'ai', 
+        text: "Connection error. Check your API key and network.", 
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
+      }]);
     } finally {
       setIsLoadingChat(false);
     }
