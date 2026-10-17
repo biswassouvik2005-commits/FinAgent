@@ -27,7 +27,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import axios from 'axios';
-import api from '../lib/api';
+import api, { resolveDefaultApiUrl, setCustomApiUrl, resetApiUrlToDefault } from '../lib/api';
 import { NetWorthChart } from './NetWorthChart';
 import { PieChart, type CategoryItem } from './PieChart';
 
@@ -249,6 +249,7 @@ function Field({
   placeholder,
   keyboardType = 'default',
   maxLength,
+  autoCapitalize,
 }: {
   label: string;
   value: string;
@@ -257,6 +258,7 @@ function Field({
   placeholder?: string;
   keyboardType?: KeyboardTypeOptions;
   maxLength?: number;
+  autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
 }) {
   return (
     <View style={styles.fieldWrap}>
@@ -268,6 +270,7 @@ function Field({
         placeholderTextColor={palette.muted}
         keyboardType={keyboardType}
         maxLength={maxLength}
+        autoCapitalize={autoCapitalize}
         style={[styles.field, { backgroundColor: palette.input, borderColor: palette.border, color: palette.text }]}
       />
     </View>
@@ -422,6 +425,12 @@ function FinAgentApp() {
   const [onboardCardApr, setOnboardCardApr] = useState('');
   const [onboardCardLast4, setOnboardCardLast4] = useState('');
   const [onboardCardDueDate, setOnboardCardDueDate] = useState('');
+  const [serverUrl, setServerUrl] = useState(api.defaults.baseURL || resolveDefaultApiUrl());
+
+  const updateServerUrl = (val: string) => {
+    setServerUrl(val);
+    void setCustomApiUrl(val);
+  };
 
   const [userName, setUserName] = useState('');
   const [monthlyIncome, setMonthlyIncome] = useState(0);
@@ -507,6 +516,11 @@ function FinAgentApp() {
           setBills([]);
           setMonthlyIncome(0);
           setLiquidCash(0);
+        }
+        const customUrl = await AsyncStorage.getItem('fin_custom_api_url');
+        if (customUrl) {
+          setServerUrl(customUrl);
+          api.defaults.baseURL = customUrl;
         }
         setStorageStatus('ready');
       } catch (error) {
@@ -857,8 +871,8 @@ function FinAgentApp() {
     abortControllerRef.current = abortController;
 
     try {
-      if (Platform.OS !== 'web' && !api.defaults.baseURL) {
-        throw new Error('Set EXPO_PUBLIC_API_URL to your API server address to use AI and receipt scanning.');
+      if (!api.defaults.baseURL) {
+        api.defaults.baseURL = resolveDefaultApiUrl();
       }
       const response = await api.post(
         '/api/chat',
@@ -883,13 +897,17 @@ function FinAgentApp() {
       if (abortController.signal.aborted || error?.name === 'CanceledError' || axios.isCancel(error)) {
         return;
       }
-      const message = error instanceof Error ? error.message : 'Unable to connect to the AI service.';
       console.error('AI chat request failed', error);
+      const isNetworkErr = error?.code === 'ERR_NETWORK' || error?.message?.includes('Network Error') || error?.message?.includes('Failed to fetch');
+      const targetBase = api.defaults.baseURL || resolveDefaultApiUrl();
+      const message = isNetworkErr
+        ? `Cannot reach backend at ${targetBase}. Please make sure your server is running ("npm run dev" or "npm start").`
+        : error instanceof Error ? error.message : 'Unable to connect to the AI service.';
       setApiError(message);
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       setMessages(previous => [...previous, {
         id: `ai-${Date.now()}`,
-        text: `I could not reach the AI service. ${message}`,
+        text: `I could not reach the AI service: ${message}`,
         sender: 'ai',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       }]);
@@ -926,8 +944,8 @@ function FinAgentApp() {
       if (result.canceled) return;
       const asset = result.assets[0];
       if (!asset?.base64) throw new Error('The selected image could not be read. Please select another image.');
-      if (Platform.OS !== 'web' && !api.defaults.baseURL) {
-        throw new Error('Set EXPO_PUBLIC_API_URL to your API server address to use AI and receipt scanning.');
+      if (!api.defaults.baseURL) {
+        api.defaults.baseURL = resolveDefaultApiUrl();
       }
 
       const response = await api.post('/api/receipt', {
@@ -947,7 +965,11 @@ function FinAgentApp() {
       });
       showToast(`Receipt scanned: ${data.merchant}`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to scan this receipt.';
+      const isNetworkErr = (error as any)?.code === 'ERR_NETWORK' || (error as any)?.message?.includes('Network Error');
+      const targetBase = api.defaults.baseURL || resolveDefaultApiUrl();
+      const message = isNetworkErr
+        ? `Cannot reach backend at ${targetBase}. Please make sure your server is running ("npm run dev" or "npm start").`
+        : error instanceof Error ? error.message : 'Unable to scan this receipt.';
       console.error('Receipt scan failed', error);
       Alert.alert('Receipt scan failed', message);
     } finally {
@@ -1501,6 +1523,30 @@ function FinAgentApp() {
         <View style={styles.rowBetween}>
           <Text style={[styles.bodyStrong, { color: palette.muted }]}>Estimated net worth</Text>
           <Text style={[styles.bodyStrong, { color: palette.green }]}>{formatCurrency(netWorth)}</Text>
+        </View>
+        <View style={{ paddingTop: 10, borderTopWidth: 1, borderTopColor: palette.border }}>
+          <Field
+            label="Backend Server Address"
+            value={serverUrl}
+            onChangeText={updateServerUrl}
+            palette={palette}
+            placeholder="http://localhost:3000"
+            autoCapitalize="none"
+          />
+          <View style={[styles.rowBetween, { marginTop: -4, marginBottom: 8 }]}>
+            <Text style={[styles.caption, { color: palette.muted }]}>Auto: {resolveDefaultApiUrl()}</Text>
+            <AppButton
+              label="Reset URL"
+              variant="quiet"
+              compact
+              palette={palette}
+              onPress={async () => {
+                const def = await resetApiUrlToDefault();
+                setServerUrl(def);
+                showToast('Server URL reset to ' + def);
+              }}
+            />
+          </View>
         </View>
         <View style={[styles.rowBetween, styles.topGap, { paddingTop: 12, borderTopWidth: 1, borderTopColor: palette.border }]}>
           <Text style={[styles.caption, { color: palette.muted }]}>Start over with a clean slate</Text>
