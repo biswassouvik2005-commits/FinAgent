@@ -413,9 +413,25 @@ export default function App() {
     chatAbortControllerRef.current = abortController;
 
     try {
-      // 2. Fetch Request to Gemini API
+      // 2. Fetch Request to Gemini API with full user financial grounding
       const API_KEY = "AQ.Ab8RN6J2p2avPS0x_golP47tuHGFHHZMJGeKmDtOZP7NdfMQmg"; 
       const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${API_KEY}`;
+
+      const systemPrompt = `You are FinAgent, a personal AI Financial Advisor.
+STRICT RULE: ONLY use the user's real data provided below. NEVER fabricate or assume hardcoded credit cards, debt, or income.
+If a financial parameter is missing or zero, tell the user to add it in the app.
+
+User's Live Profile:
+- Monthly Income: $${monthlyIncome.toFixed(2)}
+- Liquid Bank Cash: $${liquidCash.toFixed(2)}
+- Connected Credit Cards: ${JSON.stringify(cards)}
+- Total Card Debt: $${totalCardDebt.toFixed(2)}
+- Total Credit Line: $${totalCreditLimit.toFixed(2)}
+- Aggregate Utilization: ${creditUtilization.toFixed(1)}%
+- Upcoming Bills: ${JSON.stringify(bills)}
+- Recent Transactions: ${JSON.stringify(transactions.slice(0, 10))}
+
+User Message: "${userText}"`;
 
       const response = await fetch(url, {
         method: "POST",
@@ -425,7 +441,7 @@ export default function App() {
         },
         body: JSON.stringify({
           contents: [{
-            parts: [{ text: userText }]
+            parts: [{ text: systemPrompt }]
           }]
         })
       });
@@ -735,7 +751,7 @@ export default function App() {
                   <input
                     type="text"
                     maxLength={4}
-                    placeholder="4821"
+                    placeholder="1234"
                     value={cardFormLast4}
                     onChange={e => setCardFormLast4(e.target.value)}
                     className="w-full px-3.5 py-2 rounded-xl text-sm border outline-none"
@@ -753,7 +769,7 @@ export default function App() {
                   <input
                     type="number"
                     step="0.01"
-                    placeholder="1200.00"
+                    placeholder="0.00"
                     value={cardFormBalance}
                     onChange={e => setCardFormBalance(e.target.value)}
                     className="w-full px-3.5 py-2 rounded-xl text-sm border outline-none"
@@ -769,7 +785,7 @@ export default function App() {
                   <input
                     type="number"
                     step="0.01"
-                    placeholder="8000.00"
+                    placeholder="0.00"
                     value={cardFormLimit}
                     onChange={e => setCardFormLimit(e.target.value)}
                     className="w-full px-3.5 py-2 rounded-xl text-sm border outline-none"
@@ -787,7 +803,7 @@ export default function App() {
                   <input
                     type="number"
                     step="0.01"
-                    placeholder="22.49"
+                    placeholder="0.00"
                     value={cardFormApr}
                     onChange={e => setCardFormApr(e.target.value)}
                     className="w-full px-3.5 py-2 rounded-xl text-sm border outline-none"
@@ -802,7 +818,7 @@ export default function App() {
                   <label className="block text-xs font-semibold text-neutral-400 mb-1">Due Date</label>
                   <input
                     type="text"
-                    placeholder="Nov 15"
+                    placeholder="e.g. 15th of month"
                     value={cardFormDueDate}
                     onChange={e => setCardFormDueDate(e.target.value)}
                     className="w-full px-3.5 py-2 rounded-xl text-sm border outline-none"
@@ -887,7 +903,7 @@ export default function App() {
                     type="number"
                     step="0.01"
                     required
-                    placeholder="45.00"
+                    placeholder="0.00"
                     value={txFormAmount}
                     onChange={e => setTxFormAmount(e.target.value)}
                     className="w-full px-3.5 py-2 rounded-xl text-sm border outline-none"
@@ -1662,7 +1678,7 @@ export default function App() {
               {[
                 'Which card should I pay first?',
                 'Audit my credit utilization ratio',
-                'Can I afford a $400 flight right now?',
+                'How much should I allocate to savings?',
                 '50/30/20 budget breakdown for my income',
               ].map((q, i) => (
                 <button
@@ -1912,7 +1928,7 @@ export default function App() {
                   if (!bill_name) return;
                   const amount = parseFloat(prompt('Amount ($):') || '0');
                   if (!amount) return;
-                  const due_date = prompt('Due Date (e.g. Nov 25):') || 'Nov 25';
+                  const due_date = prompt('Due Date (e.g. 15th):') || 'End of month';
                   setBills(prev => [
                     ...prev,
                     { id: `b-${Date.now()}`, bill_name, amount, due_date, paid: false, category: 'Recurring' },

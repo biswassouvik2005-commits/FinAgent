@@ -31,27 +31,6 @@ function getGeminiClient(): GoogleGenAI | null {
   });
 }
 
-// Mock database / default state for financial assistant
-const financeData = {
-  totalBalance: 10950.0,
-  budgetStatus: 'On Track',
-  portfolioHealth: 'Healthy (8.4% YTD)',
-  categoryBreakdown: [
-    { category: 'Housing', amount: 2400 },
-    { category: 'Groceries', amount: 850 },
-    { category: 'Dining & Cafes', amount: 450 },
-    { category: 'Transportation', amount: 380 },
-    { category: 'Utilities & Bills', amount: 320 },
-    { category: 'Entertainment', amount: 290 },
-  ],
-  upcomingBills: [
-    { bill_name: 'Electric Utility', due_date: 'Nov 02', amount: 145.0 },
-    { bill_name: 'High-Speed Fiber', due_date: 'Nov 05', amount: 80.0 },
-    { bill_name: 'Auto Insurance', due_date: 'Nov 12', amount: 175.5 },
-    { bill_name: 'Health Care Premium', due_date: 'Nov 15', amount: 260.0 },
-  ],
-};
-
 // --- POST /login ---
 app.post('/login', (req, res) => {
   const { username, password } = req.body || {};
@@ -59,7 +38,7 @@ app.post('/login', (req, res) => {
     return res.status(400).json({ error: 'Username is required' });
   }
 
-  // Generate mock session token
+  // Generate session token
   const access_token = `fin_tok_${Buffer.from(username).toString('base64')}_${Date.now()}`;
   return res.json({
     access_token,
@@ -77,12 +56,12 @@ app.post('/api/chat', async (req, res) => {
     return res.status(400).json({ error: 'Message is required' });
   }
 
-  // Extract user-entered credit cards, accounts, and financial profile
+  // Extract ONLY user-entered credit cards, accounts, and financial profile (zero hardcoded mock data)
   const userCards = Array.isArray(userContext?.cards) ? userContext.cards : [];
-  const userBalance = typeof userContext?.totalBalance === 'number' ? userContext.totalBalance : financeData.totalBalance;
-  const userIncome = typeof userContext?.monthlyIncome === 'number' ? userContext.monthlyIncome : 5200;
-  const userBills = Array.isArray(userContext?.bills) && userContext.bills.length ? userContext.bills : financeData.upcomingBills;
-  const userBreakdown = Array.isArray(userContext?.breakdown) && userContext.breakdown.length ? userContext.breakdown : financeData.categoryBreakdown;
+  const userBalance = typeof userContext?.totalBalance === 'number' && Number.isFinite(userContext.totalBalance) ? userContext.totalBalance : 0;
+  const userIncome = typeof userContext?.monthlyIncome === 'number' && Number.isFinite(userContext.monthlyIncome) ? userContext.monthlyIncome : 0;
+  const userBills = Array.isArray(userContext?.bills) ? userContext.bills : [];
+  const userBreakdown = Array.isArray(userContext?.breakdown) ? userContext.breakdown : [];
 
   // Calculate card metrics
   const totalCardDebt = userCards.reduce((acc: number, c: any) => acc + (Number(c.balance) || 0), 0);
@@ -99,7 +78,7 @@ app.post('/api/chat', async (req, res) => {
 Your persona: Expert personal financial advisor, automated budgeting strategist, and credit card auditor.
 User query: "${message}".
 
-User's Real Profile & Credit Cards (USE THESE ACTUAL USER INPUTS IN YOUR ADVICE):
+User's Real Profile & Credit Cards (USE ONLY THESE ACTUAL USER INPUTS IN YOUR ADVICE. NEVER INVENT OR HARDCODE AMOUNTS):
 - Liquid Cash / Checking: $${userBalance.toFixed(2)}
 - Stated Monthly Income: $${userIncome.toFixed(2)}
 - User's Connected Credit Cards & Accounts: ${JSON.stringify(userCards)}
@@ -110,9 +89,9 @@ User's Real Profile & Credit Cards (USE THESE ACTUAL USER INPUTS IN YOUR ADVICE)
 - Upcoming Bills: ${JSON.stringify(userBills)}
 
 Directives:
-1. When asked about cards, debts, limits, or which card to pay first, analyze their specific cards, comparing APRs and balances directly.
-2. Emphasize keeping credit utilization below 30% (ideally under 10%).
-3. Calculate real payments based on their user input.
+1. Ground your answers 100% in the user's provided numbers. If a value is 0 or unset (e.g. no cards, no income), prompt the user to input it in the app.
+2. When asked about cards, debts, limits, or which card to pay first, analyze their specific cards, comparing APRs and balances directly.
+3. Emphasize keeping credit utilization below 30% (ideally under 10%).
 4. Keep the response friendly, structured, and actionable.`,
         config: {
           responseMimeType: 'application/json',
@@ -176,30 +155,45 @@ Directives:
 
   if (lower.includes('card') || lower.includes('credit') || lower.includes('utilization') || lower.includes('apr') || lower.includes('debt')) {
     if (userCards.length === 0) {
-      replyText = `💳 **Credit Cards & Debt Analysis**\n\nYou currently haven't added any credit cards yet. Go to the **Cards & Accounts** tab to add your credit cards (balance, limit, APR, due date) so I can calculate your credit utilization ratio and optimal debt payoff strategy!`;
+      replyText = `💳 **Credit Cards & Debt Analysis**\n\nYou currently haven't added any credit cards yet. Go to the **Cards** tab to add your credit cards (balance, limit, APR, due date) so I can calculate your credit utilization ratio and optimal debt payoff strategy!`;
     } else {
       const highestAprCard = [...userCards].sort((a: any, b: any) => (Number(b.apr) || 0) - (Number(a.apr) || 0))[0];
-      const highestBalanceCard = [...userCards].sort((a: any, b: any) => (Number(b.balance) || 0) - (Number(a.balance) || 0))[0];
 
       replyText = `💳 **Credit Cards & Debt Optimization Audit**\n\n• **Connected Cards**: ${userCards.length} (${userCards.map((c: any) => `${c.cardName} ending in ${c.last4 || '••••'}`).join(', ')})\n• **Total Outstanding Balance**: $${totalCardDebt.toLocaleString('en-US', { minimumFractionDigits: 2 })}\n• **Total Credit Limit**: $${totalCreditLimit.toLocaleString('en-US', { minimumFractionDigits: 2 })}\n• **Overall Utilization Ratio**: **${cardUtilization}%** (${Number(cardUtilization) <= 30 ? '✅ Healthy (Under 30% threshold)' : '⚠️ Warning: Above recommended 30% ceiling'})\n• **Highest APR Card**: **${highestAprCard.cardName}** at **${highestAprCard.apr}% APR** ($${Number(highestAprCard.balance).toFixed(2)} balance). I recommend prioritizing this card first (Avalanche Method) to minimize compound interest fees!`;
     }
-  } else if (lower.includes('/budget') || lower.includes('50/30/20') || lower.includes('budget plan') || lower.includes('create monthly budget')) {
-    const needs50 = userIncome * 0.5;
-    const wants30 = userIncome * 0.3;
-    const savings20 = userIncome * 0.2;
-    replyText = `📊 **50/30/20 Monthly Budget Plan (Based on your $${userIncome.toLocaleString()} Income)**\n\n• **Needs (50% Target: $${needs50.toFixed(2)})**: Housing, Groceries, Utilities, Minimum Debt Payments.\n• **Wants (30% Target: $${wants30.toFixed(2)})**: Dining out, Entertainment, Subscriptions.\n• **Savings & Debt Elimination (20% Target: $${savings20.toFixed(2)})**: High-yield emergency fund and extra credit card principal reduction.\n\nYour stated liquid cash reserve is **$${userBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })}**.`;
-    status = 'Optimized';
+  } else if (lower.includes('/budget') || lower.includes('50/30/20') || lower.includes('budget plan') || lower.includes('create monthly budget') || lower.includes('budget')) {
+    if (userIncome <= 0) {
+      replyText = `📊 **50/30/20 Monthly Budget Plan**\n\nYou haven't configured a monthly income yet. Please go to the **Budget** tab and enter your monthly income so I can calculate your exact 50% Needs, 30% Wants, and 20% Savings targets!`;
+    } else {
+      const needs50 = userIncome * 0.5;
+      const wants30 = userIncome * 0.3;
+      const savings20 = userIncome * 0.2;
+      replyText = `📊 **50/30/20 Monthly Budget Plan (Based on your $${userIncome.toLocaleString()} Income)**\n\n• **Needs (50% Target: $${needs50.toFixed(2)})**: Housing, Groceries, Utilities, Minimum Debt Payments.\n• **Wants (30% Target: $${wants30.toFixed(2)})**: Dining out, Entertainment, Subscriptions.\n• **Savings & Debt Elimination (20% Target: $${savings20.toFixed(2)})**: High-yield emergency fund and extra credit card principal reduction.\n\nYour stated liquid cash reserve is **$${userBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })}**.`;
+      status = 'Optimized';
+    }
   } else if (lower.includes('/trends') || lower.includes('overspend') || lower.includes('habit') || lower.includes('spending habit')) {
     replyText = `💡 **Spending Habits & Credit Utilization Audit**\n\n• **Credit Utilization**: Currently standing at **${cardUtilization}%** across all registered credit cards.\n• **Cash-to-Debt Ratio**: You have $${userBalance.toFixed(2)} liquid cash vs $${totalCardDebt.toFixed(2)} total credit card balances.\n• **Recommendation**: Keeping individual card utilization below 10% on reporting dates optimizes FICO score gains.`;
-  } else if (lower.includes('/goal') || lower.includes('emergency fund') || lower.includes('savings goal') || lower.includes('target')) {
-    replyText = `🎯 **Savings Goal & Milestone Forecast**\n\n• **Liquid Reserves**: $${userBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })}\n• **Safety Margin**: At your monthly income of $${userIncome.toLocaleString()}, your current cash represents **${(userBalance / (userIncome * 0.7)).toFixed(1)} months** of essential baseline runway.\n• **Next Milestone**: Aim for 3 to 6 months of essential reserves before investing aggressively in non-tax-advantaged accounts.`;
+  } else if (lower.includes('/goal') || lower.includes('emergency fund') || lower.includes('savings goal') || lower.includes('target') || lower.includes('saving')) {
+    if (userIncome <= 0) {
+      replyText = `🎯 **Savings Goal & Milestone Forecast**\n\n• **Liquid Reserves**: $${userBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })}\n\nPlease configure your monthly income in the **Budget** tab so I can project your emergency fund runway and savings timeline.`;
+    } else {
+      replyText = `🎯 **Savings Goal & Milestone Forecast**\n\n• **Liquid Reserves**: $${userBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })}\n• **Safety Margin**: At your monthly income of $${userIncome.toLocaleString()}, your current cash represents **${(userBalance / (userIncome * 0.7)).toFixed(1)} months** of essential baseline runway.\n• **Next Milestone**: Aim for 3 to 6 months of essential reserves before investing aggressively in non-tax-advantaged accounts.`;
+    }
   } else if (lower.includes('/report') || lower.includes('health report') || lower.includes('summary') || lower.includes('financial report')) {
     replyText = `📈 **Personal Finance Executive Health Report**\n\n• **Net Liquid Balance**: $${userBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })}\n• **Total Credit Card Debt**: $${totalCardDebt.toLocaleString('en-US', { minimumFractionDigits: 2 })}\n• **Aggregate Credit Utilization**: ${cardUtilization}%\n• **Net Worth Estimate**: $${(userBalance - totalCardDebt).toLocaleString('en-US', { minimumFractionDigits: 2 })}\n• **Health Assessment**: ${Number(cardUtilization) <= 30 ? 'Strong stability with controlled credit exposure.' : 'Focus on paying down high-APR credit card balances.'}`;
   } else if (lower.includes('bill') || lower.includes('upcoming') || lower.includes('due') || lower.includes('subscription')) {
-    const totalDue = userBills.reduce((acc: number, b: any) => acc + (Number(b.amount) || 0), 0);
-    replyText = `🔔 **Upcoming Bills & Payment Schedule**\n\nYou have ${userBills.length} recorded obligations totaling **$${totalDue.toFixed(2)}**:\n${userBills.slice(0, 5).map((b: any) => `• ${b.bill_name}: $${Number(b.amount).toFixed(2)} (${b.due_date || 'Due soon'})`).join('\n')}\n\nYour liquid balance of $${userBalance.toLocaleString()} provides ample coverage for all pending dues.`;
+    if (userBills.length === 0) {
+      replyText = `🔔 **Upcoming Bills & Payment Schedule**\n\nYou currently have no upcoming bills recorded. Go to the **Bills** tab to add your recurring subscriptions and payments to track due dates!`;
+    } else {
+      const totalDue = userBills.reduce((acc: number, b: any) => acc + (Number(b.amount) || 0), 0);
+      replyText = `🔔 **Upcoming Bills & Payment Schedule**\n\nYou have ${userBills.length} recorded obligations totaling **$${totalDue.toFixed(2)}**:\n${userBills.slice(0, 5).map((b: any) => `• ${b.bill_name}: $${Number(b.amount).toFixed(2)} (${b.due_date || 'Due soon'})`).join('\n')}\n\nYour liquid balance of $${userBalance.toLocaleString()} provides coverage for your recorded dues.`;
+    }
   } else {
-    replyText = `Hello! I'm your **Taskade Personal Finance Manager Agent**.\n\nI'm customized with your real credit cards and financial inputs:\n• **${userCards.length} Credit Cards** registered (Overall Utilization: **${cardUtilization}%**)\n• **Liquid Cash Balance**: $${userBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })}\n• **Monthly Income**: $${userIncome.toLocaleString('en-US', { minimumFractionDigits: 2 })}\n\nAsk me anything about which card to pay first, reducing interest, or optimizing your 50/30/20 budget!`;
+    if (userCards.length === 0 && userBalance === 0 && userIncome === 0) {
+      replyText = `Hello! I am your **FinAgent AI Financial Advisor**.\n\nYou have not entered any accounts, credit cards, or monthly income yet. Add your accounts in the app tabs or enter your numbers directly in chat, and I will analyze your finances using 100% real data!`;
+    } else {
+      replyText = `Hello! I'm your **FinAgent AI Financial Advisor**.\n\nI'm customized with your real credit cards and financial inputs:\n• **${userCards.length} Credit Cards** registered (Overall Utilization: **${cardUtilization}%**)\n• **Liquid Cash Balance**: $${userBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })}\n• **Monthly Income**: $${userIncome.toLocaleString('en-US', { minimumFractionDigits: 2 })}\n\nAsk me anything about which card to pay first, reducing interest, or optimizing your 50/30/20 budget!`;
+    }
   }
 
   return res.json({
@@ -236,7 +230,7 @@ app.post('/api/receipt', async (req, res) => {
               },
             },
             {
-              text: 'Extract the merchant name, total receipt amount as a number, and expense category (e.g. Groceries, Dining, Electronics, Transportation, Utilities, Shopping) from this receipt image.',
+              text: 'Extract the merchant name, total receipt amount as a number, and expense category (e.g. Groceries, Dining, Electronics, Transportation, Utilities, Shopping) from this receipt image. Return ONLY what is visible on the image.',
             },
           ],
         },
@@ -256,33 +250,23 @@ app.post('/api/receipt', async (req, res) => {
 
       if (response.text) {
         const parsed = JSON.parse(response.text.trim());
-        // Also add receipt amount to groceries/category in financeData
-        financeData.totalBalance -= Number(parsed.total) || 0;
-        return res.json({
-          merchant: parsed.merchant || 'Retail Merchant',
-          total: Number(parsed.total) || 32.5,
-          category: parsed.category || 'Shopping',
-        });
+        const total = Number(parsed.total);
+        if (Number.isFinite(total) && total > 0 && parsed.merchant) {
+          return res.json({
+            merchant: String(parsed.merchant).trim(),
+            total,
+            category: parsed.category || 'Shopping',
+          });
+        }
       }
     } catch (err: any) {
-      console.warn('[FinAgent] Gemini receipt OCR fallback active:', err?.message || 'unknown error');
+      console.warn('[FinAgent] Gemini receipt OCR error:', err?.message || 'unknown error');
     }
   }
 
-  // Realistic fallback OCR result
-  const sampleVendors = [
-    { merchant: 'Trader Joe’s Market', total: 47.82, category: 'Groceries' },
-    { merchant: 'Blue Bottle Coffee', total: 14.5, category: 'Dining & Cafes' },
-    { merchant: 'Shell Gasoline', total: 52.3, category: 'Transportation' },
-    { merchant: 'Target Superstore', total: 68.95, category: 'Groceries & Home' },
-  ];
-  const selected = sampleVendors[Math.floor(Math.random() * sampleVendors.length)];
-  financeData.totalBalance -= selected.total;
-
-  return res.json({
-    merchant: selected.merchant,
-    total: selected.total,
-    category: selected.category,
+  // No mock/fake vendor fallback: return clear error prompting user input
+  return res.status(422).json({
+    error: 'Could not extract valid receipt details from image. Please enter the transaction details manually.',
   });
 });
 

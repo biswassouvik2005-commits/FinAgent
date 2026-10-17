@@ -1221,7 +1221,7 @@ function FinAgentApp() {
         {[
           'Which card should I pay first?',
           'Audit my credit utilization',
-          'Can I afford a $400 flight?',
+          'How much should I allocate to savings?',
           'Review my monthly budget',
         ].map(question => (
           <Pressable
@@ -1474,12 +1474,12 @@ function FinAgentApp() {
           <Field label="Card name" value={cardName} onChangeText={setCardName} palette={palette} placeholder="e.g. Chase Sapphire" />
           <Text style={[styles.fieldLabel, { color: palette.muted }]}>Network</Text>
           <ChoiceChips values={['visa', 'mastercard', 'amex', 'discover'] as const} selected={cardNetwork} onSelect={setCardNetwork} palette={palette} />
-          <Field label="Last four digits" value={cardLast4} onChangeText={setCardLast4} palette={palette} placeholder="4821" keyboardType="number-pad" maxLength={4} />
-          <Field label="Current balance" value={cardBalance} onChangeText={setCardBalance} palette={palette} placeholder="1200.00" keyboardType="decimal-pad" />
-          <Field label="Credit limit" value={cardLimit} onChangeText={setCardLimit} palette={palette} placeholder="8000.00" keyboardType="decimal-pad" />
+          <Field label="Last four digits" value={cardLast4} onChangeText={setCardLast4} palette={palette} placeholder="1234" keyboardType="number-pad" maxLength={4} />
+          <Field label="Current balance" value={cardBalance} onChangeText={setCardBalance} palette={palette} placeholder="0.00" keyboardType="decimal-pad" />
+          <Field label="Credit limit" value={cardLimit} onChangeText={setCardLimit} palette={palette} placeholder="0.00" keyboardType="decimal-pad" />
           <View style={styles.formRow}>
-            <View style={styles.flex}><Field label="APR (%)" value={cardApr} onChangeText={setCardApr} palette={palette} keyboardType="decimal-pad" /></View>
-            <View style={styles.flex}><Field label="Due date" value={cardDueDate} onChangeText={setCardDueDate} palette={palette} placeholder="Nov 15" /></View>
+            <View style={styles.flex}><Field label="APR (%)" value={cardApr} onChangeText={setCardApr} palette={palette} placeholder="0.00" keyboardType="decimal-pad" /></View>
+            <View style={styles.flex}><Field label="Due date" value={cardDueDate} onChangeText={setCardDueDate} palette={palette} placeholder="e.g. 15th" /></View>
           </View>
           <View style={styles.modalButtons}>
             <AppButton label="Cancel" onPress={() => setModal(null)} palette={palette} variant="secondary" />
@@ -1494,7 +1494,7 @@ function FinAgentApp() {
           <Text style={[styles.modalTitle, { color: palette.text }]}>Log transaction</Text>
           <ChoiceChips values={['expense', 'income'] as const} selected={txType} onSelect={setTxType} palette={palette} />
           <Field label="Merchant / payee" value={txTitle} onChangeText={setTxTitle} palette={palette} placeholder="e.g. Target, salary" />
-          <Field label="Amount" value={txAmount} onChangeText={setTxAmount} palette={palette} placeholder="45.00" keyboardType="decimal-pad" />
+          <Field label="Amount" value={txAmount} onChangeText={setTxAmount} palette={palette} placeholder="0.00" keyboardType="decimal-pad" />
           <Text style={[styles.fieldLabel, { color: palette.muted }]}>Category</Text>
           <ChoiceChips values={categories} selected={txCategory} onSelect={setTxCategory} palette={palette} />
           <Text style={[styles.fieldLabel, { color: palette.muted }]}>Account / card used</Text>
@@ -1511,8 +1511,8 @@ function FinAgentApp() {
         <>
           <Text style={[styles.modalTitle, { color: palette.text }]}>Add a bill</Text>
           <Field label="Bill name" value={billName} onChangeText={setBillName} palette={palette} placeholder="Internet, insurance…" />
-          <Field label="Amount" value={billAmount} onChangeText={setBillAmount} palette={palette} placeholder="80.00" keyboardType="decimal-pad" />
-          <Field label="Due date" value={billDueDate} onChangeText={setBillDueDate} palette={palette} placeholder="e.g. Nov 25" />
+          <Field label="Amount" value={billAmount} onChangeText={setBillAmount} palette={palette} placeholder="0.00" keyboardType="decimal-pad" />
+          <Field label="Due date" value={billDueDate} onChangeText={setBillDueDate} palette={palette} placeholder="e.g. 1st of month" />
           <View style={styles.modalButtons}>
             <AppButton label="Cancel" onPress={() => setModal(null)} palette={palette} variant="secondary" />
             <AppButton label="Save bill" onPress={saveBill} palette={palette} />
@@ -1526,7 +1526,7 @@ function FinAgentApp() {
         <>
           <Text style={[styles.modalTitle, { color: palette.text }]}>Pay down {card?.cardName}</Text>
           <Text style={[styles.caption, { color: palette.muted }]}>Current balance: {formatCurrency(card?.balance ?? 0)}</Text>
-          <Field label="Payment amount" value={paymentAmount} onChangeText={setPaymentAmount} palette={palette} placeholder="45.00" keyboardType="decimal-pad" />
+          <Field label="Payment amount" value={paymentAmount} onChangeText={setPaymentAmount} palette={palette} placeholder="0.00" keyboardType="decimal-pad" />
           <Text style={[styles.caption, { color: palette.muted }]}>The payment reduces card debt and available cash.</Text>
           <View style={styles.modalButtons}>
             <AppButton label="Cancel" onPress={() => setModal(null)} palette={palette} variant="secondary" />
@@ -1549,7 +1549,7 @@ function FinAgentApp() {
             {[
               'Which card should I pay first?',
               'Audit my credit utilization',
-              'Can I afford a $400 flight?',
+              'How much should I allocate to savings?',
               'Review my monthly budget',
               'Avalanche debt payoff strategy',
             ].map(q => (
