@@ -1,0 +1,8 @@
+{
+  "name": "FinAgent - AI Financial Assistant",
+  "description": "Cross-platform AI financial assistant featuring budget tracking, spending breakdown charts, upcoming bill management, and receipt OCR scanning.",
+  "permissions": [],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
