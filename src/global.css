@@ -46,7 +46,7 @@ body {
 @keyframes screenFadeSlideIn {
   from {
     opacity: 0;
-    transform: translateY(6px) scale(0.996);
+    transform: translateY(5px) scale(0.998);
   }
   to {
     opacity: 1;
@@ -55,13 +55,13 @@ body {
 }
 
 .animate-screen-transition {
-  animation: screenFadeSlideIn 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: screenFadeSlideIn 0.18s cubic-bezier(0.2, 0.9, 0.3, 1) forwards;
 }
 
 @keyframes messagePopIn {
   from {
     opacity: 0;
-    transform: translateY(8px) scale(0.98);
+    transform: translateY(6px) scale(0.985);
   }
   to {
     opacity: 1;
@@ -70,13 +70,13 @@ body {
 }
 
 .animate-message-pop {
-  animation: messagePopIn 0.24s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: messagePopIn 0.16s cubic-bezier(0.2, 0.9, 0.3, 1) forwards;
 }
 
 @keyframes toastSlideIn {
   from {
     opacity: 0;
-    transform: translateY(16px) scale(0.94);
+    transform: translateY(12px) scale(0.96);
   }
   to {
     opacity: 1;
@@ -85,7 +85,7 @@ body {
 }
 
 .animate-toast {
-  animation: toastSlideIn 0.24s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: toastSlideIn 0.2s cubic-bezier(0.2, 0.9, 0.3, 1) forwards;
 }
 
 @keyframes modalBackdropIn {
@@ -95,18 +95,18 @@ body {
   }
   to {
     opacity: 1;
-    backdrop-filter: blur(8px);
+    backdrop-filter: blur(6px);
   }
 }
 
 .animate-modal-backdrop {
-  animation: modalBackdropIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: modalBackdropIn 0.18s cubic-bezier(0.2, 0.9, 0.3, 1) forwards;
 }
 
 @keyframes modalContentIn {
   from {
     opacity: 0;
-    transform: scale(0.94) translateY(12px);
+    transform: scale(0.96) translateY(8px);
   }
   to {
     opacity: 1;
@@ -115,11 +115,32 @@ body {
 }
 
 .animate-modal-content {
-  animation: modalContentIn 0.26s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: modalContentIn 0.2s cubic-bezier(0.2, 0.9, 0.3, 1) forwards;
 }
 
 button, a, input, select {
-  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all 0.14s cubic-bezier(0.2, 0.9, 0.3, 1);
 }
+
+button:active {
+  transform: scale(0.96);
+}
+
+/* Scrollbar refinement */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(150, 150, 150, 0.2);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(150, 150, 150, 0.4);
+}
+
 
 

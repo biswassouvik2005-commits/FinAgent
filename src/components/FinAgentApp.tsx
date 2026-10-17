@@ -371,19 +371,19 @@ function FinAgentApp() {
   };
 
   useEffect(() => {
-    screenFadeAnim.setValue(0.2);
-    screenSlideAnim.setValue(12);
+    screenFadeAnim.setValue(0.35);
+    screenSlideAnim.setValue(8);
     Animated.parallel([
       Animated.timing(screenFadeAnim, {
         toValue: 1,
-        duration: 260,
-        easing: Easing.out(Easing.cubic),
+        duration: 160,
+        easing: Easing.bezier(0.25, 0.1, 0.25, 1),
         useNativeDriver: true,
       }),
       Animated.spring(screenSlideAnim, {
         toValue: 0,
-        friction: 9,
-        tension: 85,
+        friction: 11,
+        tension: 130,
         useNativeDriver: true,
       }),
     ]).start();
@@ -395,12 +395,12 @@ function FinAgentApp() {
         onMoveShouldSetPanResponder: (_evt, gestureState) => {
           return (
             screenHistoryRef.current.length > 1 &&
-            gestureState.dx > 25 &&
-            Math.abs(gestureState.dx) > Math.abs(gestureState.dy) * 1.5
+            gestureState.dx > 16 &&
+            Math.abs(gestureState.dx) > Math.abs(gestureState.dy) * 1.2
           );
         },
         onPanResponderRelease: (_evt, gestureState) => {
-          if (gestureState.dx > 60 && gestureState.vx > 0.2) {
+          if (gestureState.dx > 40 || (gestureState.dx > 20 && gestureState.vx > 0.25)) {
             goBack();
           }
         },
@@ -848,6 +848,44 @@ function FinAgentApp() {
     return [...totals.entries()].map(([category, amount]) => ({ category, amount }));
   }, [transactions]);
 
+  const budgetBreakdown = useMemo(() => {
+    const NEEDS_CATEGORIES = new Set(['housing', 'rent', 'utilities', 'groceries', 'healthcare', 'bills', 'transport', 'transportation', 'insurance']);
+    const SAVINGS_CATEGORIES = new Set(['savings', 'investment', 'debt', 'credit card payment']);
+
+    let needsSpent = 0;
+    let wantsSpent = 0;
+    let savingsSpent = 0;
+
+    transactions
+      .filter(t => t.type === 'expense')
+      .forEach(t => {
+        const cat = (t.category || '').toLowerCase().trim();
+        if (NEEDS_CATEGORIES.has(cat)) {
+          needsSpent += t.amount;
+        } else if (SAVINGS_CATEGORIES.has(cat)) {
+          savingsSpent += t.amount;
+        } else {
+          wantsSpent += t.amount;
+        }
+      });
+
+    const needsTarget = monthlyIncome * 0.5;
+    const wantsTarget = monthlyIncome * 0.3;
+    const savingsTarget = monthlyIncome * 0.2;
+
+    return {
+      needsSpent,
+      wantsSpent,
+      savingsSpent,
+      needsTarget,
+      wantsTarget,
+      savingsTarget,
+      needsPct: needsTarget > 0 ? Math.min(100, (needsSpent / needsTarget) * 100) : 0,
+      wantsPct: wantsTarget > 0 ? Math.min(100, (wantsSpent / wantsTarget) * 100) : 0,
+      savingsPct: savingsTarget > 0 ? Math.min(100, (savingsSpent / savingsTarget) * 100) : 0,
+    };
+  }, [transactions, monthlyIncome]);
+
   const filteredTransactions = transactions.filter(item => {
     const query = txSearch.trim().toLowerCase();
     const matchesSearch = !query || item.title.toLowerCase().includes(query) || item.category.toLowerCase().includes(query);
@@ -912,35 +950,103 @@ function FinAgentApp() {
         <Text style={[styles.eyebrow, { color: palette.muted }]}>PERSONAL FINANCE OVERVIEW</Text>
         <Text style={[styles.pageTitle, { color: palette.text }]}>Welcome{userName ? `, ${userName}` : ''}</Text>
       </View>
-      <Panel palette={palette}>
+
+      {/* Hero Net Worth Card */}
+      <Panel palette={palette} style={styles.heroPanel}>
         <View style={styles.rowBetween}>
           <Text style={[styles.eyebrow, { color: palette.muted }]}>TOTAL NET WORTH</Text>
-          <Ionicons name="trending-up" size={20} color={palette.green} />
+          <Ionicons name="trending-up" size={18} color={palette.green} />
         </View>
         <Text style={[styles.netWorth, { color: palette.text }]}>{formatCurrency(netWorth)}</Text>
-        <View style={styles.metricRow}>
-          <View style={styles.metric}>
-            <Text style={[styles.caption, { color: palette.muted }]}>Liquid cash</Text>
-            <Text style={[styles.metricValue, { color: palette.green }]}>{formatCurrency(liquidCash, 0)}</Text>
+        <View style={styles.heroStatRow}>
+          <View style={[styles.statChip, { backgroundColor: palette.elevated, borderColor: palette.border }]}>
+            <Text style={[styles.caption, { color: palette.muted }]}>Cash</Text>
+            <Text style={[styles.statChipValue, { color: palette.green }]}>{formatCurrency(liquidCash, 0)}</Text>
           </View>
-          <View style={styles.metric}>
-            <Text style={[styles.caption, { color: palette.muted }]}>Card debt</Text>
-            <Text style={[styles.metricValue, { color: palette.red }]}>{formatCurrency(totalCardDebt, 0)}</Text>
+          <View style={[styles.statChip, { backgroundColor: palette.elevated, borderColor: palette.border }]}>
+            <Text style={[styles.caption, { color: palette.muted }]}>Debt</Text>
+            <Text style={[styles.statChipValue, { color: palette.red }]}>{formatCurrency(totalCardDebt, 0)}</Text>
           </View>
         </View>
         <NetWorthChart currentValue={netWorth} isDark={isDark} />
       </Panel>
 
-      <View style={styles.quickActions}>
-        <AppButton label="Add transaction" icon="add" onPress={openTransactionModal} palette={palette} />
-        <AppButton label="Add card" icon="card-outline" onPress={openNewCard} palette={palette} variant="secondary" />
-        <AppButton label="Scan receipt" icon="camera-outline" onPress={chooseReceiptSource} palette={palette} variant="secondary" />
+      {/* Modern Quick Action Pills */}
+      <View style={styles.quickActionsRow}>
+        <Pressable
+          accessibilityRole="button"
+          onPress={openTransactionModal}
+          style={({ pressed }) => [
+            styles.quickActionPill,
+            {
+              backgroundColor: palette.accent,
+              transform: [{ scale: pressed ? 0.94 : 1 }],
+            },
+          ]}
+        >
+          <Ionicons name="add" size={16} color="#ffffff" />
+          <Text style={[styles.quickActionText, { color: '#ffffff' }]}>Expense</Text>
+        </Pressable>
+
+        <Pressable
+          accessibilityRole="button"
+          onPress={openNewCard}
+          style={({ pressed }) => [
+            styles.quickActionPill,
+            {
+              backgroundColor: palette.surface,
+              borderColor: palette.border,
+              borderWidth: 1,
+              transform: [{ scale: pressed ? 0.94 : 1 }],
+            },
+          ]}
+        >
+          <Ionicons name="card-outline" size={16} color={palette.accent} />
+          <Text style={[styles.quickActionText, { color: palette.text }]}>Card</Text>
+        </Pressable>
+
+        <Pressable
+          accessibilityRole="button"
+          onPress={chooseReceiptSource}
+          style={({ pressed }) => [
+            styles.quickActionPill,
+            {
+              backgroundColor: palette.surface,
+              borderColor: palette.border,
+              borderWidth: 1,
+              transform: [{ scale: pressed ? 0.94 : 1 }],
+            },
+          ]}
+        >
+          <Ionicons name="camera-outline" size={16} color={palette.green} />
+          <Text style={[styles.quickActionText, { color: palette.text }]}>Receipt</Text>
+        </Pressable>
+
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => navigateToScreen('agent')}
+          style={({ pressed }) => [
+            styles.quickActionPill,
+            {
+              backgroundColor: palette.surface,
+              borderColor: palette.border,
+              borderWidth: 1,
+              transform: [{ scale: pressed ? 0.94 : 1 }],
+            },
+          ]}
+        >
+          <Ionicons name="sparkles-outline" size={16} color={palette.accent} />
+          <Text style={[styles.quickActionText, { color: palette.text }]}>Ask AI</Text>
+        </Pressable>
       </View>
 
+      {/* Cards Section */}
       <View style={styles.section}>
         <View style={styles.rowBetween}>
           <SectionTitle title="Your cards" subtitle={`${cards.length} connected`} palette={palette} />
-          <Pressable onPress={() => navigateToScreen('cards')}><Text style={[styles.link, { color: palette.accent }]}>Manage</Text></Pressable>
+          <Pressable onPress={() => navigateToScreen('cards')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Text style={[styles.link, { color: palette.accent }]}>Manage</Text>
+          </Pressable>
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.cardCarousel}>
           {cards.map(card => renderCard(card))}
@@ -957,30 +1063,98 @@ function FinAgentApp() {
         </ScrollView>
       </View>
 
+      {/* 50 / 30 / 20 Budget Section */}
       <Panel palette={palette}>
-        <SectionTitle title="50 / 30 / 20 budget" subtitle={`Based on ${formatCurrency(monthlyIncome, 0)} monthly income`} palette={palette} />
-        {[
-          { label: 'Needs · 50%', percentage: 50, color: '#60a5fa' },
-          { label: 'Wants · 30%', percentage: 30, color: '#c084fc' },
-          { label: 'Savings & debt · 20%', percentage: 20, color: '#34d399' },
-        ].map(item => (
-          <View key={item.label} style={styles.budgetMeter}>
-            <View style={styles.rowBetween}>
-              <Text style={[styles.bodyStrong, { color: palette.text }]}>{item.label}</Text>
-              <Text style={[styles.caption, { color: palette.muted }]}>{formatCurrency(monthlyIncome * item.percentage / 100, 0)}</Text>
-            </View>
-            <View style={[styles.progressTrack, { backgroundColor: palette.elevated }]}>
-              <View style={[styles.progressFill, { width: `${item.percentage}%`, backgroundColor: item.color }]} />
-            </View>
+        <View style={styles.rowBetween}>
+          <SectionTitle
+            title="50 / 30 / 20 budget"
+            subtitle={monthlyIncome > 0 ? `Based on ${formatCurrency(monthlyIncome, 0)} monthly income` : 'Track spending targets & pacing'}
+            palette={palette}
+          />
+          {monthlyIncome > 0 ? (
+            <Pressable onPress={() => navigateToScreen('budget')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Text style={[styles.link, { color: palette.accent }]}>Adjust</Text>
+            </Pressable>
+          ) : null}
+        </View>
+
+        {monthlyIncome === 0 ? (
+          <View style={styles.emptyBudgetContainer}>
+            <Text style={[styles.caption, { color: palette.muted, textAlign: 'center', marginBottom: 10 }]}>
+              Set your monthly take-home income in the Budget tab to activate live Needs, Wants, and Savings tracking.
+            </Text>
+            <AppButton
+              label="Set Monthly Income"
+              icon="pie-chart-outline"
+              onPress={() => navigateToScreen('budget')}
+              palette={palette}
+              compact
+            />
           </View>
-        ))}
-        <AppButton label="Open budget & activity" icon="pie-chart-outline" onPress={() => navigateToScreen('budget')} palette={palette} variant="quiet" compact />
+        ) : (
+          <>
+            {[
+              {
+                label: 'Needs (50%)',
+                spent: budgetBreakdown.needsSpent,
+                target: budgetBreakdown.needsTarget,
+                pct: budgetBreakdown.needsPct,
+                color: '#60a5fa',
+              },
+              {
+                label: 'Wants (30%)',
+                spent: budgetBreakdown.wantsSpent,
+                target: budgetBreakdown.wantsTarget,
+                pct: budgetBreakdown.wantsPct,
+                color: '#c084fc',
+              },
+              {
+                label: 'Savings & debt (20%)',
+                spent: budgetBreakdown.savingsSpent,
+                target: budgetBreakdown.savingsTarget,
+                pct: budgetBreakdown.savingsPct,
+                color: '#34d399',
+              },
+            ].map(item => (
+              <View key={item.label} style={styles.budgetMeter}>
+                <View style={styles.rowBetween}>
+                  <Text style={[styles.bodyStrong, { color: palette.text }]}>{item.label}</Text>
+                  <Text style={[styles.caption, { color: palette.muted }]}>
+                    {formatCurrency(item.spent, 0)} / {formatCurrency(item.target, 0)} ({item.pct.toFixed(0)}%)
+                  </Text>
+                </View>
+                <View style={[styles.progressTrack, { backgroundColor: palette.elevated }]}>
+                  <View
+                    style={[
+                      styles.progressFill,
+                      {
+                        width: `${item.pct}%`,
+                        backgroundColor: item.pct > 100 ? '#f59e0b' : item.color,
+                      },
+                    ]}
+                  />
+                </View>
+              </View>
+            ))}
+            <AppButton
+              label="Open budget & activity"
+              icon="pie-chart-outline"
+              onPress={() => navigateToScreen('budget')}
+              palette={palette}
+              variant="quiet"
+              compact
+            />
+          </>
+        )}
       </Panel>
 
+      {/* Recent Activity Section */}
       <Panel palette={palette}>
         <View style={styles.rowBetween}>
           <SectionTitle title="Recent activity" subtitle="Latest account entries" palette={palette} />
-          <Pressable onPress={() => navigateToScreen('budget')}><Text style={[styles.link, { color: palette.accent }]}>See all</Text></Pressable>
+          <Pressable onPress={() => navigateToScreen('budget')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Text style={[styles.link, { color: palette.accent }]}>See all</Text>
+          </Pressable>
         </View>
         {renderTransactionList(transactions.slice(0, 5))}
       </Panel>
@@ -1536,7 +1710,13 @@ function FinAgentApp() {
                   accessibilityRole="tab"
                   accessibilityState={{ selected: active }}
                   onPress={() => navigateToScreen(tab.id)}
-                  style={styles.tabItem}
+                  style={({ pressed }) => [
+                    styles.tabItem,
+                    {
+                      opacity: pressed ? 0.7 : 1,
+                      transform: [{ scale: pressed ? 0.93 : 1 }],
+                    },
+                  ]}
                 >
                   <Ionicons name={tab.icon} size={20} color={active ? palette.accent : palette.muted} />
                   <Text style={[styles.tabLabel, { color: active ? palette.accent : palette.muted }]}>{tab.label}</Text>
@@ -1608,13 +1788,21 @@ const styles = StyleSheet.create({
   storageWarning: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 8 },
   storageWarningText: { color: '#fff', fontSize: 12, flex: 1 },
   mainScroll: { flex: 1 },
-  pageContent: { padding: 16, paddingBottom: 28, gap: 14, maxWidth: 760, width: '100%', alignSelf: 'center' },
+  pageContent: { padding: 16, paddingBottom: 32, gap: 16, maxWidth: 760, width: '100%', alignSelf: 'center' },
   welcomeBlock: { marginBottom: 2 },
   pageTitle: { fontSize: 24, fontWeight: '800', letterSpacing: -0.4 },
   eyebrow: { fontSize: 10, fontWeight: '800', letterSpacing: 1.1, marginBottom: 6 },
   eyebrowWhite: { color: '#ffffffbb', fontSize: 10, fontWeight: '800', letterSpacing: 0.8, marginBottom: 4 },
-  netWorth: { fontSize: 32, fontWeight: '900', letterSpacing: -0.7, marginTop: 5, marginBottom: 12 },
+  netWorth: { fontSize: 32, fontWeight: '900', letterSpacing: -0.7, marginTop: 5, marginBottom: 10 },
   panel: { borderRadius: 20, borderWidth: 1, padding: 16, gap: 12 },
+  heroPanel: { padding: 18, gap: 12 },
+  heroStatRow: { flexDirection: 'row', gap: 10, marginBottom: 4 },
+  statChip: { flex: 1, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 12, borderWidth: 1, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  statChipValue: { fontSize: 14, fontWeight: '800' },
+  quickActionsRow: { flexDirection: 'row', gap: 8, justifyContent: 'space-between' },
+  quickActionPill: { flex: 1, minHeight: 40, borderRadius: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 6, paddingVertical: 8 },
+  quickActionText: { fontSize: 12, fontWeight: '800' },
+  emptyBudgetContainer: { alignItems: 'center', paddingVertical: 14, paddingHorizontal: 8 },
   metricRow: { flexDirection: 'row', gap: 12, marginBottom: 8 },
   metric: { flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 14, backgroundColor: '#8b5cf615' },
   metricValue: { fontSize: 17, fontWeight: '800', marginTop: 3 },

@@ -283,6 +283,44 @@ export default function App() {
     return Object.entries(map).map(([category, amount]) => ({ category, amount }));
   }, [transactions]);
 
+  const budgetBreakdown = useMemo(() => {
+    const NEEDS_CATEGORIES = new Set(['housing', 'rent', 'utilities', 'groceries', 'healthcare', 'bills', 'transport', 'transportation', 'insurance']);
+    const SAVINGS_CATEGORIES = new Set(['savings', 'investment', 'debt', 'credit card payment']);
+
+    let needsSpent = 0;
+    let wantsSpent = 0;
+    let savingsSpent = 0;
+
+    transactions
+      .filter(t => t.type === 'expense')
+      .forEach(t => {
+        const cat = (t.category || '').toLowerCase().trim();
+        if (NEEDS_CATEGORIES.has(cat)) {
+          needsSpent += t.amount;
+        } else if (SAVINGS_CATEGORIES.has(cat)) {
+          savingsSpent += t.amount;
+        } else {
+          wantsSpent += t.amount;
+        }
+      });
+
+    const needsTarget = monthlyIncome * 0.5;
+    const wantsTarget = monthlyIncome * 0.3;
+    const savingsTarget = monthlyIncome * 0.2;
+
+    return {
+      needsSpent,
+      wantsSpent,
+      savingsSpent,
+      needsTarget,
+      wantsTarget,
+      savingsTarget,
+      needsPct: needsTarget > 0 ? Math.min(100, (needsSpent / needsTarget) * 100) : 0,
+      wantsPct: wantsTarget > 0 ? Math.min(100, (wantsSpent / wantsTarget) * 100) : 0,
+      savingsPct: savingsTarget > 0 ? Math.min(100, (savingsSpent / savingsTarget) * 100) : 0,
+    };
+  }, [transactions, monthlyIncome]);
+
   // Modals
   const [showCardModal, setShowCardModal] = useState(false);
   const [editingCardId, setEditingCardId] = useState<string | null>(null);
@@ -986,71 +1024,94 @@ export default function App() {
         {/* ========================================================================= */}
         {activeScreen === 'home' && (
           <div className="space-y-6">
-            {/* Top Net Worth Card with Interactive Chart */}
+            {/* Top Net Worth Hero Card with Interactive Chart */}
             <div
-              className="p-6 rounded-3xl border shadow-sm relative overflow-hidden"
+              className="p-6 sm:p-7 rounded-3xl border shadow-sm relative overflow-hidden transition-all duration-200"
               style={{
                 backgroundColor: isDark ? '#111116' : '#ffffff',
                 borderColor: isDark ? '#20202a' : '#e2e8f0',
               }}
             >
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-bold uppercase tracking-wider text-neutral-400">
-                  Total Net Worth
-                </span>
-                <span className="text-xs font-semibold text-neutral-400">
-                  Liquid Cash: <span className="text-emerald-400 font-bold">${liquidCash.toLocaleString()}</span> · Debt: <span className="text-pink-400 font-bold">${totalCardDebt.toLocaleString()}</span>
-                </span>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                <div>
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-400 block mb-1">
+                    Total Net Worth
+                  </span>
+                  <div className="text-3xl sm:text-4xl font-black font-mono tracking-tight tabular-nums">
+                    ${netWorth.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 self-start sm:self-auto">
+                  <div
+                    className="px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5"
+                    style={{ backgroundColor: isDark ? '#16161e' : '#f8fafc', borderColor: isDark ? '#242432' : '#e2e8f0' }}
+                  >
+                    <span className="text-neutral-400">Cash:</span>
+                    <span className="text-emerald-400 font-bold">${liquidCash.toLocaleString()}</span>
+                  </div>
+                  <div
+                    className="px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5"
+                    style={{ backgroundColor: isDark ? '#16161e' : '#f8fafc', borderColor: isDark ? '#242432' : '#e2e8f0' }}
+                  >
+                    <span className="text-neutral-400">Debt:</span>
+                    <span className="text-pink-400 font-bold">${totalCardDebt.toLocaleString()}</span>
+                  </div>
+                </div>
               </div>
 
               <NetWorthChart currentValue={netWorth} isDark={isDark} />
+            </div>
 
-              {/* Quick Actions Bar */}
-              <div
-                className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-5 pt-5 border-t"
-                style={{ borderColor: isDark ? '#1f1f28' : '#e2e8f0' }}
+            {/* Quick Actions Floating Bar */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <button
+                onClick={() => setShowTxModal(true)}
+                className="p-3.5 rounded-2xl border flex items-center justify-center gap-2.5 text-xs font-bold transition-all hover:border-violet-500 hover:shadow-sm cursor-pointer active:scale-95"
+                style={{ backgroundColor: isDark ? '#111116' : '#ffffff', borderColor: isDark ? '#20202a' : '#e2e8f0' }}
               >
-                <button
-                  onClick={() => setShowTxModal(true)}
-                  className="p-3 rounded-xl border flex items-center justify-center gap-2 text-xs font-bold transition-all hover:border-violet-500 cursor-pointer"
-                  style={{ backgroundColor: isDark ? '#16161e' : '#f8fafc', borderColor: isDark ? '#242432' : '#e2e8f0' }}
-                >
+                <div className="w-7 h-7 rounded-lg bg-violet-500/10 flex items-center justify-center">
                   <Plus className="w-4 h-4 text-violet-400" />
-                  <span>Log Expense</span>
-                </button>
+                </div>
+                <span>Log Expense</span>
+              </button>
 
-                <button
-                  onClick={() => {
-                    setEditingCardId(null);
-                    setCardFormName('');
-                    setCardFormBalance('');
-                    setCardFormLimit('');
-                    setShowCardModal(true);
-                  }}
-                  className="p-3 rounded-xl border flex items-center justify-center gap-2 text-xs font-bold transition-all hover:border-violet-500 cursor-pointer"
-                  style={{ backgroundColor: isDark ? '#16161e' : '#f8fafc', borderColor: isDark ? '#242432' : '#e2e8f0' }}
-                >
+              <button
+                onClick={() => {
+                  setEditingCardId(null);
+                  setCardFormName('');
+                  setCardFormBalance('');
+                  setCardFormLimit('');
+                  setShowCardModal(true);
+                }}
+                className="p-3.5 rounded-2xl border flex items-center justify-center gap-2.5 text-xs font-bold transition-all hover:border-violet-500 hover:shadow-sm cursor-pointer active:scale-95"
+                style={{ backgroundColor: isDark ? '#111116' : '#ffffff', borderColor: isDark ? '#20202a' : '#e2e8f0' }}
+              >
+                <div className="w-7 h-7 rounded-lg bg-blue-500/10 flex items-center justify-center">
                   <CreditCard className="w-4 h-4 text-blue-400" />
-                  <span>Add Card</span>
-                </button>
+                </div>
+                <span>Add Card</span>
+              </button>
 
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="p-3 rounded-xl border flex items-center justify-center gap-2 text-xs font-bold transition-all hover:border-emerald-500 cursor-pointer"
-                  style={{ backgroundColor: isDark ? '#16161e' : '#f8fafc', borderColor: isDark ? '#242432' : '#e2e8f0' }}
-                >
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="p-3.5 rounded-2xl border flex items-center justify-center gap-2.5 text-xs font-bold transition-all hover:border-emerald-500 hover:shadow-sm cursor-pointer active:scale-95"
+                style={{ backgroundColor: isDark ? '#111116' : '#ffffff', borderColor: isDark ? '#20202a' : '#e2e8f0' }}
+              >
+                <div className="w-7 h-7 rounded-lg bg-emerald-500/10 flex items-center justify-center">
                   <Camera className="w-4 h-4 text-emerald-400" />
-                  <span>Scan Receipt</span>
-                </button>
+                </div>
+                <span>Scan Receipt</span>
+              </button>
 
-                <button
-                  onClick={() => setActiveScreen('agent')}
-                  className="p-3 rounded-xl bg-violet-600/10 border border-violet-500/20 text-violet-400 flex items-center justify-center gap-2 text-xs font-bold hover:bg-violet-600/20 transition-all cursor-pointer"
-                >
-                  <Sparkles className="w-4 h-4" />
-                  <span>Ask FinAgent</span>
-                </button>
-              </div>
+              <button
+                onClick={() => setActiveScreen('agent')}
+                className="p-3.5 rounded-2xl bg-violet-600/10 border border-violet-500/30 text-violet-400 flex items-center justify-center gap-2.5 text-xs font-bold hover:bg-violet-600/20 transition-all cursor-pointer active:scale-95"
+              >
+                <div className="w-7 h-7 rounded-lg bg-violet-500/20 flex items-center justify-center">
+                  <Sparkles className="w-4 h-4 text-violet-400" />
+                </div>
+                <span>Ask FinAgent</span>
+              </button>
             </div>
 
             {/* Credit Cards Wallet Carousel */}
@@ -1133,63 +1194,97 @@ export default function App() {
 
             {/* 50/30/20 Monthly Budget Pacing */}
             <div
-              className="p-5 rounded-2xl border"
+              className="p-6 rounded-2xl border transition-all"
               style={{
                 backgroundColor: isDark ? '#111116' : '#ffffff',
                 borderColor: isDark ? '#20202a' : '#e2e8f0',
               }}
             >
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
                 <div>
                   <h4 className="text-sm font-bold flex items-center gap-2">
                     <span>50 / 30 / 20 Budget Framework</span>
                     <span className="text-xs text-neutral-400 font-normal">
-                      (Based on ${monthlyIncome.toLocaleString()} Income)
+                      {monthlyIncome > 0
+                        ? `(Based on $${monthlyIncome.toLocaleString()} Monthly Income)`
+                        : '(Needs 50% · Wants 30% · Savings 20%)'}
                     </span>
                   </h4>
                 </div>
-                <button
-                  onClick={() => {
-                    setActiveScreen('agent');
-                    handleSendMessage('Audit my 50/30/20 budget allocations and tell me where to cut.');
-                  }}
-                  className="text-xs text-violet-400 font-semibold hover:underline self-start sm:self-auto"
-                >
-                  Audit with AI →
-                </button>
+                {monthlyIncome > 0 ? (
+                  <button
+                    onClick={() => {
+                      setActiveScreen('agent');
+                      handleSendMessage('Audit my 50/30/20 budget allocations and tell me where to cut.');
+                    }}
+                    className="text-xs text-violet-400 font-semibold hover:underline self-start sm:self-auto flex items-center gap-1 active:scale-95"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Audit with AI →</span>
+                  </button>
+                ) : null}
               </div>
 
-              <div className="space-y-3">
-                <div>
-                  <div className="flex justify-between text-xs font-semibold mb-1">
-                    <span className="text-blue-400">Needs (50% Target: ${(monthlyIncome * 0.5).toFixed(0)})</span>
-                    <span>Housing, Utilities, Groceries</span>
-                  </div>
-                  <div className="w-full h-2 rounded-full bg-neutral-800 overflow-hidden">
-                    <div className="h-full bg-blue-500 rounded-full" style={{ width: '85%' }} />
-                  </div>
+              {monthlyIncome === 0 ? (
+                <div className="py-6 text-center flex flex-col items-center justify-center gap-2">
+                  <p className="text-xs text-neutral-400 max-w-md">
+                    Set your monthly take-home income in the Budget tab to activate live 50/30/20 spending targets and real-time pacing.
+                  </p>
+                  <button
+                    onClick={() => setActiveScreen('budget')}
+                    className="mt-1 px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold transition-all cursor-pointer active:scale-95"
+                  >
+                    Configure Monthly Income
+                  </button>
                 </div>
+              ) : (
+                <div className="space-y-4">
+                  <div>
+                    <div className="flex justify-between text-xs font-semibold mb-1.5">
+                      <span className="text-blue-400 font-bold">Needs (50% Target: ${budgetBreakdown.needsTarget.toFixed(0)})</span>
+                      <span className="text-neutral-400 font-mono">
+                        ${budgetBreakdown.needsSpent.toFixed(2)} spent ({budgetBreakdown.needsPct.toFixed(0)}%)
+                      </span>
+                    </div>
+                    <div className="w-full h-2 rounded-full bg-neutral-800/40 overflow-hidden border border-neutral-700/20">
+                      <div
+                        className="h-full bg-blue-500 rounded-full transition-all duration-500"
+                        style={{ width: `${budgetBreakdown.needsPct}%` }}
+                      />
+                    </div>
+                  </div>
 
-                <div>
-                  <div className="flex justify-between text-xs font-semibold mb-1">
-                    <span className="text-purple-400">Wants (30% Target: ${(monthlyIncome * 0.3).toFixed(0)})</span>
-                    <span>Dining, Entertainment, Shopping</span>
+                  <div>
+                    <div className="flex justify-between text-xs font-semibold mb-1.5">
+                      <span className="text-purple-400 font-bold">Wants (30% Target: ${budgetBreakdown.wantsTarget.toFixed(0)})</span>
+                      <span className="text-neutral-400 font-mono">
+                        ${budgetBreakdown.wantsSpent.toFixed(2)} spent ({budgetBreakdown.wantsPct.toFixed(0)}%)
+                      </span>
+                    </div>
+                    <div className="w-full h-2 rounded-full bg-neutral-800/40 overflow-hidden border border-neutral-700/20">
+                      <div
+                        className="h-full bg-purple-500 rounded-full transition-all duration-500"
+                        style={{ width: `${budgetBreakdown.wantsPct}%` }}
+                      />
+                    </div>
                   </div>
-                  <div className="w-full h-2 rounded-full bg-neutral-800 overflow-hidden">
-                    <div className="h-full bg-purple-500 rounded-full" style={{ width: '48%' }} />
-                  </div>
-                </div>
 
-                <div>
-                  <div className="flex justify-between text-xs font-semibold mb-1">
-                    <span className="text-emerald-400">Savings & Debt Paydown (20% Target: ${(monthlyIncome * 0.2).toFixed(0)})</span>
-                    <span>High-Yield Savings & Card Principal</span>
-                  </div>
-                  <div className="w-full h-2 rounded-full bg-neutral-800 overflow-hidden">
-                    <div className="h-full bg-emerald-500 rounded-full" style={{ width: '100%' }} />
+                  <div>
+                    <div className="flex justify-between text-xs font-semibold mb-1.5">
+                      <span className="text-emerald-400 font-bold">Savings & Debt (20% Target: ${budgetBreakdown.savingsTarget.toFixed(0)})</span>
+                      <span className="text-neutral-400 font-mono">
+                        ${budgetBreakdown.savingsSpent.toFixed(2)} allocated ({budgetBreakdown.savingsPct.toFixed(0)}%)
+                      </span>
+                    </div>
+                    <div className="w-full h-2 rounded-full bg-neutral-800/40 overflow-hidden border border-neutral-700/20">
+                      <div
+                        className="h-full bg-emerald-500 rounded-full transition-all duration-500"
+                        style={{ width: `${budgetBreakdown.savingsPct}%` }}
+                      />
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
             </div>
 
             {/* Recent Activity Table */}
