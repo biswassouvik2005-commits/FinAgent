@@ -238,8 +238,62 @@ export default function App() {
     }
   }, [isDark]);
 
-  // Main active screen
+  // Main active screen & history
   const [activeScreen, setActiveScreen] = useState<'home' | 'cards' | 'agent' | 'budget' | 'bills' | 'ocr'>('home');
+  const [screenHistory, setScreenHistory] = useState<('home' | 'cards' | 'agent' | 'budget' | 'bills' | 'ocr')[]>(['home']);
+  const touchStartX = useRef<number | null>(null);
+  const touchStartY = useRef<number | null>(null);
+  const chatAbortControllerRef = useRef<AbortController | null>(null);
+
+  const navigateToScreen = (nextScreen: 'home' | 'cards' | 'agent' | 'budget' | 'bills' | 'ocr') => {
+    if (nextScreen === activeScreen) return;
+    setScreenHistory((prev) => [...prev, nextScreen]);
+    setActiveScreen(nextScreen);
+  };
+
+  const goBack = () => {
+    if (screenHistory.length <= 1) return;
+    setScreenHistory((prev) => {
+      const updated = [...prev];
+      updated.pop();
+      const target = updated[updated.length - 1] ?? 'home';
+      setActiveScreen(target);
+      return updated;
+    });
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX.current === null || touchStartY.current === null) return;
+    const deltaX = e.changedTouches[0].clientX - touchStartX.current;
+    const deltaY = e.changedTouches[0].clientY - touchStartY.current;
+    touchStartX.current = null;
+    touchStartY.current = null;
+    if (deltaX > 70 && Math.abs(deltaX) > Math.abs(deltaY) * 1.5 && screenHistory.length > 1) {
+      goBack();
+    }
+  };
+
+  const stopAgent = () => {
+    if (chatAbortControllerRef.current) {
+      chatAbortControllerRef.current.abort();
+      chatAbortControllerRef.current = null;
+    }
+    setIsLoadingChat(false);
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `stop-${Date.now()}`,
+        sender: 'ai',
+        text: '⏹ FinAgent response stopped.',
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      }
+    ]);
+  };
 
   // User Profile
   const [userName, setUserName] = useState('Souvik');
@@ -406,6 +460,9 @@ export default function App() {
     setInputText(''); // Clear the input field
     setIsLoadingChat(true);
 
+    const abortController = new AbortController();
+    chatAbortControllerRef.current = abortController;
+
     try {
       // 2. Fetch Request to Gemini API
       const API_KEY = "AQ.Ab8RN6J2p2avPS0x_golP47tuHGFHHZMJGeKmDtOZP7NdfMQmg"; 
@@ -413,6 +470,7 @@ export default function App() {
 
       const response = await fetch(url, {
         method: "POST",
+        signal: abortController.signal,
         headers: {
           "Content-Type": "application/json"
         },
@@ -439,7 +497,10 @@ export default function App() {
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
       }]);
 
-    } catch (error) {
+    } catch (error: any) {
+      if (error?.name === 'AbortError' || abortController.signal.aborted) {
+        return;
+      }
       console.error("Error connecting to Gemini:", error);
       setMessages((prev) => [...prev, { 
         id: `err-${Date.now()}`, 
@@ -449,6 +510,7 @@ export default function App() {
       }]);
     } finally {
       setIsLoadingChat(false);
+      chatAbortControllerRef.current = null;
     }
   };
 
@@ -464,7 +526,7 @@ export default function App() {
       const mimeType = file.type || 'image/jpeg';
 
       setIsScanning(true);
-      setActiveScreen('ocr');
+      navigateToScreen('ocr');
 
       try {
         const response = await axios.post('/api/receipt', {
@@ -524,7 +586,7 @@ export default function App() {
 
     setScannedReceipt(null);
     showToast(`Logged $${amount.toFixed(2)} to ${targetCardName}`);
-    setActiveScreen('home');
+    navigateToScreen('home');
   };
 
   // Add / Edit Card
@@ -637,7 +699,9 @@ export default function App() {
 
   return (
     <div
-      className="min-h-screen flex flex-col font-sans transition-colors duration-200"
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      className="min-h-screen flex flex-col font-sans transition-colors duration-200 select-none"
       style={{
         backgroundColor: isDark ? '#09090b' : '#f8fafc',
         color: isDark ? '#fafafa' : '#09090b',
@@ -942,6 +1006,17 @@ export default function App() {
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
           {/* Brand Mark */}
           <div className="flex items-center gap-3">
+            {screenHistory.length > 1 && (
+              <button
+                type="button"
+                onClick={goBack}
+                className="w-8 h-8 rounded-xl border flex items-center justify-center hover:bg-neutral-800 transition-all text-neutral-400 hover:text-white"
+                style={{ borderColor: isDark ? '#262633' : '#e2e8f0' }}
+                title="Go back (or swipe right)"
+              >
+                <ChevronRight className="w-4 h-4 rotate-180" />
+              </button>
+            )}
             <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-violet-600 to-indigo-600 flex items-center justify-center text-white shadow-sm font-black text-base">
               F
             </div>
@@ -965,7 +1040,7 @@ export default function App() {
               return (
                 <button
                   key={tab.id}
-                  onClick={() => setActiveScreen(tab.id as any)}
+                  onClick={() => navigateToScreen(tab.id as any)}
                   className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
                     active
                       ? 'bg-violet-600 text-white shadow-xs font-bold'
@@ -1007,7 +1082,7 @@ export default function App() {
       </header>
 
       {/* Main App Content Viewport */}
-      <main className="flex-1 max-w-6xl w-full mx-auto px-4 py-6 pb-24 md:pb-10">
+      <main key={activeScreen} className="flex-1 max-w-6xl w-full mx-auto px-4 py-6 pb-24 md:pb-10 animate-screen-transition">
         {/* ========================================================================= */}
         {/* VIEW 1: HOME / DASHBOARD */}
         {/* ========================================================================= */}
@@ -1071,7 +1146,7 @@ export default function App() {
                 </button>
 
                 <button
-                  onClick={() => setActiveScreen('agent')}
+                  onClick={() => navigateToScreen('agent')}
                   className="p-3 rounded-xl bg-violet-600/10 border border-violet-500/20 text-violet-400 flex items-center justify-center gap-2 text-xs font-bold hover:bg-violet-600/20 transition-all cursor-pointer"
                 >
                   <Sparkles className="w-4 h-4" />
@@ -1089,7 +1164,7 @@ export default function App() {
                   <span className="text-xs text-neutral-400">({cards.length} connected)</span>
                 </div>
                 <button
-                  onClick={() => setActiveScreen('cards')}
+                  onClick={() => navigateToScreen('cards')}
                   className="text-xs font-semibold text-violet-400 hover:underline flex items-center gap-1"
                 >
                   <span>Manage Cards</span>
@@ -1103,7 +1178,7 @@ export default function App() {
                   return (
                     <div
                       key={c.id}
-                      onClick={() => setActiveScreen('cards')}
+                      onClick={() => navigateToScreen('cards')}
                       className={`p-5 rounded-2xl bg-gradient-to-br ${c.colorTheme} text-white shadow-md relative overflow-hidden flex flex-col justify-between min-h-[170px] cursor-pointer transition-transform hover:-translate-y-1`}
                     >
                       <div className="flex justify-between items-start">
@@ -1160,7 +1235,7 @@ export default function App() {
                 </div>
                 <button
                   onClick={() => {
-                    setActiveScreen('agent');
+                    navigateToScreen('agent');
                     handleSendMessage('Audit my 50/30/20 budget allocations and tell me where to cut.');
                   }}
                   className="text-xs text-violet-400 font-semibold hover:underline self-start sm:self-auto"
@@ -1323,7 +1398,7 @@ export default function App() {
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => {
-                      setActiveScreen('agent');
+                      navigateToScreen('agent');
                       handleSendMessage('Which credit card should I pay off first to save the most on interest?');
                     }}
                     className="px-3.5 py-2 rounded-xl bg-violet-600/10 text-violet-400 border border-violet-500/20 text-xs font-bold hover:bg-violet-600/20 transition-all"
@@ -1497,7 +1572,7 @@ export default function App() {
 
                   <button
                     onClick={() => {
-                      setActiveScreen('agent');
+                      navigateToScreen('agent');
                       handleSendMessage(`How can I optimize and lower interest on my ${c.cardName}?`);
                     }}
                     className="mt-4 py-2 rounded-xl text-xs font-semibold bg-violet-600/10 text-violet-400 hover:bg-violet-600/20 transition-all flex items-center justify-center gap-1"
@@ -1574,7 +1649,7 @@ export default function App() {
               {messages.map(m => (
                 <div
                   key={m.id}
-                  className={`flex flex-col ${m.sender === 'user' ? 'items-end' : 'items-start'}`}
+                  className={`flex flex-col ${m.sender === 'user' ? 'items-end' : 'items-start'} animate-message-pop`}
                 >
                   <div className="flex items-center gap-1.5 mb-1 px-1 text-[11px] text-neutral-400">
                     <span className="font-bold">{m.sender === 'ai' ? 'FinAgent AI' : userName}</span>
@@ -1606,9 +1681,19 @@ export default function App() {
               ))}
 
               {isLoadingChat && (
-                <div className="flex items-center gap-2 text-xs text-neutral-400 p-3 rounded-xl border bg-violet-500/5 border-violet-500/20">
-                  <Sparkles className="w-4 h-4 text-violet-400 animate-spin" />
-                  <span>FinAgent is analyzing your cards and calculating optimal strategy...</span>
+                <div className="flex items-center justify-between text-xs text-neutral-400 p-3 rounded-xl border bg-violet-500/5 border-violet-500/20">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-violet-400 animate-spin" />
+                    <span>FinAgent is analyzing your cards and calculating optimal strategy...</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={stopAgent}
+                    className="px-2.5 py-1 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 font-bold text-[11px] flex items-center gap-1 transition-all cursor-pointer"
+                  >
+                    <span className="w-2 h-2 bg-red-400 rounded-xs inline-block" />
+                    <span>Stop</span>
+                  </button>
                 </div>
               )}
               <div ref={messagesEndRef} />
@@ -1656,14 +1741,26 @@ export default function App() {
                 </button>
               )}
 
-              <button
-                onClick={() => handleSendMessage()}
-                disabled={!inputText.trim() || isLoadingChat}
-                className="px-4 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all disabled:opacity-40"
-              >
-                <span>Send</span>
-                <Send className="w-3.5 h-3.5" />
-              </button>
+              {isLoadingChat ? (
+                <button
+                  type="button"
+                  onClick={stopAgent}
+                  className="px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+                  title="Stop generating response"
+                >
+                  <span className="w-2 h-2 bg-white rounded-xs inline-block" />
+                  <span>Stop</span>
+                </button>
+              ) : (
+                <button
+                  onClick={() => handleSendMessage()}
+                  disabled={!inputText.trim()}
+                  className="px-4 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all disabled:opacity-40 cursor-pointer"
+                >
+                  <span>Send</span>
+                  <Send className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -1914,7 +2011,7 @@ export default function App() {
         }}
       >
         <button
-          onClick={() => setActiveScreen('home')}
+          onClick={() => navigateToScreen('home')}
           className={`flex flex-col items-center gap-1 py-1 px-2.5 rounded-lg text-[10px] font-bold ${
             activeScreen === 'home' ? 'text-violet-400' : 'text-neutral-400'
           }`}
@@ -1924,7 +2021,7 @@ export default function App() {
         </button>
 
         <button
-          onClick={() => setActiveScreen('cards')}
+          onClick={() => navigateToScreen('cards')}
           className={`flex flex-col items-center gap-1 py-1 px-2.5 rounded-lg text-[10px] font-bold ${
             activeScreen === 'cards' ? 'text-violet-400' : 'text-neutral-400'
           }`}
@@ -1935,7 +2032,7 @@ export default function App() {
 
         {/* Center Prominent AI Agent Button */}
         <button
-          onClick={() => setActiveScreen('agent')}
+          onClick={() => navigateToScreen('agent')}
           className="flex flex-col items-center gap-0.5 -mt-5"
         >
           <div className="w-12 h-12 rounded-full bg-violet-600 text-white flex items-center justify-center shadow-lg shadow-violet-600/40">
@@ -1945,7 +2042,7 @@ export default function App() {
         </button>
 
         <button
-          onClick={() => setActiveScreen('budget')}
+          onClick={() => navigateToScreen('budget')}
           className={`flex flex-col items-center gap-1 py-1 px-2.5 rounded-lg text-[10px] font-bold ${
             activeScreen === 'budget' ? 'text-violet-400' : 'text-neutral-400'
           }`}
@@ -1955,7 +2052,7 @@ export default function App() {
         </button>
 
         <button
-          onClick={() => setActiveScreen('ocr')}
+          onClick={() => navigateToScreen('ocr')}
           className={`flex flex-col items-center gap-1 py-1 px-2.5 rounded-lg text-[10px] font-bold ${
             activeScreen === 'ocr' ? 'text-violet-400' : 'text-neutral-400'
           }`}

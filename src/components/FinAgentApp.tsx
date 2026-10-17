@@ -5,9 +5,12 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   Keyboard,
   KeyboardAvoidingView,
+  LayoutAnimation,
   Modal,
+  PanResponder,
   Platform,
   Pressable,
   ScrollView,
@@ -15,15 +18,21 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  UIManager,
   View,
   type KeyboardTypeOptions,
   type ScrollView as ScrollViewRef,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import axios from 'axios';
 import api from '../lib/api';
 import { NetWorthChart } from './NetWorthChart';
 import { PieChart, type CategoryItem } from './PieChart';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 type Screen = 'home' | 'cards' | 'agent' | 'budget' | 'bills' | 'receipts';
 type CardNetwork = 'visa' | 'mastercard' | 'amex' | 'discover';
@@ -356,6 +365,88 @@ function FinAgentApp() {
   const [storageStatus, setStorageStatus] = useState<'loading' | 'ready' | 'failed'>('loading');
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [screen, setScreen] = useState<Screen>('home');
+  const [screenHistory, setScreenHistory] = useState<Screen[]>(['home']);
+  const screenHistoryRef = useRef(screenHistory);
+  screenHistoryRef.current = screenHistory;
+
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  const screenFadeAnim = useRef(new Animated.Value(1)).current;
+  const screenSlideAnim = useRef(new Animated.Value(0)).current;
+
+  const navigateToScreen = (nextScreen: Screen) => {
+    if (nextScreen === screen) return;
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setScreenHistory(previous => [...previous, nextScreen]);
+    setScreen(nextScreen);
+  };
+
+  const goBack = () => {
+    if (screenHistoryRef.current.length <= 1) return;
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setScreenHistory(previous => {
+      const updated = [...previous];
+      updated.pop();
+      const target = updated[updated.length - 1] ?? 'home';
+      setScreen(target);
+      return updated;
+    });
+  };
+
+  const stopAgent = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setIsLoadingChat(false);
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setMessages(previous => [
+      ...previous,
+      {
+        id: `stop-${Date.now()}`,
+        text: '⏹ FinAgent response stopped.',
+        sender: 'ai',
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      },
+    ]);
+  };
+
+  useEffect(() => {
+    screenFadeAnim.setValue(0.35);
+    screenSlideAnim.setValue(10);
+    Animated.parallel([
+      Animated.timing(screenFadeAnim, {
+        toValue: 1,
+        duration: 220,
+        useNativeDriver: true,
+      }),
+      Animated.timing(screenSlideAnim, {
+        toValue: 0,
+        duration: 220,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [screen]);
+
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_evt, gestureState) => {
+          return (
+            screenHistoryRef.current.length > 1 &&
+            gestureState.dx > 25 &&
+            Math.abs(gestureState.dx) > Math.abs(gestureState.dy) * 1.5
+          );
+        },
+        onPanResponderRelease: (_evt, gestureState) => {
+          if (gestureState.dx > 60 && gestureState.vx > 0.2) {
+            goBack();
+          }
+        },
+      }),
+    []
+  );
+
   const [monthlyIncome, setMonthlyIncome] = useState(5400);
   const [liquidCash, setLiquidCash] = useState(12850);
   const [cards, setCards] = useState(defaultCards);
@@ -630,31 +721,46 @@ function FinAgentApp() {
     const text = (prompt ?? chatInput).trim();
     if (!text || isLoadingChat) return;
     const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setMessages(previous => [...previous, { id: `u-${Date.now()}`, text, sender: 'user', timestamp }]);
     setChatInput('');
     setIsLoadingChat(true);
     setApiError('');
 
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
     try {
       if (Platform.OS !== 'web' && !api.defaults.baseURL) {
         throw new Error('Set EXPO_PUBLIC_API_URL to your API server address to use AI and receipt scanning.');
       }
-      const response = await api.post('/api/chat', {
-        message: text,
-        userContext: { cards, totalBalance: liquidCash, monthlyIncome, bills, transactions },
-      });
+      const response = await api.post(
+        '/api/chat',
+        {
+          message: text,
+          userContext: { cards, totalBalance: liquidCash, monthlyIncome, bills, transactions },
+        },
+        {
+          signal: abortController.signal,
+        }
+      );
       const reply = response.data?.ai_reply;
       if (typeof reply !== 'string' || !reply.trim()) throw new Error('The AI service returned an empty response.');
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       setMessages(previous => [...previous, {
         id: `ai-${Date.now()}`,
         text: reply,
         sender: 'ai',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       }]);
-    } catch (error) {
+    } catch (error: any) {
+      if (abortController.signal.aborted || error?.name === 'CanceledError' || axios.isCancel(error)) {
+        return;
+      }
       const message = error instanceof Error ? error.message : 'Unable to connect to the AI service.';
       console.error('AI chat request failed', error);
       setApiError(message);
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       setMessages(previous => [...previous, {
         id: `ai-${Date.now()}`,
         text: `I could not reach the AI service. ${message}`,
@@ -663,6 +769,7 @@ function FinAgentApp() {
       }]);
     } finally {
       setIsLoadingChat(false);
+      abortControllerRef.current = null;
     }
   };
 
@@ -679,7 +786,7 @@ function FinAgentApp() {
   const processReceipt = async (fromCamera: boolean) => {
     try {
       setIsScanning(true);
-      setScreen('receipts');
+      navigateToScreen('receipts');
       if (fromCamera) {
         const permission = await ImagePicker.requestCameraPermissionsAsync();
         if (!permission.granted) {
@@ -744,7 +851,7 @@ function FinAgentApp() {
     }, ...previous]);
     setCards(previous => previous.map(card => card.cardName === cardName ? { ...card, balance: card.balance + amount } : card));
     setScannedReceipt(null);
-    setScreen('home');
+    navigateToScreen('home');
     showToast(`Receipt added to ${cardName}`);
   };
 
@@ -855,7 +962,7 @@ function FinAgentApp() {
       <View style={styles.section}>
         <View style={styles.rowBetween}>
           <SectionTitle title="Your cards" subtitle={`${cards.length} connected`} palette={palette} />
-          <Pressable onPress={() => setScreen('cards')}><Text style={[styles.link, { color: palette.accent }]}>Manage</Text></Pressable>
+          <Pressable onPress={() => navigateToScreen('cards')}><Text style={[styles.link, { color: palette.accent }]}>Manage</Text></Pressable>
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.cardCarousel}>
           {cards.map(card => renderCard(card))}
@@ -880,13 +987,13 @@ function FinAgentApp() {
             </View>
           </View>
         ))}
-        <AppButton label="Open budget & activity" icon="pie-chart-outline" onPress={() => setScreen('budget')} palette={palette} variant="quiet" compact />
+        <AppButton label="Open budget & activity" icon="pie-chart-outline" onPress={() => navigateToScreen('budget')} palette={palette} variant="quiet" compact />
       </Panel>
 
       <Panel palette={palette}>
         <View style={styles.rowBetween}>
           <SectionTitle title="Recent activity" subtitle="Latest account entries" palette={palette} />
-          <Pressable onPress={() => setScreen('budget')}><Text style={[styles.link, { color: palette.accent }]}>See all</Text></Pressable>
+          <Pressable onPress={() => navigateToScreen('budget')}><Text style={[styles.link, { color: palette.accent }]}>See all</Text></Pressable>
         </View>
         {renderTransactionList(transactions.slice(0, 5))}
       </Panel>
@@ -989,7 +1096,16 @@ function FinAgentApp() {
           {isLoadingChat ? (
             <View style={styles.loadingRow}>
               <ActivityIndicator color={palette.accent} size="small" />
-              <Text style={[styles.caption, { color: palette.muted }]}>FinAgent is thinking…</Text>
+              <Text style={[styles.caption, { color: palette.muted, flex: 1 }]}>FinAgent is thinking…</Text>
+              <Pressable
+                onPress={stopAgent}
+                accessibilityLabel="Stop response"
+                style={[styles.stopChip, { borderColor: palette.red, backgroundColor: palette.elevated }]}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name="stop-circle" size={15} color={palette.red} />
+                <Text style={[styles.caption, { color: palette.red, fontWeight: '800' }]}>Stop</Text>
+              </Pressable>
             </View>
           ) : null}
         </ScrollView>
@@ -1029,15 +1145,26 @@ function FinAgentApp() {
               <Ionicons name="close-circle" size={18} color={palette.muted} />
             </Pressable>
           ) : null}
-          <Pressable
-            onPress={() => void sendMessage()}
-            disabled={!chatInput.trim() || isLoadingChat}
-            accessibilityLabel="Send message"
-            style={[styles.sendButton, { backgroundColor: palette.accent, opacity: !chatInput.trim() || isLoadingChat ? 0.45 : 1 }]}
-            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-          >
-            <Ionicons name="send-outline" size={17} color="#fff" />
-          </Pressable>
+          {isLoadingChat ? (
+            <Pressable
+              onPress={stopAgent}
+              accessibilityLabel="Stop FinAgent response"
+              style={[styles.sendButton, styles.stopButton]}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+            >
+              <Ionicons name="stop" size={16} color="#fff" />
+            </Pressable>
+          ) : (
+            <Pressable
+              onPress={() => void sendMessage()}
+              disabled={!chatInput.trim()}
+              accessibilityLabel="Send message"
+              style={[styles.sendButton, { backgroundColor: palette.accent, opacity: !chatInput.trim() ? 0.45 : 1 }]}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+            >
+              <Ionicons name="send-outline" size={17} color="#fff" />
+            </Pressable>
+          )}
         </View>
       </Panel>
       {apiError ? <Text style={[styles.caption, { color: palette.red, marginTop: 4 }]}>{apiError}</Text> : null}
@@ -1286,16 +1413,28 @@ function FinAgentApp() {
           </View>
           <View style={styles.modalButtons}>
             <AppButton label="Cancel" onPress={() => setModal(null)} palette={palette} variant="secondary" />
-            <AppButton
-              label={isLoadingChat ? 'Sending…' : 'Send message'}
-              icon="send-outline"
-              disabled={!chatInput.trim() || isLoadingChat}
-              onPress={() => {
-                setModal(null);
-                void sendMessage();
-              }}
-              palette={palette}
-            />
+            {isLoadingChat ? (
+              <AppButton
+                label="Stop response"
+                icon="stop-circle"
+                onPress={() => {
+                  stopAgent();
+                  setModal(null);
+                }}
+                palette={palette}
+              />
+            ) : (
+              <AppButton
+                label="Send message"
+                icon="send-outline"
+                disabled={!chatInput.trim()}
+                onPress={() => {
+                  setModal(null);
+                  void sendMessage();
+                }}
+                palette={palette}
+              />
+            )}
           </View>
         </>
       );
@@ -1325,8 +1464,18 @@ function FinAgentApp() {
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: palette.background }]} edges={['top', 'left', 'right']}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
-      <View style={styles.app}>
+      <View style={styles.app} {...panResponder.panHandlers}>
         <View style={[styles.header, { backgroundColor: palette.background, borderBottomColor: palette.border }]}>
+          {screenHistory.length > 1 ? (
+            <Pressable
+              onPress={goBack}
+              accessibilityLabel="Back to previous screen"
+              style={[styles.backButton, { backgroundColor: palette.elevated, borderColor: palette.border }]}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="chevron-back" size={20} color={palette.text} />
+            </Pressable>
+          ) : null}
           <View style={styles.brandMark}><Text style={styles.brandMarkText}>F</Text></View>
           <View style={styles.brandCopy}>
             <Text style={[styles.brandName, { color: palette.text }]}>FinAgent</Text>
@@ -1347,31 +1496,33 @@ function FinAgentApp() {
           </View>
         ) : null}
 
-        {screen === 'agent' ? (
-          <KeyboardAvoidingView
-            style={styles.agentScreen}
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 64 : 0}
-          >
-            {renderAgent()}
-          </KeyboardAvoidingView>
-        ) : (
-          <KeyboardAvoidingView
-            style={styles.flex}
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 64 : 0}
-          >
-            <ScrollView
-              key={screen}
-              style={styles.mainScroll}
-              contentContainerStyle={styles.pageContent}
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
+        <Animated.View style={[styles.screenAnimatedContainer, { opacity: screenFadeAnim, transform: [{ translateY: screenSlideAnim }] }]}>
+          {screen === 'agent' ? (
+            <KeyboardAvoidingView
+              style={styles.agentScreen}
+              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+              keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 64 : 0}
             >
-              {renderScreen()}
-            </ScrollView>
-          </KeyboardAvoidingView>
-        )}
+              {renderAgent()}
+            </KeyboardAvoidingView>
+          ) : (
+            <KeyboardAvoidingView
+              style={styles.flex}
+              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+              keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 64 : 0}
+            >
+              <ScrollView
+                key={screen}
+                style={styles.mainScroll}
+                contentContainerStyle={styles.pageContent}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+              >
+                {renderScreen()}
+              </ScrollView>
+            </KeyboardAvoidingView>
+          )}
+        </Animated.View>
 
         {(!isKeyboardVisible || screen !== 'agent') ? (
           <View style={[styles.tabBar, { backgroundColor: palette.surface, borderTopColor: palette.border }]}>
@@ -1382,7 +1533,7 @@ function FinAgentApp() {
                   key={tab.id}
                   accessibilityRole="tab"
                   accessibilityState={{ selected: active }}
-                  onPress={() => setScreen(tab.id)}
+                  onPress={() => navigateToScreen(tab.id)}
                   style={styles.tabItem}
                 >
                   <Ionicons name={tab.icon} size={20} color={active ? palette.accent : palette.muted} />
@@ -1523,6 +1674,10 @@ const styles = StyleSheet.create({
   modalSheet: { maxHeight: '92%', borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, paddingTop: 10, paddingHorizontal: 18, paddingBottom: 26 },
   modalHandle: { alignSelf: 'center', width: 38, height: 4, borderRadius: 4, backgroundColor: '#71717a', marginBottom: 16 },
   modalTitle: { fontSize: 20, fontWeight: '900', marginBottom: 14 },
+  backButton: { width: 36, height: 36, borderRadius: 12, borderWidth: 1, alignItems: 'center', justifyContent: 'center', marginRight: 8 },
+  screenAnimatedContainer: { flex: 1 },
+  stopButton: { backgroundColor: '#ef4444' },
+  stopChip: { flexDirection: 'row', alignItems: 'center', gap: 5, borderWidth: 1, borderRadius: 10, paddingHorizontal: 9, paddingVertical: 4 },
   modalButtons: { flexDirection: 'row', gap: 9, marginTop: 12, marginBottom: 8 },
   modalTextArea: { minHeight: 140, maxHeight: 220, paddingTop: 12, fontSize: 14 },
   modalChipsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 },
