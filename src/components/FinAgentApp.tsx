@@ -51,6 +51,7 @@ interface CreditCardItem {
   apr: number;
   dueDate: string;
   minPayment: number;
+  colorTheme?: string;
 }
 
 interface TransactionItem {
@@ -98,7 +99,7 @@ const cardColors: Record<CardNetwork, string> = {
   amex: '#654b17',
   discover: '#155e55',
 };
-const storageKeys = ['fin_theme', 'fin_cards', 'fin_transactions', 'fin_bills', 'fin_monthly_income', 'fin_liquid_cash', 'fin_user_name'] as const;
+const storageKeys = ['fin_theme', 'fin_onboarded', 'fin_cards', 'fin_transactions', 'fin_bills', 'fin_monthly_income', 'fin_liquid_cash', 'fin_user_name'] as const;
 
 const formatCurrency = (value: number, decimals = 2) =>
   `$${value.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}`;
@@ -408,6 +409,20 @@ function FinAgentApp() {
     []
   );
 
+  const [isOnboarded, setIsOnboarded] = useState(false);
+  const [onboardStep, setOnboardStep] = useState<1 | 2 | 3>(1);
+  const [onboardName, setOnboardName] = useState('');
+  const [onboardIncome, setOnboardIncome] = useState('');
+  const [onboardCash, setOnboardCash] = useState('');
+  const [onboardCards, setOnboardCards] = useState<CreditCardItem[]>([]);
+  const [onboardCardName, setOnboardCardName] = useState('');
+  const [onboardCardNetwork, setOnboardCardNetwork] = useState<CardNetwork>('visa');
+  const [onboardCardBalance, setOnboardCardBalance] = useState('');
+  const [onboardCardLimit, setOnboardCardLimit] = useState('');
+  const [onboardCardApr, setOnboardCardApr] = useState('');
+  const [onboardCardLast4, setOnboardCardLast4] = useState('');
+  const [onboardCardDueDate, setOnboardCardDueDate] = useState('');
+
   const [userName, setUserName] = useState('');
   const [monthlyIncome, setMonthlyIncome] = useState(0);
   const [liquidCash, setLiquidCash] = useState(0);
@@ -474,12 +489,25 @@ function FinAgentApp() {
         if (!mounted) return;
         const stored = Object.fromEntries(entries);
         if (stored.fin_theme === 'dark' || stored.fin_theme === 'light') setTheme(stored.fin_theme);
-        if (stored.fin_user_name) setUserName(stored.fin_user_name);
-        setCards(parseArray(stored.fin_cards ?? null, [], 'fin_cards'));
-        setTransactions(parseArray(stored.fin_transactions ?? null, [], 'fin_transactions'));
-        setBills(parseArray(stored.fin_bills ?? null, [], 'fin_bills'));
-        setMonthlyIncome(parseNumber(stored.fin_monthly_income ?? null, 0, 'fin_monthly_income'));
-        setLiquidCash(parseNumber(stored.fin_liquid_cash ?? null, 0, 'fin_liquid_cash'));
+
+        const onboarded = stored.fin_onboarded === 'true';
+        setIsOnboarded(onboarded);
+
+        if (onboarded) {
+          if (stored.fin_user_name) setUserName(stored.fin_user_name);
+          setCards(parseArray(stored.fin_cards ?? null, [], 'fin_cards'));
+          setTransactions(parseArray(stored.fin_transactions ?? null, [], 'fin_transactions'));
+          setBills(parseArray(stored.fin_bills ?? null, [], 'fin_bills'));
+          setMonthlyIncome(parseNumber(stored.fin_monthly_income ?? null, 0, 'fin_monthly_income'));
+          setLiquidCash(parseNumber(stored.fin_liquid_cash ?? null, 0, 'fin_liquid_cash'));
+        } else {
+          setUserName('');
+          setCards([]);
+          setTransactions([]);
+          setBills([]);
+          setMonthlyIncome(0);
+          setLiquidCash(0);
+        }
         setStorageStatus('ready');
       } catch (error) {
         console.error('Failed to load app data from AsyncStorage', error);
@@ -494,8 +522,9 @@ function FinAgentApp() {
   }, []);
 
   useEffect(() => {
-    if (storageStatus !== 'ready') return;
+    if (storageStatus !== 'ready' || !isOnboarded) return;
     void AsyncStorage.multiSet([
+      ['fin_onboarded', 'true'],
       ['fin_theme', theme],
       ['fin_user_name', userName],
       ['fin_cards', JSON.stringify(cards)],
@@ -507,7 +536,126 @@ function FinAgentApp() {
       console.error('Failed to save app data to AsyncStorage', error);
       setStorageStatus('failed');
     });
-  }, [storageStatus, theme, userName, cards, transactions, bills, monthlyIncome, liquidCash]);
+  }, [storageStatus, isOnboarded, theme, userName, cards, transactions, bills, monthlyIncome, liquidCash]);
+
+  const handleAddOnboardCard = () => {
+    if (!onboardCardName.trim()) return;
+
+    const bal = parseFloat(onboardCardBalance) || 0;
+    const lim = parseFloat(onboardCardLimit) || 1000;
+    const apr = parseFloat(onboardCardApr) || 21.99;
+
+    const newCard: CreditCardItem = {
+      id: `c-mob-onboard-${Date.now()}`,
+      cardName: onboardCardName.trim(),
+      network: onboardCardNetwork,
+      last4: onboardCardLast4.trim() || '0000',
+      balance: bal,
+      creditLimit: lim,
+      apr,
+      dueDate: onboardCardDueDate.trim() || 'End of month',
+      minPayment: Math.round(Math.max(15, bal * 0.025)),
+      colorTheme: cardColors[onboardCardNetwork],
+    };
+
+    setOnboardCards(prev => [...prev, newCard]);
+    setOnboardCardName('');
+    setOnboardCardBalance('');
+    setOnboardCardLimit('');
+    setOnboardCardApr('');
+    setOnboardCardLast4('');
+    setOnboardCardDueDate('');
+    showToast(`Added ${newCard.cardName}`);
+  };
+
+  const handleRemoveOnboardCard = (id: string) => {
+    setOnboardCards(prev => prev.filter(c => c.id !== id));
+  };
+
+  const handleCompleteOnboarding = async () => {
+    const finalName = onboardName.trim();
+    if (!finalName) {
+      setOnboardStep(1);
+      return;
+    }
+
+    const finalIncome = parseFloat(onboardIncome) || 0;
+    const finalCash = parseFloat(onboardCash) || 0;
+
+    setUserName(finalName);
+    setMonthlyIncome(finalIncome);
+    setLiquidCash(finalCash);
+    setCards(onboardCards);
+    setIsOnboarded(true);
+
+    try {
+      await AsyncStorage.multiSet([
+        ['fin_onboarded', 'true'],
+        ['fin_user_name', finalName],
+        ['fin_monthly_income', String(finalIncome)],
+        ['fin_liquid_cash', String(finalCash)],
+        ['fin_cards', JSON.stringify(onboardCards)],
+        ['fin_transactions', JSON.stringify(transactions)],
+        ['fin_bills', JSON.stringify(bills)],
+      ]);
+    } catch (err) {
+      console.error('Failed to save onboarding baseline', err);
+    }
+
+    setMessages([
+      {
+        id: `welcome-${Date.now()}`,
+        sender: 'ai',
+        timestamp: 'Just now',
+        text: `Welcome, ${finalName}! Your account is active with ${onboardCards.length} credit card${onboardCards.length === 1 ? '' : 's'} and $${finalIncome.toLocaleString()} monthly income. How can I help optimize your money today?`,
+      },
+    ]);
+
+    showToast(`Welcome to FinAgent, ${finalName}!`);
+  };
+
+  const handleResetData = () => {
+    Alert.alert(
+      'Reset All Data?',
+      'This will clear all entered finances, credit cards, income, and transactions and restart onboarding.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset & Re-onboard',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await AsyncStorage.multiRemove([
+                'fin_onboarded',
+                'fin_user_name',
+                'fin_cards',
+                'fin_transactions',
+                'fin_bills',
+                'fin_monthly_income',
+                'fin_liquid_cash',
+              ]);
+            } catch (err) {
+              console.error('Failed to clear storage:', err);
+            }
+
+            setUserName('');
+            setMonthlyIncome(0);
+            setLiquidCash(0);
+            setCards([]);
+            setTransactions([]);
+            setBills([]);
+            setOnboardName('');
+            setOnboardIncome('');
+            setOnboardCash('');
+            setOnboardCards([]);
+            setOnboardStep(1);
+            setIsOnboarded(false);
+            showToast('All data cleared. Welcome to onboarding!');
+          },
+        },
+      ]
+    );
+  };
 
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -1347,12 +1495,16 @@ function FinAgentApp() {
       </View>
       <Panel palette={palette}>
         <SectionTitle title="Your profile & cash flow" subtitle="Update your profile, income, and cash reserves." palette={palette} />
-        <Field label="Your name" value={userName} onChangeText={setUserName} palette={palette} placeholder="e.g. Alex" />
+        <Field label="Your name" value={userName} onChangeText={setUserName} palette={palette} placeholder="Enter your name" />
         <Field label="Monthly income" value={monthlyIncome ? String(monthlyIncome) : ''} onChangeText={value => setMonthlyIncome(Number.parseFloat(value) || 0)} palette={palette} placeholder="0.00" keyboardType="decimal-pad" />
         <Field label="Liquid cash reserve" value={liquidCash ? String(liquidCash) : ''} onChangeText={value => setLiquidCash(Number.parseFloat(value) || 0)} palette={palette} placeholder="0.00" keyboardType="decimal-pad" />
         <View style={styles.rowBetween}>
           <Text style={[styles.bodyStrong, { color: palette.muted }]}>Estimated net worth</Text>
           <Text style={[styles.bodyStrong, { color: palette.green }]}>{formatCurrency(netWorth)}</Text>
+        </View>
+        <View style={[styles.rowBetween, styles.topGap, { paddingTop: 12, borderTopWidth: 1, borderTopColor: palette.border }]}>
+          <Text style={[styles.caption, { color: palette.muted }]}>Start over with a clean slate</Text>
+          <AppButton label="Reset Data & Re-onboard" icon="trash-outline" variant="danger" onPress={handleResetData} palette={palette} compact />
         </View>
       </Panel>
       <Panel palette={palette}>
@@ -1453,6 +1605,256 @@ function FinAgentApp() {
         </Panel>
       ) : null}
     </>
+  );
+
+  const renderOnboarding = () => (
+    <ScrollView
+      style={styles.mainScroll}
+      contentContainerStyle={[styles.pageContent, { paddingBottom: 40 }]}
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}
+    >
+      <View style={[styles.header, { backgroundColor: 'transparent', borderBottomColor: palette.border, marginBottom: 12 }]}>
+        <View style={styles.brandMark}><Text style={styles.brandMarkText}>F</Text></View>
+        <View style={styles.brandCopy}>
+          <Text style={[styles.brandName, { color: palette.text }]}>FinAgent</Text>
+          <Text style={[styles.brandTagline, { color: palette.muted }]}>Setup & Personalization</Text>
+        </View>
+        <Pressable onPress={() => setTheme(isDark ? 'light' : 'dark')} accessibilityLabel="Toggle theme" style={[styles.themeButton, { borderColor: palette.border }]}>
+          <Ionicons name={isDark ? 'sunny-outline' : 'moon-outline'} size={20} color={isDark ? '#fbbf24' : palette.accent} />
+        </Pressable>
+      </View>
+
+      <View style={[styles.rowBetween, { marginBottom: 16 }]}>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          {[
+            { step: 1 as const, label: 'Identity' },
+            { step: 2 as const, label: 'Cash Flow' },
+            { step: 3 as const, label: 'Cards' },
+          ].map(s => {
+            const active = onboardStep === s.step;
+            const completed = onboardStep > s.step;
+            return (
+              <View
+                key={s.step}
+                style={{
+                  backgroundColor: active ? palette.accent : completed ? palette.green : palette.elevated,
+                  marginRight: 6,
+                  paddingHorizontal: 10,
+                  paddingVertical: 5,
+                  borderRadius: 14,
+                }}
+              >
+                <Text style={{ color: active || completed ? '#ffffff' : palette.muted, fontSize: 11, fontWeight: '700' }}>
+                  {completed ? '✓ ' : ''}{s.step}. {s.label}
+                </Text>
+              </View>
+            );
+          })}
+        </View>
+        <Text style={[styles.caption, { color: palette.muted }]}>Step {onboardStep} of 3</Text>
+      </View>
+
+      {onboardStep === 1 ? (
+        <Panel palette={palette}>
+          <SectionTitle
+            title="Welcome to FinAgent"
+            subtitle="Your private AI personal financial strategist. We start fresh with zero preset accounts or hardcoded data."
+            palette={palette}
+          />
+          <Field
+            label="What should FinAgent call you?"
+            value={onboardName}
+            onChangeText={setOnboardName}
+            palette={palette}
+            placeholder="Enter your name"
+          />
+          <View style={styles.topGap}>
+            <AppButton
+              label="Continue to Baseline"
+              icon="arrow-forward-outline"
+              disabled={!onboardName.trim()}
+              onPress={() => setOnboardStep(2)}
+              palette={palette}
+            />
+          </View>
+        </Panel>
+      ) : null}
+
+      {onboardStep === 2 ? (
+        <Panel palette={palette}>
+          <SectionTitle
+            title="Establish your baseline"
+            subtitle="FinAgent calculates your real-time net worth and debt payoff timelines from your take-home income and liquid cash."
+            palette={palette}
+          />
+          <Field
+            label="Monthly take-home income ($)"
+            value={onboardIncome}
+            onChangeText={setOnboardIncome}
+            palette={palette}
+            placeholder="0.00"
+            keyboardType="decimal-pad"
+          />
+          <Field
+            label="Liquid cash & checking reserve ($)"
+            value={onboardCash}
+            onChangeText={setOnboardCash}
+            palette={palette}
+            placeholder="0.00"
+            keyboardType="decimal-pad"
+          />
+          <View style={[styles.rowBetween, styles.topGap]}>
+            <AppButton
+              label="Back"
+              icon="arrow-back-outline"
+              onPress={() => setOnboardStep(1)}
+              palette={palette}
+              variant="secondary"
+            />
+            <AppButton
+              label="Continue to Cards"
+              icon="arrow-forward-outline"
+              onPress={() => setOnboardStep(3)}
+              palette={palette}
+            />
+          </View>
+        </Panel>
+      ) : null}
+
+      {onboardStep === 3 ? (
+        <>
+          <Panel palette={palette}>
+            <SectionTitle
+              title="Add your credit cards"
+              subtitle="Add active cards to monitor APR, balances, and debt payoff strategy. You can also skip this step."
+              palette={palette}
+            />
+            <Field
+              label="Card name"
+              value={onboardCardName}
+              onChangeText={setOnboardCardName}
+              palette={palette}
+              placeholder="e.g. Chase Freedom, Apple Card"
+            />
+            <Text style={[styles.fieldLabel, { color: palette.muted }]}>Network</Text>
+            <ChoiceChips
+              values={['visa', 'mastercard', 'amex', 'discover'] as const}
+              selected={onboardCardNetwork}
+              onSelect={setOnboardCardNetwork}
+              palette={palette}
+            />
+            <View style={styles.formRow}>
+              <View style={styles.flex}>
+                <Field
+                  label="Balance ($)"
+                  value={onboardCardBalance}
+                  onChangeText={setOnboardCardBalance}
+                  palette={palette}
+                  placeholder="0.00"
+                  keyboardType="decimal-pad"
+                />
+              </View>
+              <View style={styles.flex}>
+                <Field
+                  label="Credit limit ($)"
+                  value={onboardCardLimit}
+                  onChangeText={setOnboardCardLimit}
+                  palette={palette}
+                  placeholder="1000.00"
+                  keyboardType="decimal-pad"
+                />
+              </View>
+            </View>
+            <View style={styles.formRow}>
+              <View style={styles.flex}>
+                <Field
+                  label="APR (%)"
+                  value={onboardCardApr}
+                  onChangeText={setOnboardCardApr}
+                  palette={palette}
+                  placeholder="21.99"
+                  keyboardType="decimal-pad"
+                />
+              </View>
+              <View style={styles.flex}>
+                <Field
+                  label="Last 4 digits"
+                  value={onboardCardLast4}
+                  onChangeText={setOnboardCardLast4}
+                  palette={palette}
+                  placeholder="1234"
+                  keyboardType="number-pad"
+                  maxLength={4}
+                />
+              </View>
+            </View>
+            <View style={styles.topGap}>
+              <AppButton
+                label="Add Card"
+                icon="add-outline"
+                disabled={!onboardCardName.trim()}
+                onPress={handleAddOnboardCard}
+                palette={palette}
+                variant="secondary"
+              />
+            </View>
+          </Panel>
+
+          {onboardCards.length > 0 ? (
+            <Panel palette={palette}>
+              <SectionTitle
+                title={`Added cards (${onboardCards.length})`}
+                subtitle="Your connected cards for tracking and payoff prioritization."
+                palette={palette}
+              />
+              {onboardCards.map(c => (
+                <View key={c.id} style={[styles.transactionRow, { borderBottomColor: palette.border }]}>
+                  <View style={[styles.transactionIcon, { backgroundColor: c.colorTheme ?? cardColors[c.network] ?? palette.accent }]}>
+                    <Ionicons name="card-outline" size={18} color="#fff" />
+                  </View>
+                  <View style={styles.transactionInfo}>
+                    <Text style={[styles.bodyStrong, { color: palette.text }]}>{c.cardName}</Text>
+                    <Text style={[styles.caption, { color: palette.muted }]}>
+                      Bal: {formatCurrency(c.balance)} · Limit: {formatCurrency(c.creditLimit)} · {c.apr}% APR
+                    </Text>
+                  </View>
+                  <Pressable onPress={() => handleRemoveOnboardCard(c.id)} hitSlop={8} style={{ padding: 6 }}>
+                    <Ionicons name="trash-outline" size={18} color={palette.red} />
+                  </Pressable>
+                </View>
+              ))}
+            </Panel>
+          ) : (
+            <Panel palette={palette}>
+              <Text style={[styles.emptyText, { color: palette.muted }]}>
+                No cards added yet. You can add them here or later anytime from Cards screen.
+              </Text>
+            </Panel>
+          )}
+
+          <View style={[styles.rowBetween, styles.topGap]}>
+            <AppButton
+              label="Back"
+              icon="arrow-back-outline"
+              onPress={() => setOnboardStep(2)}
+              palette={palette}
+              variant="secondary"
+            />
+            <AppButton
+              label={onboardCards.length > 0 ? 'Finish & Launch' : 'Skip & Launch'}
+              icon="checkmark-outline"
+              onPress={handleCompleteOnboarding}
+              palette={palette}
+            />
+          </View>
+        </>
+      ) : null}
+
+      <Text style={[styles.caption, styles.centerText, styles.topGap, { color: palette.muted, marginTop: 24 }]}>
+        FinAgent stores all financial data safely and locally on your device.
+      </Text>
+    </ScrollView>
   );
 
   const renderScreen = () => {
@@ -1628,6 +2030,43 @@ function FinAgentApp() {
     );
   }
 
+  if (!isOnboarded) {
+    return (
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: palette.background }]} edges={['top', 'left', 'right', 'bottom']}>
+        <StatusBar style={isDark ? 'light' : 'dark'} />
+        <KeyboardAvoidingView
+          style={styles.flex}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          {renderOnboarding()}
+        </KeyboardAvoidingView>
+        {toast ? (
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.toast,
+              {
+                backgroundColor: palette.accent,
+                opacity: toastAnim,
+                transform: [
+                  {
+                    translateY: toastAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [16, 0],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
+            <Ionicons name="checkmark-circle" size={17} color="#fff" />
+            <Text style={styles.toastText}>{toast}</Text>
+          </Animated.View>
+        ) : null}
+      </SafeAreaView>
+    );
+  }
+
   const tabs: { id: Screen; label: string; icon: IconName }[] = [
     { id: 'home', label: 'Home', icon: 'home-outline' },
     { id: 'cards', label: 'Cards', icon: 'card-outline' },
@@ -1659,6 +2098,9 @@ function FinAgentApp() {
           </View>
           <Pressable onPress={() => setTheme(isDark ? 'light' : 'dark')} accessibilityLabel="Toggle color theme" style={[styles.themeButton, { borderColor: palette.border }]}>
             <Ionicons name={isDark ? 'sunny-outline' : 'moon-outline'} size={20} color={isDark ? '#fbbf24' : palette.accent} />
+          </Pressable>
+          <Pressable onPress={handleResetData} accessibilityLabel="Reset all data" style={[styles.themeButton, { borderColor: palette.border }]}>
+            <Ionicons name="refresh-outline" size={19} color={palette.red} />
           </Pressable>
           <Pressable onPress={openTransactionModal} accessibilityLabel="Add transaction" style={[styles.headerAdd, { backgroundColor: palette.accent }]}>
             <Ionicons name="add" size={23} color="#fff" />
