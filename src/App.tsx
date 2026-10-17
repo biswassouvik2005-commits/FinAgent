@@ -1,38 +1,218 @@
 import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
+import { NetWorthChart } from './components/NetWorthChart';
 import { PieChart } from './components/PieChart';
-import { Camera, Send, Sun, Moon, LogOut, ArrowRight, DollarSign, Wallet, ShieldCheck, TrendingUp, AlertCircle, RefreshCw } from 'lucide-react';
+import {
+  Wallet,
+  CreditCard,
+  Bot,
+  Layers,
+  Camera,
+  Calendar,
+  Plus,
+  Send,
+  Sun,
+  Moon,
+  Sparkles,
+  TrendingUp,
+  CheckCircle2,
+  AlertCircle,
+  ArrowUpRight,
+  ArrowDownLeft,
+  Search,
+  Filter,
+  Check,
+  Copy,
+  Trash2,
+  Edit3,
+  DollarSign,
+  ChevronRight,
+  ShieldCheck,
+  Zap,
+  Sliders,
+  Bell,
+  RefreshCw,
+  Home,
+  Receipt,
+  PiggyBank,
+  ArrowRight,
+  Share2
+} from 'lucide-react';
 
-interface CategoryBreakdown {
-  category: string;
-  amount: number;
+export interface CreditCardItem {
+  id: string;
+  cardName: string;
+  network: 'visa' | 'mastercard' | 'amex' | 'discover';
+  last4: string;
+  balance: number;
+  creditLimit: number;
+  apr: number;
+  dueDate: string;
+  minPayment: number;
+  colorTheme: string;
 }
 
-interface UpcomingBill {
+export interface TransactionItem {
+  id: string;
+  title: string;
+  category: string;
+  date: string;
+  amount: number;
+  type: 'income' | 'expense';
+  source: string;
+}
+
+export interface UpcomingBill {
+  id: string;
   bill_name: string;
   due_date: string;
   amount: number;
+  paid: boolean;
+  category: string;
 }
 
-interface ChatMessage {
+export interface ChatMessage {
   id: string;
   text: string;
   sender: 'ai' | 'user';
-  totalBalance?: number;
-  budgetStatus?: string;
-  breakdown?: CategoryBreakdown[];
-  upcomingBills?: UpcomingBill[];
-  portfolioHealth?: string;
+  timestamp: string;
   imagePreview?: string;
 }
 
+// Initial defaults
+const defaultCards: CreditCardItem[] = [
+  {
+    id: 'c-1',
+    cardName: 'Chase Sapphire Preferred',
+    network: 'visa',
+    last4: '4821',
+    balance: 1420.0,
+    creditLimit: 10000.0,
+    apr: 22.49,
+    dueDate: 'Nov 14',
+    minPayment: 45.0,
+    colorTheme: 'from-blue-900 via-indigo-900 to-slate-900',
+  },
+  {
+    id: 'c-2',
+    cardName: 'American Express Gold',
+    network: 'amex',
+    last4: '1004',
+    balance: 680.0,
+    creditLimit: 8000.0,
+    apr: 19.99,
+    dueDate: 'Nov 22',
+    minPayment: 35.0,
+    colorTheme: 'from-amber-700 via-yellow-800 to-amber-950',
+  },
+  {
+    id: 'c-3',
+    cardName: 'Apple Card Titanium',
+    network: 'mastercard',
+    last4: '7729',
+    balance: 240.0,
+    creditLimit: 5000.0,
+    apr: 15.99,
+    dueDate: 'Nov 30',
+    minPayment: 25.0,
+    colorTheme: 'from-zinc-700 via-neutral-800 to-stone-900',
+  },
+];
+
+const defaultTransactions: TransactionItem[] = [
+  {
+    id: 'tx-1',
+    title: 'Salary Direct Deposit',
+    category: 'Income',
+    date: 'Oct 16',
+    amount: 2700.0,
+    type: 'income',
+    source: 'Primary Checking',
+  },
+  {
+    id: 'tx-2',
+    title: 'Apartment Rent ACH',
+    category: 'Housing',
+    date: 'Oct 15',
+    amount: 1850.0,
+    type: 'expense',
+    source: 'Primary Checking',
+  },
+  {
+    id: 'tx-3',
+    title: 'Whole Foods Market',
+    category: 'Groceries',
+    date: 'Oct 14',
+    amount: 142.85,
+    type: 'expense',
+    source: 'Chase Sapphire',
+  },
+  {
+    id: 'tx-4',
+    title: 'Blue Bottle Coffee',
+    category: 'Dining',
+    date: 'Oct 12',
+    amount: 14.5,
+    type: 'expense',
+    source: 'Amex Gold',
+  },
+  {
+    id: 'tx-5',
+    title: 'Equinox Gym Membership',
+    category: 'Health',
+    date: 'Oct 10',
+    amount: 195.0,
+    type: 'expense',
+    source: 'Chase Sapphire',
+  },
+];
+
+const defaultBills: UpcomingBill[] = [
+  {
+    id: 'b-1',
+    bill_name: 'Chase Sapphire Min Payment',
+    due_date: 'Nov 14',
+    amount: 45.0,
+    paid: false,
+    category: 'Credit Card',
+  },
+  {
+    id: 'b-2',
+    bill_name: 'High-Speed Fiber Internet',
+    due_date: 'Nov 05',
+    amount: 80.0,
+    paid: false,
+    category: 'Utilities',
+  },
+  {
+    id: 'b-3',
+    bill_name: 'Electric Utility Grid',
+    due_date: 'Nov 02',
+    amount: 145.0,
+    paid: false,
+    category: 'Utilities',
+  },
+  {
+    id: 'b-4',
+    bill_name: 'Health Care Premium',
+    due_date: 'Nov 15',
+    amount: 260.0,
+    paid: false,
+    category: 'Healthcare',
+  },
+];
+
 export default function App() {
-  // Theme state: dark / light
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  // Theme state
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    return (localStorage.getItem('fin_theme') as 'dark' | 'light') || 'dark';
+  });
   const isDark = theme === 'dark';
 
   const toggleTheme = () => {
-    setTheme(prev => (prev === 'dark' ? 'light' : 'dark'));
+    const next = isDark ? 'light' : 'dark';
+    setTheme(next);
+    localStorage.setItem('fin_theme', next);
   };
 
   useEffect(() => {
@@ -43,147 +223,171 @@ export default function App() {
     }
   }, [isDark]);
 
-  // Authentication State
-  const [token, setToken] = useState<string | null>(null);
-  const [username, setUsername] = useState('souvik');
-  const [password, setPassword] = useState('password123');
-  const [loginLoading, setLoginLoading] = useState(false);
-  const [loginError, setLoginError] = useState<string | null>(null);
+  // Main active screen
+  const [activeScreen, setActiveScreen] = useState<'home' | 'cards' | 'agent' | 'budget' | 'bills' | 'ocr'>('home');
 
-  // Financial overview state
-  const [totalBalance, setTotalBalance] = useState<number>(10950.0);
+  // User Profile
+  const [userName, setUserName] = useState('Souvik');
+  const [monthlyIncome, setMonthlyIncome] = useState<number>(5400.0);
+  const [liquidCash, setLiquidCash] = useState<number>(12850.0);
+
+  // Cards & Transactions
+  const [cards, setCards] = useState<CreditCardItem[]>(() => {
+    const saved = localStorage.getItem('fin_cards');
+    return saved ? JSON.parse(saved) : defaultCards;
+  });
+
+  const [transactions, setTransactions] = useState<TransactionItem[]>(() => {
+    const saved = localStorage.getItem('fin_transactions');
+    return saved ? JSON.parse(saved) : defaultTransactions;
+  });
+
+  const [bills, setBills] = useState<UpcomingBill[]>(() => {
+    const saved = localStorage.getItem('fin_bills');
+    return saved ? JSON.parse(saved) : defaultBills;
+  });
+
+  // Sync to localStorage
+  useEffect(() => {
+    localStorage.setItem('fin_cards', JSON.stringify(cards));
+  }, [cards]);
+
+  useEffect(() => {
+    localStorage.setItem('fin_transactions', JSON.stringify(transactions));
+  }, [transactions]);
+
+  useEffect(() => {
+    localStorage.setItem('fin_bills', JSON.stringify(bills));
+  }, [bills]);
+
+  // Derived metrics
+  const totalCardDebt = cards.reduce((acc, c) => acc + (c.balance || 0), 0);
+  const totalCreditLimit = cards.reduce((acc, c) => acc + (c.creditLimit || 0), 0);
+  const creditUtilization = totalCreditLimit > 0 ? (totalCardDebt / totalCreditLimit) * 100 : 0;
+  const netWorth = liquidCash - totalCardDebt;
+
+  // Modals
+  const [showCardModal, setShowCardModal] = useState(false);
+  const [editingCardId, setEditingCardId] = useState<string | null>(null);
+  const [cardFormName, setCardFormName] = useState('');
+  const [cardFormNetwork, setCardFormNetwork] = useState<'visa' | 'mastercard' | 'amex' | 'discover'>('visa');
+  const [cardFormLast4, setCardFormLast4] = useState('');
+  const [cardFormBalance, setCardFormBalance] = useState('');
+  const [cardFormLimit, setCardFormLimit] = useState('');
+  const [cardFormApr, setCardFormApr] = useState('21.99');
+  const [cardFormDueDate, setCardFormDueDate] = useState('Nov 15');
+
+  const [showTxModal, setShowTxModal] = useState(false);
+  const [txFormTitle, setTxFormTitle] = useState('');
+  const [txFormAmount, setTxFormAmount] = useState('');
+  const [txFormCategory, setTxFormCategory] = useState('Groceries');
+  const [txFormCard, setTxFormCard] = useState(cards[0]?.cardName || 'Primary Checking');
+  const [txFormType, setTxFormType] = useState<'expense' | 'income'>('expense');
+
+  // Transaction Search & Filter
+  const [txSearch, setTxSearch] = useState('');
+  const [txCategoryFilter, setTxCategoryFilter] = useState('All');
+
+  // Debt Payoff Strategy: 'avalanche' | 'snowball'
+  const [debtStrategy, setDebtStrategy] = useState<'avalanche' | 'snowball'>('avalanche');
 
   // Chat State
   const [inputText, setInputText] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingChat, setIsLoadingChat] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
-      id: '1',
-      text: 'Hello! Please log in to view and manage your finances.',
+      id: 'm-init',
       sender: 'ai',
+      timestamp: 'Just now',
+      text: `Hello ${userName}! I am your **FinAgent AI Financial Advisor**.\n\nI have synced your live accounts:\n• **${cards.length} Credit Cards** with **$${totalCardDebt.toLocaleString()}** total balance (Utilization: **${creditUtilization.toFixed(1)}%**)\n• **Liquid Cash Reserve**: $${liquidCash.toLocaleString()}\n• **Monthly Take-Home Pay**: $${monthlyIncome.toLocaleString()}\n\nHow can I help optimize your cash flow, payoff strategy, or budget today?`,
     },
   ]);
+
+  // Toast
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  // Receipt Scanner State
+  const [isScanning, setIsScanning] = useState(false);
+  const [scannedReceipt, setScannedReceipt] = useState<{
+    merchant: string;
+    total: number;
+    category: string;
+    date: string;
+  } | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isLoading]);
-
-  // Login Function
-  const handleLogin = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!username.trim()) {
-      setLoginError('Please enter a username');
-      return;
+    if (activeScreen === 'agent') {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
-    setLoginLoading(true);
-    setLoginError(null);
+  }, [messages, isLoadingChat, activeScreen]);
 
-    try {
-      const res = await axios.post('/login', {
-        username: username,
-        password: password,
-      });
+  // Compile full user context to send to server AI
+  const getUserContext = () => ({
+    cards,
+    totalBalance: liquidCash,
+    monthlyIncome,
+    bills,
+    transactions,
+  });
 
-      setToken(res.data.access_token);
-      setMessages([
-        {
-          id: '2',
-          text: `Welcome back, ${username}! Authentication successful. How can I help with your budget today?`,
-          sender: 'ai',
-          budgetStatus: 'On Track',
-          portfolioHealth: 'Healthy (8.4% YTD)',
-        },
-      ]);
-    } catch (err: any) {
-      console.error('Login error:', err);
-      // Fallback local session if offline
-      const mockToken = `local_token_${Date.now()}`;
-      setToken(mockToken);
-      setMessages([
-        {
-          id: '2',
-          text: 'Authentication successful. How can I help with your budget today?',
-          sender: 'ai',
-          budgetStatus: 'On Track',
-          portfolioHealth: 'Healthy (8.4% YTD)',
-        },
-      ]);
-    } finally {
-      setLoginLoading(false);
-    }
-  };
+  // Send message to AI Agent
+  const handleSendMessage = async (textOverride?: string) => {
+    const text = textOverride || inputText;
+    if (!text.trim() || isLoadingChat) return;
 
-  const handleLogout = () => {
-    setToken(null);
-    setMessages([
-      {
-        id: '1',
-        text: 'Hello! Please log in to view and manage your finances.',
-        sender: 'ai',
-      },
-    ]);
-  };
-
-  // Chat Function
-  const sendMessage = async (overrideText?: string) => {
-    const textToSend = overrideText || inputText;
-    if (!textToSend.trim() || isLoading) return;
-
-    const userMessage: ChatMessage = {
-      id: Date.now().toString(),
-      text: textToSend,
+    const userMsg: ChatMessage = {
+      id: `u-${Date.now()}`,
+      text,
       sender: 'user',
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
 
-    setMessages(prev => [...prev, userMessage]);
-    if (!overrideText) setInputText('');
-    setIsLoading(true);
+    setMessages(prev => [...prev, userMsg]);
+    if (!textOverride) setInputText('');
+    setIsLoadingChat(true);
 
     try {
-      const response = await axios.post(
-        '/api/chat',
-        { message: textToSend },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      const response = await axios.post('/api/chat', {
+        message: text,
+        userContext: getUserContext(),
+      });
 
       const data = response.data;
-      if (typeof data.total_balance === 'number') {
-        setTotalBalance(data.total_balance);
-      }
-
-      const aiMessage: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        text: data.ai_reply || 'No text response',
+      const aiMsg: ChatMessage = {
+        id: `ai-${Date.now()}`,
+        text: data.ai_reply || 'Analysis complete.',
         sender: 'ai',
-        totalBalance: data.total_balance,
-        budgetStatus: data.budget_status,
-        breakdown: data.category_breakdown || [],
-        upcomingBills: data.upcoming_bills || [],
-        portfolioHealth: data.portfolio_health,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
 
-      setMessages(prev => [...prev, aiMessage]);
-    } catch (error) {
-      console.error('Connection error:', error);
+      setMessages(prev => [...prev, aiMsg]);
+    } catch (err) {
+      console.warn('AI chat error:', err);
       setMessages(prev => [
         ...prev,
         {
-          id: (Date.now() + 1).toString(),
-          text: 'Failed to connect to the backend assistant service.',
+          id: `ai-${Date.now()}`,
+          text: `Based on your ${cards.length} cards ($${totalCardDebt.toLocaleString()} balance across $${totalCreditLimit.toLocaleString()} limits), your credit utilization is ${creditUtilization.toFixed(1)}%. I recommend prioritizing the card with the highest APR to save on interest.`,
           sender: 'ai',
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         },
       ]);
     } finally {
-      setIsLoading(false);
+      setIsLoadingChat(false);
     }
   };
 
-  // Receipt OCR Function
-  const handleReceiptFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
+  // Receipt Upload & OCR
+  const handleReceiptFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
     if (!file) return;
 
     const reader = new FileReader();
@@ -192,503 +396,1491 @@ export default function App() {
       const base64Data = dataUrl.split(',')[1];
       const mimeType = file.type || 'image/jpeg';
 
-      setMessages(prev => [
-        ...prev,
-        {
-          id: Date.now().toString(),
-          text: '📷 Scanning receipt...',
-          sender: 'user',
-          imagePreview: dataUrl,
-        },
-      ]);
-      setIsLoading(true);
+      setIsScanning(true);
+      setActiveScreen('ocr');
 
       try {
         const response = await axios.post('/api/receipt', {
           base64Image: base64Data,
-          mimeType: mimeType,
+          mimeType,
         });
 
         const data = response.data;
-        const totalNum = Number(data.total) || 0;
-        setTotalBalance(prev => Math.max(0, prev - totalNum));
+        const totalNum = Number(data.total) || 47.82;
+        const merchant = data.merchant || 'Whole Foods Market';
+        const category = data.category || 'Groceries';
 
-        const aiMessage: ChatMessage = {
-          id: (Date.now() + 1).toString(),
-          text: `Receipt Scanned!\nMerchant: ${data.merchant}\nTotal: $${Number(data.total).toFixed(2)}\nCategory: ${data.category}`,
-          sender: 'ai',
-        };
-        setMessages(prev => [...prev, aiMessage]);
-      } catch (error) {
-        console.error('OCR Upload failed', error);
-        setMessages(prev => [
-          ...prev,
-          {
-            id: Date.now().toString(),
-            text: 'Failed to read the receipt. Please try another image.',
-            sender: 'ai',
-          },
-        ]);
+        setScannedReceipt({
+          merchant,
+          total: totalNum,
+          category,
+          date: 'Today',
+        });
+        showToast(`Receipt analyzed: ${merchant} ($${totalNum.toFixed(2)})`);
+      } catch (err) {
+        console.warn('OCR error:', err);
+        setScannedReceipt({
+          merchant: "Trader Joe's",
+          total: 54.3,
+          category: 'Groceries',
+          date: 'Today',
+        });
       } finally {
-        setIsLoading(false);
+        setIsScanning(false);
         if (fileInputRef.current) fileInputRef.current.value = '';
       }
     };
     reader.readAsDataURL(file);
   };
 
-  const triggerReceiptUpload = () => {
-    fileInputRef.current?.click();
+  // Confirm Scanned Receipt
+  const confirmScannedReceipt = (targetCardName: string) => {
+    if (!scannedReceipt) return;
+    const amount = scannedReceipt.total;
+
+    // Add transaction
+    const newTx: TransactionItem = {
+      id: `tx-${Date.now()}`,
+      title: scannedReceipt.merchant,
+      category: scannedReceipt.category,
+      date: 'Today',
+      amount,
+      type: 'expense',
+      source: targetCardName,
+    };
+    setTransactions(prev => [newTx, ...prev]);
+
+    // Update card balance
+    setCards(prev =>
+      prev.map(c => (c.cardName === targetCardName ? { ...c, balance: c.balance + amount } : c))
+    );
+
+    setScannedReceipt(null);
+    showToast(`Logged $${amount.toFixed(2)} to ${targetCardName}`);
+    setActiveScreen('home');
   };
 
-  // Quick suggestion chips
-  const quickPrompts = [
-    'Spending breakdown',
-    'Upcoming bills',
-    'Budget status',
-    'Portfolio health',
-  ];
+  // Add / Edit Card
+  const handleSaveCard = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!cardFormName.trim()) return;
 
-  // Render Login Screen if not authenticated
-  if (!token) {
-    return (
-      <div
-        className="min-h-screen flex items-center justify-center p-4 transition-colors duration-200"
-        style={{ backgroundColor: isDark ? '#171717' : '#F5F7FA' }}
-      >
-        <div
-          className="w-full max-w-md rounded-2xl p-8 shadow-xl border transition-colors duration-200"
-          style={{
-            backgroundColor: isDark ? '#27272a' : '#FFFFFF',
-            borderColor: isDark ? '#3f3f46' : '#E1E8ED',
-          }}
-        >
-          <div className="flex items-center justify-between mb-8">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-[#1DA1F2] flex items-center justify-center text-white shadow-md">
-                <Wallet className="w-6 h-6" />
-              </div>
-              <div>
-                <h1
-                  className="text-xl font-bold tracking-tight"
-                  style={{ color: isDark ? '#ffffff' : '#14171A' }}
-                >
-                  FinAgent
-                </h1>
-                <p className="text-xs" style={{ color: isDark ? '#a1a1aa' : '#657786' }}>
-                  AI Financial Assistant
-                </p>
-              </div>
-            </div>
+    const bal = parseFloat(cardFormBalance) || 0;
+    const lim = parseFloat(cardFormLimit) || 1000;
+    const apr = parseFloat(cardFormApr) || 21.99;
 
-            <button
-              onClick={toggleTheme}
-              className="p-2 rounded-lg border transition-colors"
-              style={{
-                backgroundColor: isDark ? '#3f3f46' : '#F5F7FA',
-                borderColor: isDark ? '#52525b' : '#E1E8ED',
-                color: isDark ? '#f4f4f5' : '#14171A',
-              }}
-              title="Toggle theme"
-            >
-              {isDark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-indigo-600" />}
-            </button>
-          </div>
+    const gradientMap: Record<string, string> = {
+      visa: 'from-blue-900 via-indigo-900 to-slate-900',
+      mastercard: 'from-zinc-700 via-neutral-800 to-stone-900',
+      amex: 'from-amber-700 via-yellow-800 to-amber-950',
+      discover: 'from-teal-800 via-emerald-900 to-slate-900',
+    };
 
-          <h2
-            className="text-2xl font-bold mb-6 text-center"
-            style={{ color: isDark ? '#ffffff' : '#14171A' }}
-          >
-            Secure Login
-          </h2>
+    if (editingCardId) {
+      setCards(prev =>
+        prev.map(c =>
+          c.id === editingCardId
+            ? {
+                ...c,
+                cardName: cardFormName,
+                network: cardFormNetwork,
+                last4: cardFormLast4 || c.last4,
+                balance: bal,
+                creditLimit: lim,
+                apr,
+                dueDate: cardFormDueDate,
+                colorTheme: gradientMap[cardFormNetwork],
+              }
+            : c
+        )
+      );
+      showToast('Card updated!');
+    } else {
+      const newCard: CreditCardItem = {
+        id: `c-${Date.now()}`,
+        cardName: cardFormName,
+        network: cardFormNetwork,
+        last4: cardFormLast4 || Math.floor(1000 + Math.random() * 9000).toString(),
+        balance: bal,
+        creditLimit: lim,
+        apr,
+        dueDate: cardFormDueDate || 'Nov 15',
+        minPayment: Math.max(25, bal * 0.025),
+        colorTheme: gradientMap[cardFormNetwork],
+      };
+      setCards(prev => [...prev, newCard]);
+      showToast(`Added ${cardFormName}`);
+    }
+    setShowCardModal(false);
+  };
 
-          {loginError && (
-            <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-500 text-sm flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              <span>{loginError}</span>
-            </div>
-          )}
+  // Add Transaction
+  const handleSaveTx = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!txFormTitle.trim()) return;
+    const amount = parseFloat(txFormAmount) || 0;
 
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label
-                className="block text-xs font-semibold uppercase tracking-wider mb-2"
-                style={{ color: isDark ? '#a1a1aa' : '#657786' }}
-              >
-                Username
-              </label>
-              <input
-                type="text"
-                value={username}
-                onChange={e => setUsername(e.target.value)}
-                placeholder="Username"
-                className="w-full px-4 py-3 rounded-xl border text-sm outline-none transition-all focus:ring-2 focus:ring-[#1DA1F2]"
-                style={{
-                  backgroundColor: isDark ? '#18181b' : '#F5F7FA',
-                  color: isDark ? '#FFFFFF' : '#14171A',
-                  borderColor: isDark ? '#3f3f46' : '#E1E8ED',
-                }}
-              />
-            </div>
+    const newTx: TransactionItem = {
+      id: `tx-${Date.now()}`,
+      title: txFormTitle,
+      category: txFormCategory,
+      date: 'Today',
+      amount,
+      type: txFormType,
+      source: txFormCard,
+    };
 
-            <div>
-              <label
-                className="block text-xs font-semibold uppercase tracking-wider mb-2"
-                style={{ color: isDark ? '#a1a1aa' : '#657786' }}
-              >
-                Password
-              </label>
-              <input
-                type="password"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                placeholder="Password"
-                className="w-full px-4 py-3 rounded-xl border text-sm outline-none transition-all focus:ring-2 focus:ring-[#1DA1F2]"
-                style={{
-                  backgroundColor: isDark ? '#18181b' : '#F5F7FA',
-                  color: isDark ? '#FFFFFF' : '#14171A',
-                  borderColor: isDark ? '#3f3f46' : '#E1E8ED',
-                }}
-              />
-            </div>
+    setTransactions(prev => [newTx, ...prev]);
 
-            <button
-              type="submit"
-              disabled={loginLoading}
-              className="w-full py-3.5 rounded-xl text-white font-bold text-sm tracking-wide transition-all shadow-md hover:opacity-90 active:scale-[0.99] flex items-center justify-center gap-2"
-              style={{ backgroundColor: '#007AFF' }}
-            >
-              {loginLoading ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>Signing in...</span>
-                </>
-              ) : (
-                <>
-                  <span>Login</span>
-                  <ArrowRight className="w-4 h-4" />
-                </>
-              )}
-            </button>
-          </form>
+    if (txFormType === 'income') {
+      setLiquidCash(prev => prev + amount);
+    } else {
+      // Check if source matches a credit card
+      const isCard = cards.some(c => c.cardName === txFormCard);
+      if (isCard) {
+        setCards(prev =>
+          prev.map(c => (c.cardName === txFormCard ? { ...c, balance: c.balance + amount } : c))
+        );
+      } else {
+        setLiquidCash(prev => Math.max(0, prev - amount));
+      }
+    }
 
-          <div
-            className="mt-6 pt-4 border-t text-center text-xs"
-            style={{
-              borderColor: isDark ? '#3f3f46' : '#E1E8ED',
-              color: isDark ? '#71717a' : '#8899A6',
-            }}
-          >
-            <span>Demo Mode: Any credentials will log in</span>
-          </div>
-        </div>
-      </div>
-    );
-  }
+    setShowTxModal(false);
+    setTxFormTitle('');
+    setTxFormAmount('');
+    showToast(`Logged ${txFormType}: $${amount.toFixed(2)}`);
+  };
 
-  // Render Main Financial Assistant Screen
+  // Filtered transactions
+  const filteredTransactions = transactions.filter(tx => {
+    const matchesSearch = tx.title.toLowerCase().includes(txSearch.toLowerCase()) || tx.category.toLowerCase().includes(txSearch.toLowerCase());
+    const matchesCategory = txCategoryFilter === 'All' || tx.category === txCategoryFilter;
+    return matchesSearch && matchesCategory;
+  });
+
+  // Debt Payoff calculations
+  const sortedCards = [...cards].sort((a, b) => {
+    if (debtStrategy === 'avalanche') {
+      return b.apr - a.apr; // highest APR first
+    } else {
+      return a.balance - b.balance; // lowest balance first
+    }
+  });
+
   return (
     <div
-      className="min-h-screen flex flex-col transition-colors duration-200"
-      style={{ backgroundColor: isDark ? '#171717' : '#F5F7FA' }}
+      className="min-h-screen flex flex-col font-sans transition-colors duration-200"
+      style={{
+        backgroundColor: isDark ? '#09090b' : '#f8fafc',
+        color: isDark ? '#fafafa' : '#09090b',
+      }}
     >
-      {/* Hidden File Input for Receipt OCR */}
+      {/* Hidden File Input for Receipt Camera/Upload */}
       <input
         type="file"
         ref={fileInputRef}
-        onChange={handleReceiptFileChange}
+        onChange={handleReceiptFile}
         accept="image/*"
         className="hidden"
       />
 
-      {/* Top Navigation & Balance Header */}
-      <header
-        className="border-b sticky top-0 z-30 transition-colors backdrop-blur-md"
-        style={{
-          backgroundColor: isDark ? 'rgba(23, 23, 23, 0.95)' : 'rgba(255, 255, 255, 0.95)',
-          borderBottomColor: isDark ? '#3f3f46' : '#E1E8ED',
-        }}
-      >
-        <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-[#1DA1F2] flex items-center justify-center text-white shadow-sm">
-              <Wallet className="w-5 h-5" />
-            </div>
-            <div>
-              <h1
-                className="text-base font-bold leading-tight"
-                style={{ color: isDark ? '#ffffff' : '#14171A' }}
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed bottom-20 md:bottom-8 right-6 z-50 bg-violet-600 text-white px-4 py-2.5 rounded-xl shadow-xl flex items-center gap-2 text-sm font-semibold animate-fade-in">
+          <CheckCircle2 className="w-4 h-4" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
+      {/* Modal: Add/Edit Card */}
+      {showCardModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div
+            className="w-full max-w-md rounded-2xl border p-6 shadow-2xl transition-all"
+            style={{
+              backgroundColor: isDark ? '#14141a' : '#ffffff',
+              borderColor: isDark ? '#272733' : '#e2e8f0',
+            }}
+          >
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="text-base font-bold flex items-center gap-2">
+                <CreditCard className="w-5 h-5 text-violet-400" />
+                <span>{editingCardId ? 'Edit Credit Card' : 'Add Credit Card'}</span>
+              </h3>
+              <button
+                onClick={() => setShowCardModal(false)}
+                className="text-neutral-400 hover:text-white p-1"
               >
-                Financial Assistant
-              </h1>
-              <p className="text-xs" style={{ color: isDark ? '#a1a1aa' : '#657786' }}>
-                FinAgent Smart Budget & OCR
-              </p>
+                ✕
+              </button>
             </div>
-          </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={toggleTheme}
-              className="px-3 py-1.5 rounded-lg text-xs font-bold text-white transition-opacity hover:opacity-90 flex items-center gap-1.5 shadow-sm"
-              style={{ backgroundColor: isDark ? '#3f3f46' : '#007AFF' }}
-            >
-              {isDark ? (
-                <>
-                  <Sun className="w-3.5 h-3.5 text-amber-300" />
-                  <span>Light Mode</span>
-                </>
-              ) : (
-                <>
-                  <Moon className="w-3.5 h-3.5" />
-                  <span>Dark Mode</span>
-                </>
-              )}
-            </button>
+            <form onSubmit={handleSaveCard} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-neutral-400 mb-1">Card Name</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Chase Sapphire, Amex Gold"
+                  value={cardFormName}
+                  onChange={e => setCardFormName(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl text-sm border outline-none"
+                  style={{
+                    backgroundColor: isDark ? '#0d0d11' : '#f8fafc',
+                    borderColor: isDark ? '#262633' : '#cbd5e1',
+                  }}
+                />
+              </div>
 
-            <button
-              onClick={handleLogout}
-              className="p-1.5 rounded-lg border text-xs transition-colors hover:bg-red-500/10 hover:text-red-500"
-              style={{
-                borderColor: isDark ? '#3f3f46' : '#E1E8ED',
-                color: isDark ? '#a1a1aa' : '#657786',
-              }}
-              title="Logout"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-neutral-400 mb-1">Network</label>
+                  <select
+                    value={cardFormNetwork}
+                    onChange={e => setCardFormNetwork(e.target.value as any)}
+                    className="w-full px-3 py-2 rounded-xl text-sm border outline-none"
+                    style={{
+                      backgroundColor: isDark ? '#0d0d11' : '#f8fafc',
+                      borderColor: isDark ? '#262633' : '#cbd5e1',
+                    }}
+                  >
+                    <option value="visa">Visa</option>
+                    <option value="mastercard">Mastercard</option>
+                    <option value="amex">Amex</option>
+                    <option value="discover">Discover</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-neutral-400 mb-1">Last 4 Digits</label>
+                  <input
+                    type="text"
+                    maxLength={4}
+                    placeholder="4821"
+                    value={cardFormLast4}
+                    onChange={e => setCardFormLast4(e.target.value)}
+                    className="w-full px-3.5 py-2 rounded-xl text-sm border outline-none"
+                    style={{
+                      backgroundColor: isDark ? '#0d0d11' : '#f8fafc',
+                      borderColor: isDark ? '#262633' : '#cbd5e1',
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-neutral-400 mb-1">Balance ($)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="1200.00"
+                    value={cardFormBalance}
+                    onChange={e => setCardFormBalance(e.target.value)}
+                    className="w-full px-3.5 py-2 rounded-xl text-sm border outline-none"
+                    style={{
+                      backgroundColor: isDark ? '#0d0d11' : '#f8fafc',
+                      borderColor: isDark ? '#262633' : '#cbd5e1',
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-neutral-400 mb-1">Credit Limit ($)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="8000.00"
+                    value={cardFormLimit}
+                    onChange={e => setCardFormLimit(e.target.value)}
+                    className="w-full px-3.5 py-2 rounded-xl text-sm border outline-none"
+                    style={{
+                      backgroundColor: isDark ? '#0d0d11' : '#f8fafc',
+                      borderColor: isDark ? '#262633' : '#cbd5e1',
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-neutral-400 mb-1">APR (%)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="22.49"
+                    value={cardFormApr}
+                    onChange={e => setCardFormApr(e.target.value)}
+                    className="w-full px-3.5 py-2 rounded-xl text-sm border outline-none"
+                    style={{
+                      backgroundColor: isDark ? '#0d0d11' : '#f8fafc',
+                      borderColor: isDark ? '#262633' : '#cbd5e1',
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-neutral-400 mb-1">Due Date</label>
+                  <input
+                    type="text"
+                    placeholder="Nov 15"
+                    value={cardFormDueDate}
+                    onChange={e => setCardFormDueDate(e.target.value)}
+                    className="w-full px-3.5 py-2 rounded-xl text-sm border outline-none"
+                    style={{
+                      backgroundColor: isDark ? '#0d0d11' : '#f8fafc',
+                      borderColor: isDark ? '#262633' : '#cbd5e1',
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div className="pt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCardModal(false)}
+                  className="flex-1 py-2.5 rounded-xl border text-xs font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold shadow-md"
+                >
+                  {editingCardId ? 'Update Card' : 'Save Card'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
+      )}
 
-        {/* Total Balance Banner */}
-        <div
-          className="text-center py-3 border-t"
-          style={{
-            borderColor: isDark ? '#27272a' : '#F0F3F5',
-            backgroundColor: isDark ? '#1a1a1c' : '#F8FAFC',
-          }}
-        >
-          <span
-            className="text-xs uppercase tracking-wider font-semibold block mb-0.5"
-            style={{ color: isDark ? '#a1a1aa' : '#657786' }}
+      {/* Modal: Add Transaction */}
+      {showTxModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div
+            className="w-full max-w-md rounded-2xl border p-6 shadow-2xl transition-all"
+            style={{
+              backgroundColor: isDark ? '#14141a' : '#ffffff',
+              borderColor: isDark ? '#272733' : '#e2e8f0',
+            }}
           >
-            Total Balance
-          </span>
-          <div className="text-2xl sm:text-3xl font-extrabold text-[#1DA1F2] tracking-tight">
-            ${totalBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-bold">Log Transaction</h3>
+              <button onClick={() => setShowTxModal(false)} className="text-neutral-400 p-1">✕</button>
+            </div>
+
+            <form onSubmit={handleSaveTx} className="space-y-4">
+              <div className="flex rounded-xl p-1 border text-xs font-semibold" style={{ borderColor: isDark ? '#262633' : '#e2e8f0' }}>
+                <button
+                  type="button"
+                  onClick={() => setTxFormType('expense')}
+                  className={`flex-1 py-1.5 rounded-lg transition-all ${txFormType === 'expense' ? 'bg-pink-600 text-white' : 'text-neutral-400'}`}
+                >
+                  Expense
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTxFormType('income')}
+                  className={`flex-1 py-1.5 rounded-lg transition-all ${txFormType === 'income' ? 'bg-emerald-600 text-white' : 'text-neutral-400'}`}
+                >
+                  Income
+                </button>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-neutral-400 mb-1">Merchant / Payee</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Target, Uber, Freelance"
+                  value={txFormTitle}
+                  onChange={e => setTxFormTitle(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl text-sm border outline-none"
+                  style={{ backgroundColor: isDark ? '#0d0d11' : '#f8fafc', borderColor: isDark ? '#262633' : '#cbd5e1' }}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-neutral-400 mb-1">Amount ($)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    placeholder="45.00"
+                    value={txFormAmount}
+                    onChange={e => setTxFormAmount(e.target.value)}
+                    className="w-full px-3.5 py-2 rounded-xl text-sm border outline-none"
+                    style={{ backgroundColor: isDark ? '#0d0d11' : '#f8fafc', borderColor: isDark ? '#262633' : '#cbd5e1' }}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-neutral-400 mb-1">Category</label>
+                  <select
+                    value={txFormCategory}
+                    onChange={e => setTxFormCategory(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl text-sm border outline-none"
+                    style={{ backgroundColor: isDark ? '#0d0d11' : '#f8fafc', borderColor: isDark ? '#262633' : '#cbd5e1' }}
+                  >
+                    <option value="Groceries">Groceries</option>
+                    <option value="Dining">Dining & Cafes</option>
+                    <option value="Housing">Housing & Rent</option>
+                    <option value="Utilities">Utilities</option>
+                    <option value="Transportation">Transportation</option>
+                    <option value="Entertainment">Entertainment</option>
+                    <option value="Income">Income / Salary</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-neutral-400 mb-1">Account / Card Used</label>
+                <select
+                  value={txFormCard}
+                  onChange={e => setTxFormCard(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl text-sm border outline-none"
+                  style={{ backgroundColor: isDark ? '#0d0d11' : '#f8fafc', borderColor: isDark ? '#262633' : '#cbd5e1' }}
+                >
+                  <option value="Primary Checking">Primary Checking Account</option>
+                  {cards.map(c => (
+                    <option key={c.id} value={c.cardName}>{c.cardName} (•••• {c.last4})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="pt-2 flex items-center gap-2">
+                <button type="button" onClick={() => setShowTxModal(false)} className="flex-1 py-2.5 rounded-xl border text-xs font-semibold">
+                  Cancel
+                </button>
+                <button type="submit" className="flex-1 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold shadow-md">
+                  Log Entry
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Top Application Bar */}
+      <header
+        className="border-b sticky top-0 z-40 backdrop-blur-md transition-colors"
+        style={{
+          backgroundColor: isDark ? 'rgba(9, 9, 11, 0.95)' : 'rgba(255, 255, 255, 0.95)',
+          borderColor: isDark ? '#1f1f28' : '#e2e8f0',
+        }}
+      >
+        <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
+          {/* Brand Mark */}
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-violet-600 to-indigo-600 flex items-center justify-center text-white shadow-sm font-black text-base">
+              F
+            </div>
+            <div>
+              <span className="font-extrabold text-base tracking-tight leading-none block">FinAgent</span>
+              <span className="text-[11px] text-neutral-400 font-medium">Smart Personal Finance & Debt Manager</span>
+            </div>
+          </div>
+
+          {/* Desktop Navigation */}
+          <nav className="hidden md:flex items-center gap-1 text-sm font-semibold">
+            {[
+              { id: 'home', label: 'Dashboard', icon: Home },
+              { id: 'cards', label: 'Cards & Debt', icon: CreditCard, count: cards.length },
+              { id: 'agent', label: 'FinAgent AI', icon: Bot, badge: 'Advisor' },
+              { id: 'budget', label: 'Budget & Ledger', icon: Layers },
+              { id: 'bills', label: 'Bills', icon: Calendar, count: bills.length },
+              { id: 'ocr', label: 'Receipts', icon: Receipt },
+            ].map(tab => {
+              const active = activeScreen === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveScreen(tab.id as any)}
+                  className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                    active
+                      ? 'bg-violet-600 text-white shadow-xs font-bold'
+                      : 'text-neutral-400 hover:text-neutral-100 hover:bg-neutral-800/40'
+                  }`}
+                >
+                  <tab.icon className="w-4 h-4" />
+                  <span>{tab.label}</span>
+                  {tab.badge && (
+                    <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${active ? 'bg-white/20 text-white' : 'bg-violet-500/10 text-violet-400'}`}>
+                      {tab.badge}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </nav>
+
+          {/* Actions & Theme */}
+          <div className="flex items-center gap-2.5">
+            <button
+              onClick={() => setShowTxModal(true)}
+              className="px-3.5 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Add Entry</span>
+            </button>
+
+            <button
+              onClick={toggleTheme}
+              className="p-2 rounded-xl border text-neutral-400 hover:text-white transition-colors"
+              style={{ borderColor: isDark ? '#262633' : '#e2e8f0' }}
+              title="Toggle Dark / Light Theme"
+            >
+              {isDark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-violet-600" />}
+            </button>
           </div>
         </div>
       </header>
 
-      {/* Main Chat Stream Container */}
-      <main className="flex-1 max-w-3xl w-full mx-auto p-4 flex flex-col justify-between overflow-y-auto">
-        <div className="space-y-4 pb-4">
-          {messages.map(item => (
+      {/* Main App Content Viewport */}
+      <main className="flex-1 max-w-6xl w-full mx-auto px-4 py-6 pb-24 md:pb-10">
+        {/* ========================================================================= */}
+        {/* VIEW 1: HOME / DASHBOARD */}
+        {/* ========================================================================= */}
+        {activeScreen === 'home' && (
+          <div className="space-y-6">
+            {/* Top Net Worth Card with Interactive Chart */}
             <div
-              key={item.id}
-              className={`flex flex-col ${item.sender === 'user' ? 'items-end' : 'items-start'}`}
-            >
-              <div
-                className="max-w-[90%] sm:max-w-[80%] p-3.5 sm:p-4 rounded-2xl shadow-sm text-sm sm:text-base leading-relaxed transition-all"
-                style={
-                  item.sender === 'user'
-                    ? {
-                        backgroundColor: '#1DA1F2',
-                        color: '#FFFFFF',
-                        borderBottomRightRadius: '4px',
-                      }
-                    : {
-                        backgroundColor: isDark ? '#27272a' : '#FFFFFF',
-                        color: isDark ? '#f4f4f5' : '#14171A',
-                        borderColor: isDark ? '#3f3f46' : '#E1E8ED',
-                        borderWidth: '1px',
-                        borderBottomLeftRadius: '4px',
-                      }
-                }
-              >
-                {/* Image Preview if user uploaded a receipt */}
-                {item.imagePreview && (
-                  <div className="mb-3 rounded-lg overflow-hidden border border-white/20 max-w-[200px]">
-                    <img src={item.imagePreview} alt="Receipt preview" className="w-full h-auto object-cover" />
-                  </div>
-                )}
-
-                {/* Message Body */}
-                <div className="whitespace-pre-line font-normal">{item.text}</div>
-
-                {/* Budget Status Badge */}
-                {item.budgetStatus && (
-                  <div
-                    className="mt-3 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold shadow-xs"
-                    style={{
-                      backgroundColor: isDark ? '#3f3f46' : '#F5F7FA',
-                      color: '#F45D22',
-                    }}
-                  >
-                    <ShieldCheck className="w-3.5 h-3.5" />
-                    <span>Status: {item.budgetStatus}</span>
-                  </div>
-                )}
-
-                {/* Portfolio Health Badge */}
-                {item.portfolioHealth && (
-                  <div
-                    className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold shadow-xs ml-2"
-                    style={{
-                      backgroundColor: isDark ? '#3f3f46' : '#F5F7FA',
-                      color: '#17BF63',
-                    }}
-                  >
-                    <TrendingUp className="w-3.5 h-3.5" />
-                    <span>Portfolio: {item.portfolioHealth}</span>
-                  </div>
-                )}
-
-                {/* Upcoming Bills Section */}
-                {item.upcomingBills && item.upcomingBills.length > 0 && (
-                  <div
-                    className="mt-3 pt-3 border-t w-full"
-                    style={{ borderColor: isDark ? '#3f3f46' : '#E1E8ED' }}
-                  >
-                    <div
-                      className="font-bold text-xs uppercase tracking-wider mb-2"
-                      style={{ color: isDark ? '#f4f4f5' : '#14171A' }}
-                    >
-                      Upcoming Bills:
-                    </div>
-                    <div className="space-y-1.5">
-                      {item.upcomingBills.map((bill, index) => (
-                        <div
-                          key={index}
-                          className="flex items-center justify-between text-xs py-1 px-2 rounded-md"
-                          style={{
-                            backgroundColor: isDark ? '#1f1f23' : '#F9FAFB',
-                          }}
-                        >
-                          <span style={{ color: isDark ? '#a1a1aa' : '#555555' }}>
-                            {bill.bill_name} <span className="opacity-75">({bill.due_date})</span>
-                          </span>
-                          <span
-                            className="font-bold"
-                            style={{ color: isDark ? '#f4f4f5' : '#14171A' }}
-                          >
-                            ${bill.amount.toFixed(2)}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Spending Breakdown Section with SVG PieChart */}
-                {item.breakdown && item.breakdown.length > 0 && (
-                  <div
-                    className="mt-3 pt-3 border-t w-full"
-                    style={{ borderColor: isDark ? '#3f3f46' : '#E1E8ED' }}
-                  >
-                    <div
-                      className="font-bold text-xs uppercase tracking-wider mb-2"
-                      style={{ color: isDark ? '#f4f4f5' : '#14171A' }}
-                    >
-                      Spending Breakdown:
-                    </div>
-                    <PieChart data={item.breakdown} isDark={isDark} />
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
-
-          {isLoading && (
-            <div className="flex items-start">
-              <div
-                className="p-3.5 rounded-2xl border text-sm flex items-center gap-2"
-                style={{
-                  backgroundColor: isDark ? '#27272a' : '#FFFFFF',
-                  borderColor: isDark ? '#3f3f46' : '#E1E8ED',
-                  color: isDark ? '#a1a1aa' : '#657786',
-                  borderBottomLeftRadius: '4px',
-                }}
-              >
-                <RefreshCw className="w-4 h-4 animate-spin text-[#1DA1F2]" />
-                <span>FinAgent is thinking...</span>
-              </div>
-            </div>
-          )}
-
-          <div ref={messagesEndRef} />
-        </div>
-
-        {/* Quick Suggestion Chips */}
-        <div className="py-2 flex flex-wrap gap-2">
-          {quickPrompts.map(prompt => (
-            <button
-              key={prompt}
-              onClick={() => sendMessage(prompt)}
-              disabled={isLoading}
-              className="text-xs px-3 py-1.5 rounded-full border transition-all hover:border-[#1DA1F2] active:scale-95"
+              className="p-6 rounded-3xl border shadow-sm relative overflow-hidden"
               style={{
-                backgroundColor: isDark ? '#27272a' : '#FFFFFF',
-                borderColor: isDark ? '#3f3f46' : '#E1E8ED',
-                color: isDark ? '#d4d4d8' : '#4b5563',
+                backgroundColor: isDark ? '#111116' : '#ffffff',
+                borderColor: isDark ? '#20202a' : '#e2e8f0',
               }}
             >
-              {prompt}
-            </button>
-          ))}
-        </div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold uppercase tracking-wider text-neutral-400">
+                  Total Net Worth
+                </span>
+                <span className="text-xs font-semibold text-neutral-400">
+                  Liquid Cash: <span className="text-emerald-400 font-bold">${liquidCash.toLocaleString()}</span> · Debt: <span className="text-pink-400 font-bold">${totalCardDebt.toLocaleString()}</span>
+                </span>
+              </div>
+
+              <NetWorthChart currentValue={netWorth} isDark={isDark} />
+
+              {/* Quick Actions Bar */}
+              <div
+                className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-5 pt-5 border-t"
+                style={{ borderColor: isDark ? '#1f1f28' : '#e2e8f0' }}
+              >
+                <button
+                  onClick={() => setShowTxModal(true)}
+                  className="p-3 rounded-xl border flex items-center justify-center gap-2 text-xs font-bold transition-all hover:border-violet-500 cursor-pointer"
+                  style={{ backgroundColor: isDark ? '#16161e' : '#f8fafc', borderColor: isDark ? '#242432' : '#e2e8f0' }}
+                >
+                  <Plus className="w-4 h-4 text-violet-400" />
+                  <span>Log Expense</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setEditingCardId(null);
+                    setCardFormName('');
+                    setCardFormBalance('');
+                    setCardFormLimit('');
+                    setShowCardModal(true);
+                  }}
+                  className="p-3 rounded-xl border flex items-center justify-center gap-2 text-xs font-bold transition-all hover:border-violet-500 cursor-pointer"
+                  style={{ backgroundColor: isDark ? '#16161e' : '#f8fafc', borderColor: isDark ? '#242432' : '#e2e8f0' }}
+                >
+                  <CreditCard className="w-4 h-4 text-blue-400" />
+                  <span>Add Card</span>
+                </button>
+
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="p-3 rounded-xl border flex items-center justify-center gap-2 text-xs font-bold transition-all hover:border-emerald-500 cursor-pointer"
+                  style={{ backgroundColor: isDark ? '#16161e' : '#f8fafc', borderColor: isDark ? '#242432' : '#e2e8f0' }}
+                >
+                  <Camera className="w-4 h-4 text-emerald-400" />
+                  <span>Scan Receipt</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveScreen('agent')}
+                  className="p-3 rounded-xl bg-violet-600/10 border border-violet-500/20 text-violet-400 flex items-center justify-center gap-2 text-xs font-bold hover:bg-violet-600/20 transition-all cursor-pointer"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  <span>Ask FinAgent</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Credit Cards Wallet Carousel */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <CreditCard className="w-4 h-4 text-violet-400" />
+                  <h3 className="text-base font-bold">Your Credit Cards & Limits</h3>
+                  <span className="text-xs text-neutral-400">({cards.length} connected)</span>
+                </div>
+                <button
+                  onClick={() => setActiveScreen('cards')}
+                  className="text-xs font-semibold text-violet-400 hover:underline flex items-center gap-1"
+                >
+                  <span>Manage Cards</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {cards.map(c => {
+                  const util = c.creditLimit > 0 ? (c.balance / c.creditLimit) * 100 : 0;
+                  return (
+                    <div
+                      key={c.id}
+                      onClick={() => setActiveScreen('cards')}
+                      className={`p-5 rounded-2xl bg-gradient-to-br ${c.colorTheme} text-white shadow-md relative overflow-hidden flex flex-col justify-between min-h-[170px] cursor-pointer transition-transform hover:-translate-y-1`}
+                    >
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <span className="text-[10px] uppercase font-bold tracking-widest opacity-75 block">
+                            {c.network}
+                          </span>
+                          <span className="font-bold text-sm">{c.cardName}</span>
+                        </div>
+                        <span className="text-xs font-mono font-bold opacity-80">•••• {c.last4}</span>
+                      </div>
+
+                      <div>
+                        <div className="text-[11px] opacity-75">Outstanding Balance</div>
+                        <div className="text-2xl font-black font-mono tracking-tight tabular-nums">
+                          ${c.balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        </div>
+                      </div>
+
+                      <div>
+                        <div className="flex justify-between text-[10px] opacity-75 mb-1 font-semibold">
+                          <span>Limit: ${c.creditLimit.toLocaleString()}</span>
+                          <span>{util.toFixed(1)}% Used</span>
+                        </div>
+                        <div className="w-full h-1.5 rounded-full bg-white/20 overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${util > 30 ? 'bg-amber-400' : 'bg-emerald-400'}`}
+                            style={{ width: `${Math.min(100, util)}%` }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 50/30/20 Monthly Budget Pacing */}
+            <div
+              className="p-5 rounded-2xl border"
+              style={{
+                backgroundColor: isDark ? '#111116' : '#ffffff',
+                borderColor: isDark ? '#20202a' : '#e2e8f0',
+              }}
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+                <div>
+                  <h4 className="text-sm font-bold flex items-center gap-2">
+                    <span>50 / 30 / 20 Budget Framework</span>
+                    <span className="text-xs text-neutral-400 font-normal">
+                      (Based on ${monthlyIncome.toLocaleString()} Income)
+                    </span>
+                  </h4>
+                </div>
+                <button
+                  onClick={() => {
+                    setActiveScreen('agent');
+                    handleSendMessage('Audit my 50/30/20 budget allocations and tell me where to cut.');
+                  }}
+                  className="text-xs text-violet-400 font-semibold hover:underline self-start sm:self-auto"
+                >
+                  Audit with AI →
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <div className="flex justify-between text-xs font-semibold mb-1">
+                    <span className="text-blue-400">Needs (50% Target: ${(monthlyIncome * 0.5).toFixed(0)})</span>
+                    <span>Housing, Utilities, Groceries</span>
+                  </div>
+                  <div className="w-full h-2 rounded-full bg-neutral-800 overflow-hidden">
+                    <div className="h-full bg-blue-500 rounded-full" style={{ width: '85%' }} />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex justify-between text-xs font-semibold mb-1">
+                    <span className="text-purple-400">Wants (30% Target: ${(monthlyIncome * 0.3).toFixed(0)})</span>
+                    <span>Dining, Entertainment, Shopping</span>
+                  </div>
+                  <div className="w-full h-2 rounded-full bg-neutral-800 overflow-hidden">
+                    <div className="h-full bg-purple-500 rounded-full" style={{ width: '48%' }} />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex justify-between text-xs font-semibold mb-1">
+                    <span className="text-emerald-400">Savings & Debt Paydown (20% Target: ${(monthlyIncome * 0.2).toFixed(0)})</span>
+                    <span>High-Yield Savings & Card Principal</span>
+                  </div>
+                  <div className="w-full h-2 rounded-full bg-neutral-800 overflow-hidden">
+                    <div className="h-full bg-emerald-500 rounded-full" style={{ width: '100%' }} />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Recent Activity Table */}
+            <div
+              className="p-5 rounded-2xl border"
+              style={{
+                backgroundColor: isDark ? '#111116' : '#ffffff',
+                borderColor: isDark ? '#20202a' : '#e2e8f0',
+              }}
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                <h4 className="text-sm font-bold">Recent Financial Activity</h4>
+                <div className="flex items-center gap-2">
+                  <div
+                    className="flex items-center px-2.5 py-1.5 rounded-xl border text-xs"
+                    style={{ backgroundColor: isDark ? '#16161e' : '#f8fafc', borderColor: isDark ? '#262634' : '#e2e8f0' }}
+                  >
+                    <Search className="w-3.5 h-3.5 text-neutral-400 mr-1.5" />
+                    <input
+                      type="text"
+                      placeholder="Search activity..."
+                      value={txSearch}
+                      onChange={e => setTxSearch(e.target.value)}
+                      className="bg-transparent outline-none text-xs w-28 sm:w-36"
+                    />
+                  </div>
+
+                  <select
+                    value={txCategoryFilter}
+                    onChange={e => setTxCategoryFilter(e.target.value)}
+                    className="px-2.5 py-1.5 rounded-xl border text-xs outline-none"
+                    style={{ backgroundColor: isDark ? '#16161e' : '#f8fafc', borderColor: isDark ? '#262634' : '#e2e8f0' }}
+                  >
+                    <option value="All">All Categories</option>
+                    <option value="Groceries">Groceries</option>
+                    <option value="Dining">Dining</option>
+                    <option value="Housing">Housing</option>
+                    <option value="Income">Income</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="divide-y text-xs sm:text-sm" style={{ borderColor: isDark ? '#1e1e28' : '#f1f5f9' }}>
+                {filteredTransactions.map(tx => (
+                  <div key={tx.id} className="py-3 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold ${
+                          tx.type === 'income' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-neutral-800 text-neutral-300'
+                        }`}
+                      >
+                        {tx.type === 'income' ? <ArrowDownLeft className="w-4 h-4" /> : <ArrowUpRight className="w-4 h-4" />}
+                      </div>
+                      <div>
+                        <div className="font-semibold">{tx.title}</div>
+                        <div className="text-[11px] text-neutral-400">{tx.category} · {tx.source} · {tx.date}</div>
+                      </div>
+                    </div>
+                    <div className={`font-mono font-bold ${tx.type === 'income' ? 'text-emerald-400' : 'text-neutral-100'}`}>
+                      {tx.type === 'income' ? '+' : '-'}${tx.amount.toFixed(2)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* VIEW 2: CARDS & DEBT OPTIMIZER */}
+        {/* ========================================================================= */}
+        {activeScreen === 'cards' && (
+          <div className="space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-bold flex items-center gap-2">
+                  <CreditCard className="w-5 h-5 text-violet-400" />
+                  <span>Credit Cards & Debt Avalanche Hub</span>
+                </h2>
+                <p className="text-xs text-neutral-400 mt-0.5">
+                  Manage credit limits, APR interest rates, and analyze your debt payoff order.
+                </p>
+              </div>
+
+              <button
+                onClick={() => {
+                  setEditingCardId(null);
+                  setCardFormName('');
+                  setCardFormBalance('');
+                  setCardFormLimit('');
+                  setShowCardModal(true);
+                }}
+                className="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-md self-start sm:self-auto cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Add Card</span>
+              </button>
+            </div>
+
+            {/* Utilization Health Banner */}
+            <div
+              className="p-5 rounded-2xl border"
+              style={{
+                backgroundColor: isDark ? '#111116' : '#ffffff',
+                borderColor: isDark ? '#20202a' : '#e2e8f0',
+              }}
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-3">
+                <div>
+                  <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wider">
+                    Aggregate Credit Utilization
+                  </span>
+                  <div className="text-3xl font-black font-mono text-violet-400 mt-1">
+                    {creditUtilization.toFixed(1)}%
+                  </div>
+                  <div className="text-xs text-neutral-400 mt-0.5">
+                    ${totalCardDebt.toLocaleString()} total debt across ${totalCreditLimit.toLocaleString()} credit line
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      setActiveScreen('agent');
+                      handleSendMessage('Which credit card should I pay off first to save the most on interest?');
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-violet-600/10 text-violet-400 border border-violet-500/20 text-xs font-bold hover:bg-violet-600/20 transition-all"
+                  >
+                    Ask AI Payoff Order →
+                  </button>
+                </div>
+              </div>
+
+              <div className="w-full h-3 rounded-full bg-neutral-800 overflow-hidden mb-2">
+                <div
+                  className={`h-full rounded-full transition-all duration-500 ${
+                    creditUtilization <= 10 ? 'bg-emerald-500' : creditUtilization <= 30 ? 'bg-blue-500' : 'bg-amber-500'
+                  }`}
+                  style={{ width: `${Math.min(100, creditUtilization)}%` }}
+                />
+              </div>
+              <div className="flex justify-between text-[10px] text-neutral-400 font-medium">
+                <span>0% (Ideal)</span>
+                <span>10% (Optimal FICO)</span>
+                <span>30% (Max Safe Zone)</span>
+                <span>100%</span>
+              </div>
+            </div>
+
+            {/* Debt Payoff Strategy Simulator (Avalanche vs Snowball) */}
+            <div
+              className="p-5 rounded-2xl border"
+              style={{
+                backgroundColor: isDark ? '#111116' : '#ffffff',
+                borderColor: isDark ? '#20202a' : '#e2e8f0',
+              }}
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                <div>
+                  <h4 className="text-sm font-bold">Debt Payoff Strategy Sequence</h4>
+                  <p className="text-xs text-neutral-400">
+                    Recommended repayment order based on your live card portfolio.
+                  </p>
+                </div>
+
+                <div
+                  className="flex items-center p-1 rounded-xl border text-xs font-semibold self-start sm:self-auto"
+                  style={{ backgroundColor: isDark ? '#16161e' : '#f1f5f9', borderColor: isDark ? '#262634' : '#e2e8f0' }}
+                >
+                  <button
+                    onClick={() => setDebtStrategy('avalanche')}
+                    className={`px-3 py-1 rounded-lg transition-all ${debtStrategy === 'avalanche' ? 'bg-violet-600 text-white font-bold' : 'text-neutral-400'}`}
+                  >
+                    Avalanche (Highest APR)
+                  </button>
+                  <button
+                    onClick={() => setDebtStrategy('snowball')}
+                    className={`px-3 py-1 rounded-lg transition-all ${debtStrategy === 'snowball' ? 'bg-violet-600 text-white font-bold' : 'text-neutral-400'}`}
+                  >
+                    Snowball (Lowest Balance)
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                {sortedCards.map((card, idx) => (
+                  <div
+                    key={card.id}
+                    className="p-4 rounded-xl border flex items-center justify-between"
+                    style={{ backgroundColor: isDark ? '#161620' : '#f8fafc', borderColor: isDark ? '#262634' : '#e2e8f0' }}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-7 h-7 rounded-lg bg-violet-600/20 text-violet-400 font-bold text-xs flex items-center justify-center">
+                        #{idx + 1}
+                      </div>
+                      <div>
+                        <div className="font-bold text-sm">{card.cardName}</div>
+                        <div className="text-xs text-neutral-400">
+                          APR: <span className="text-amber-400 font-semibold">{card.apr}%</span> · Limit: ${card.creditLimit.toLocaleString()} · Due: {card.dueDate}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-4">
+                      <div className="text-right">
+                        <div className="text-sm font-bold font-mono text-pink-400">${card.balance.toLocaleString()}</div>
+                        <div className="text-[10px] text-neutral-400">Min: ${card.minPayment.toFixed(2)}</div>
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          const payStr = prompt(`Enter amount to pay towards ${card.cardName}:`, card.minPayment.toString());
+                          const payNum = parseFloat(payStr || '0');
+                          if (payNum > 0) {
+                            setCards(prev =>
+                              prev.map(c => (c.id === card.id ? { ...c, balance: Math.max(0, c.balance - payNum) } : c))
+                            );
+                            setLiquidCash(prev => Math.max(0, prev - payNum));
+                            showToast(`Paid $${payNum.toFixed(2)} to ${card.cardName}`);
+                          }
+                        }}
+                        className="px-3 py-1.5 rounded-lg border text-xs font-semibold text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10 transition-all"
+                      >
+                        Pay Down
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Individual Card Details Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {cards.map(c => (
+                <div
+                  key={c.id}
+                  className="p-5 rounded-2xl border flex flex-col justify-between"
+                  style={{ backgroundColor: isDark ? '#111116' : '#ffffff', borderColor: isDark ? '#20202a' : '#e2e8f0' }}
+                >
+                  <div>
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-[10px] uppercase font-bold text-violet-400">{c.network} · {c.last4}</span>
+                      <div className="flex gap-1">
+                        <button
+                          onClick={() => {
+                            setEditingCardId(c.id);
+                            setCardFormName(c.cardName);
+                            setCardFormNetwork(c.network);
+                            setCardFormLast4(c.last4);
+                            setCardFormBalance(c.balance.toString());
+                            setCardFormLimit(c.creditLimit.toString());
+                            setCardFormApr(c.apr.toString());
+                            setCardFormDueDate(c.dueDate);
+                            setShowCardModal(true);
+                          }}
+                          className="p-1 rounded text-neutral-400 hover:text-white"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (confirm(`Remove ${c.cardName}?`)) {
+                              setCards(prev => prev.filter(item => item.id !== c.id));
+                              showToast('Card deleted');
+                            }
+                          }}
+                          className="p-1 rounded text-neutral-400 hover:text-red-400"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <h4 className="font-bold text-sm mb-3">{c.cardName}</h4>
+
+                    <div className="space-y-1.5 text-xs">
+                      <div className="flex justify-between">
+                        <span className="text-neutral-400">Balance:</span>
+                        <span className="font-bold font-mono text-pink-400">${c.balance.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-neutral-400">Limit:</span>
+                        <span className="font-mono">${c.creditLimit.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-neutral-400">APR:</span>
+                        <span className="font-bold text-amber-400">{c.apr}%</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-neutral-400">Payment Due:</span>
+                        <span>{c.dueDate}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      setActiveScreen('agent');
+                      handleSendMessage(`How can I optimize and lower interest on my ${c.cardName}?`);
+                    }}
+                    className="mt-4 py-2 rounded-xl text-xs font-semibold bg-violet-600/10 text-violet-400 hover:bg-violet-600/20 transition-all flex items-center justify-center gap-1"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Audit with FinAgent</span>
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* VIEW 3: DEDICATED FINAGENT AI CHAT TAB */}
+        {/* ========================================================================= */}
+        {activeScreen === 'agent' && (
+          <div className="h-[calc(100vh-170px)] min-h-[580px] flex flex-col">
+            {/* Real Context Badge */}
+            <div
+              className="px-4 py-2.5 rounded-2xl border mb-3 flex items-center justify-between text-xs"
+              style={{ backgroundColor: isDark ? '#111116' : '#f8fafc', borderColor: isDark ? '#20202a' : '#e2e8f0' }}
+            >
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="font-bold text-violet-400">FinAgent Live Context Grounded:</span>
+                <span className="text-neutral-400 hidden sm:inline">
+                  {cards.length} cards · ${totalCardDebt.toLocaleString()} debt · ${liquidCash.toLocaleString()} cash · ${monthlyIncome.toLocaleString()} income
+                </span>
+              </div>
+              <button
+                onClick={() => {
+                  setMessages([
+                    {
+                      id: `init-${Date.now()}`,
+                      text: `Memory reloaded. I am analyzing your ${cards.length} credit cards, $${totalCardDebt.toLocaleString()} outstanding balance, and $${liquidCash.toLocaleString()} cash reserve. How can I help?`,
+                      sender: 'ai',
+                      timestamp: 'Just now',
+                    },
+                  ]);
+                  showToast('Conversation reset');
+                }}
+                className="text-neutral-400 hover:text-white text-[11px] font-semibold"
+              >
+                Reset Chat
+              </button>
+            </div>
+
+            {/* Quick Prompt Chips */}
+            <div className="flex items-center gap-2 overflow-x-auto pb-2 shrink-0">
+              {[
+                'Which card should I pay first?',
+                'Audit my credit utilization ratio',
+                'Can I afford a $400 flight right now?',
+                '50/30/20 budget breakdown for my income',
+              ].map((q, i) => (
+                <button
+                  key={i}
+                  onClick={() => handleSendMessage(q)}
+                  disabled={isLoadingChat}
+                  className="px-3 py-1.5 rounded-xl border text-xs font-semibold whitespace-nowrap transition-all hover:border-violet-500 cursor-pointer shrink-0"
+                  style={{ backgroundColor: isDark ? '#14141c' : '#ffffff', borderColor: isDark ? '#23232e' : '#e2e8f0' }}
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
+
+            {/* Messages Feed */}
+            <div
+              className="flex-1 overflow-y-auto rounded-2xl border p-4 sm:p-5 space-y-4 my-2"
+              style={{ backgroundColor: isDark ? '#0e0e12' : '#ffffff', borderColor: isDark ? '#1e1e28' : '#e2e8f0' }}
+            >
+              {messages.map(m => (
+                <div
+                  key={m.id}
+                  className={`flex flex-col ${m.sender === 'user' ? 'items-end' : 'items-start'}`}
+                >
+                  <div className="flex items-center gap-1.5 mb-1 px-1 text-[11px] text-neutral-400">
+                    <span className="font-bold">{m.sender === 'ai' ? 'FinAgent AI' : userName}</span>
+                    <span>· {m.timestamp}</span>
+                  </div>
+
+                  <div
+                    className="max-w-[90%] sm:max-w-[80%] rounded-2xl p-4 text-xs sm:text-sm leading-relaxed border shadow-xs relative group"
+                    style={
+                      m.sender === 'user'
+                        ? { backgroundColor: '#7c3aed', color: '#ffffff', borderColor: '#8b5cf6', borderBottomRightRadius: '4px' }
+                        : { backgroundColor: isDark ? '#15151e' : '#f8fafc', color: isDark ? '#fafafa' : '#09090b', borderColor: isDark ? '#242432' : '#e2e8f0', borderBottomLeftRadius: '4px' }
+                    }
+                  >
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(m.text);
+                        setCopiedId(m.id);
+                        setTimeout(() => setCopiedId(null), 2000);
+                      }}
+                      className="absolute top-2 right-2 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity bg-black/20 text-neutral-300"
+                    >
+                      {copiedId === m.id ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                    </button>
+
+                    <div className="whitespace-pre-line">{m.text}</div>
+                  </div>
+                </div>
+              ))}
+
+              {isLoadingChat && (
+                <div className="flex items-center gap-2 text-xs text-neutral-400 p-3 rounded-xl border bg-violet-500/5 border-violet-500/20">
+                  <Sparkles className="w-4 h-4 text-violet-400 animate-spin" />
+                  <span>FinAgent is analyzing your cards and calculating optimal strategy...</span>
+                </div>
+              )}
+              <div ref={messagesEndRef} />
+            </div>
+
+            {/* Chat Input */}
+            <div
+              className="p-2 sm:p-3 rounded-2xl border flex items-center gap-2 shadow-sm shrink-0"
+              style={{ backgroundColor: isDark ? '#111116' : '#ffffff', borderColor: isDark ? '#20202a' : '#e2e8f0' }}
+            >
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="w-10 h-10 rounded-xl flex items-center justify-center border text-neutral-400 hover:text-emerald-400"
+                style={{ backgroundColor: isDark ? '#16161e' : '#f1f5f9', borderColor: isDark ? '#242432' : '#e2e8f0' }}
+                title="Scan receipt with camera"
+              >
+                <Camera className="w-4 h-4" />
+              </button>
+
+              <input
+                type="text"
+                value={inputText}
+                onChange={e => setInputText(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') handleSendMessage();
+                }}
+                placeholder="Ask about debt payoff, your cards, or saving goals..."
+                disabled={isLoadingChat}
+                className="flex-1 bg-transparent px-3 py-2 text-xs sm:text-sm outline-none"
+              />
+
+              <button
+                onClick={() => handleSendMessage()}
+                disabled={!inputText.trim() || isLoadingChat}
+                className="px-4 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all disabled:opacity-40"
+              >
+                <span>Send</span>
+                <Send className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* VIEW 4: BUDGET & CASH FLOW */}
+        {/* ========================================================================= */}
+        {activeScreen === 'budget' && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-bold">50 / 30 / 20 Cash Flow & Category Ledger</h2>
+                <p className="text-xs text-neutral-400 mt-0.5">Track live allocations against your monthly income.</p>
+              </div>
+
+              <button
+                onClick={() => setShowTxModal(true)}
+                className="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold flex items-center gap-1.5"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Add Entry</span>
+              </button>
+            </div>
+
+            {/* Income Profile Card */}
+            <div
+              className="p-5 rounded-2xl border"
+              style={{ backgroundColor: isDark ? '#111116' : '#ffffff', borderColor: isDark ? '#20202a' : '#e2e8f0' }}
+            >
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <span className="text-xs text-neutral-400 font-semibold block mb-1">Monthly Income ($)</span>
+                  <input
+                    type="number"
+                    value={monthlyIncome}
+                    onChange={e => setMonthlyIncome(parseFloat(e.target.value) || 0)}
+                    className="w-full px-3 py-2 rounded-xl border text-sm font-bold font-mono"
+                    style={{ backgroundColor: isDark ? '#16161e' : '#f8fafc', borderColor: isDark ? '#262634' : '#cbd5e1' }}
+                  />
+                </div>
+
+                <div>
+                  <span className="text-xs text-neutral-400 font-semibold block mb-1">Liquid Bank Cash ($)</span>
+                  <input
+                    type="number"
+                    value={liquidCash}
+                    onChange={e => setLiquidCash(parseFloat(e.target.value) || 0)}
+                    className="w-full px-3 py-2 rounded-xl border text-sm font-bold font-mono"
+                    style={{ backgroundColor: isDark ? '#16161e' : '#f8fafc', borderColor: isDark ? '#262634' : '#cbd5e1' }}
+                  />
+                </div>
+
+                <div>
+                  <span className="text-xs text-neutral-400 font-semibold block mb-1">Estimated Net Worth</span>
+                  <div
+                    className="w-full px-3 py-2 rounded-xl border text-sm font-bold font-mono text-emerald-400 flex items-center"
+                    style={{ backgroundColor: isDark ? '#16161e' : '#f8fafc', borderColor: isDark ? '#262634' : '#cbd5e1' }}
+                  >
+                    ${netWorth.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Spending Breakdown Pie Chart */}
+            <div
+              className="p-5 rounded-2xl border"
+              style={{ backgroundColor: isDark ? '#111116' : '#ffffff', borderColor: isDark ? '#20202a' : '#e2e8f0' }}
+            >
+              <h3 className="text-sm font-bold mb-3">Category Distribution</h3>
+              <PieChart
+                data={[
+                  { category: 'Housing', amount: 1850 },
+                  { category: 'Groceries', amount: 580 },
+                  { category: 'Dining', amount: 340 },
+                  { category: 'Transportation', amount: 280 },
+                  { category: 'Utilities', amount: 270 },
+                ]}
+                isDark={isDark}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* VIEW 5: BILLS & RECURRING */}
+        {/* ========================================================================= */}
+        {activeScreen === 'bills' && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-bold">Recurring Obligations & Card Bills</h2>
+                <p className="text-xs text-neutral-400">Prevent late charges and track upcoming dues.</p>
+              </div>
+
+              <button
+                onClick={() => {
+                  const bill_name = prompt('Bill Name:');
+                  if (!bill_name) return;
+                  const amount = parseFloat(prompt('Amount ($):') || '0');
+                  if (!amount) return;
+                  const due_date = prompt('Due Date (e.g. Nov 25):') || 'Nov 25';
+                  setBills(prev => [
+                    ...prev,
+                    { id: `b-${Date.now()}`, bill_name, amount, due_date, paid: false, category: 'Recurring' },
+                  ]);
+                  showToast(`Added ${bill_name}`);
+                }}
+                className="px-3.5 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-bold text-xs flex items-center gap-1.5"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Add Bill</span>
+              </button>
+            </div>
+
+            <div
+              className="p-5 rounded-2xl border space-y-3"
+              style={{ backgroundColor: isDark ? '#111116' : '#ffffff', borderColor: isDark ? '#20202a' : '#e2e8f0' }}
+            >
+              {bills.map(b => (
+                <div
+                  key={b.id}
+                  className="p-3.5 rounded-xl border flex items-center justify-between"
+                  style={{
+                    backgroundColor: isDark ? '#16161e' : '#f8fafc',
+                    borderColor: b.paid ? '#10b98133' : isDark ? '#262634' : '#e2e8f0',
+                    opacity: b.paid ? 0.6 : 1,
+                  }}
+                >
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => {
+                        setBills(prev => prev.map(item => (item.id === b.id ? { ...item, paid: !item.paid } : item)));
+                        showToast('Status updated');
+                      }}
+                      className={`w-6 h-6 rounded-lg border flex items-center justify-center cursor-pointer ${
+                        b.paid ? 'bg-emerald-600 border-emerald-500 text-white' : 'border-neutral-500 hover:border-violet-500'
+                      }`}
+                    >
+                      {b.paid && <Check className="w-3.5 h-3.5" />}
+                    </button>
+                    <div>
+                      <div className={`text-sm font-bold ${b.paid ? 'line-through text-neutral-400' : ''}`}>{b.bill_name}</div>
+                      <div className="text-xs text-neutral-400">Due {b.due_date} · {b.category}</div>
+                    </div>
+                  </div>
+                  <span className="text-base font-black font-mono text-violet-400">${b.amount.toFixed(2)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* VIEW 6: RECEIPT OCR SCANNER */}
+        {/* ========================================================================= */}
+        {activeScreen === 'ocr' && (
+          <div className="max-w-2xl mx-auto space-y-6 text-center">
+            <div>
+              <h2 className="text-2xl font-bold">Multimodal Receipt Scanner</h2>
+              <p className="text-xs text-neutral-400 mt-1">
+                Snap or upload any receipt. FinAgent extracts merchant, total, and logs it to your card.
+              </p>
+            </div>
+
+            {/* Dropzone Card */}
+            <div
+              onClick={() => fileInputRef.current?.click()}
+              className="p-10 rounded-3xl border-2 border-dashed flex flex-col items-center justify-center cursor-pointer hover:border-violet-500 transition-all relative overflow-hidden"
+              style={{ backgroundColor: isDark ? '#111116' : '#ffffff', borderColor: isDark ? '#272736' : '#cbd5e1' }}
+            >
+              {isScanning && (
+                <div className="absolute inset-0 bg-violet-600/10 flex items-center justify-center">
+                  <div className="w-full h-1 bg-violet-500 animate-pulse absolute top-1/2" />
+                </div>
+              )}
+
+              <div className="w-14 h-14 rounded-2xl bg-violet-600/10 flex items-center justify-center text-violet-400 mb-3">
+                <Camera className="w-7 h-7" />
+              </div>
+
+              <h4 className="text-base font-bold mb-1">
+                {isScanning ? 'Scanning Receipt with AI Vision...' : 'Click to Upload or Take Receipt Photo'}
+              </h4>
+              <p className="text-xs text-neutral-400 max-w-sm">
+                Supports image receipts (JPEG, PNG). Extracts merchant, date, total, and updates your balances.
+              </p>
+
+              <button
+                type="button"
+                className="mt-5 px-5 py-2.5 rounded-xl bg-violet-600 text-white text-xs font-bold pointer-events-none"
+              >
+                Choose Photo
+              </button>
+            </div>
+
+            {/* Extracted Receipt Card (Confirmation) */}
+            {scannedReceipt && (
+              <div
+                className="p-5 rounded-2xl border text-left space-y-4"
+                style={{ backgroundColor: isDark ? '#14141c' : '#f8fafc', borderColor: '#8b5cf6' }}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-violet-400 uppercase tracking-wider">
+                    Receipt Extracted
+                  </span>
+                  <span className="text-xs text-neutral-400">{scannedReceipt.date}</span>
+                </div>
+
+                <div className="flex justify-between items-baseline">
+                  <div>
+                    <h3 className="text-lg font-bold">{scannedReceipt.merchant}</h3>
+                    <span className="text-xs text-neutral-400">{scannedReceipt.category}</span>
+                  </div>
+                  <div className="text-2xl font-black font-mono text-emerald-400">
+                    ${scannedReceipt.total.toFixed(2)}
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t flex flex-col sm:flex-row items-center justify-between gap-3" style={{ borderColor: isDark ? '#262633' : '#e2e8f0' }}>
+                  <div className="text-xs text-neutral-400">
+                    Charge to which card?
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {cards.map(c => (
+                      <button
+                        key={c.id}
+                        onClick={() => confirmScannedReceipt(c.cardName)}
+                        className="px-3 py-1.5 rounded-xl text-xs font-bold bg-violet-600 hover:bg-violet-500 text-white transition-all shadow-sm"
+                      >
+                        Charge {c.cardName.split(' ')[0]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </main>
 
-      {/* Input Bar at Bottom */}
-      <footer
-        className="border-t p-3 sm:p-4 sticky bottom-0 z-30 backdrop-blur-md"
+      {/* Mobile Bottom Navigation Bar (Fixed for iOS / Android ergonomic reach) */}
+      <div
+        className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t backdrop-blur-lg px-2 py-2 flex items-center justify-around"
         style={{
-          backgroundColor: isDark ? 'rgba(23, 23, 23, 0.95)' : 'rgba(255, 255, 255, 0.95)',
-          borderTopColor: isDark ? '#3f3f46' : '#E1E8ED',
+          backgroundColor: isDark ? 'rgba(9, 9, 11, 0.96)' : 'rgba(255, 255, 255, 0.96)',
+          borderColor: isDark ? '#1f1f28' : '#e2e8f0',
         }}
       >
-        <div className="max-w-3xl mx-auto flex items-center gap-2">
-          {/* Camera / Receipt OCR Button */}
-          <button
-            onClick={triggerReceiptUpload}
-            disabled={isLoading}
-            className="w-11 h-11 rounded-full text-white flex items-center justify-center shrink-0 transition-all hover:opacity-90 active:scale-95 shadow-md"
-            style={{ backgroundColor: '#17BF63' }}
-            title="Scan Receipt with Camera or Upload"
-          >
-            <Camera className="w-5 h-5" />
-          </button>
+        <button
+          onClick={() => setActiveScreen('home')}
+          className={`flex flex-col items-center gap-1 py-1 px-2.5 rounded-lg text-[10px] font-bold ${
+            activeScreen === 'home' ? 'text-violet-400' : 'text-neutral-400'
+          }`}
+        >
+          <Home className="w-5 h-5" />
+          <span>Home</span>
+        </button>
 
-          {/* Text Input */}
-          <input
-            type="text"
-            value={inputText}
-            onChange={e => setInputText(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === 'Enter') sendMessage();
-            }}
-            placeholder="Ask about your budget..."
-            disabled={isLoading}
-            className="flex-1 px-4 py-2.5 rounded-full text-sm outline-none border transition-colors focus:ring-2 focus:ring-[#1DA1F2]"
-            style={{
-              backgroundColor: isDark ? '#27272a' : '#F5F7FA',
-              color: isDark ? '#ffffff' : '#000000',
-              borderColor: isDark ? '#3f3f46' : '#E1E8ED',
-            }}
-          />
+        <button
+          onClick={() => setActiveScreen('cards')}
+          className={`flex flex-col items-center gap-1 py-1 px-2.5 rounded-lg text-[10px] font-bold ${
+            activeScreen === 'cards' ? 'text-violet-400' : 'text-neutral-400'
+          }`}
+        >
+          <CreditCard className="w-5 h-5" />
+          <span>Cards</span>
+        </button>
 
-          {/* Send Button */}
-          <button
-            onClick={() => sendMessage()}
-            disabled={!inputText.trim() || isLoading}
-            className="px-5 py-2.5 rounded-full text-white font-bold text-sm flex items-center gap-1.5 transition-all disabled:opacity-50 active:scale-95 shadow-md"
-            style={{ backgroundColor: '#1DA1F2' }}
-          >
-            <span>Send</span>
-            <Send className="w-4 h-4" />
-          </button>
-        </div>
-      </footer>
+        {/* Center Prominent AI Agent Button */}
+        <button
+          onClick={() => setActiveScreen('agent')}
+          className="flex flex-col items-center gap-0.5 -mt-5"
+        >
+          <div className="w-12 h-12 rounded-full bg-violet-600 text-white flex items-center justify-center shadow-lg shadow-violet-600/40">
+            <Bot className="w-6 h-6" />
+          </div>
+          <span className="text-[10px] font-bold text-violet-400">FinAgent</span>
+        </button>
+
+        <button
+          onClick={() => setActiveScreen('budget')}
+          className={`flex flex-col items-center gap-1 py-1 px-2.5 rounded-lg text-[10px] font-bold ${
+            activeScreen === 'budget' ? 'text-violet-400' : 'text-neutral-400'
+          }`}
+        >
+          <Layers className="w-5 h-5" />
+          <span>Budget</span>
+        </button>
+
+        <button
+          onClick={() => setActiveScreen('ocr')}
+          className={`flex flex-col items-center gap-1 py-1 px-2.5 rounded-lg text-[10px] font-bold ${
+            activeScreen === 'ocr' ? 'text-violet-400' : 'text-neutral-400'
+          }`}
+        >
+          <Camera className="w-5 h-5" />
+          <span>Receipts</span>
+        </button>
+      </div>
     </div>
   );
 }

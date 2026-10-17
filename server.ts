@@ -15,18 +15,21 @@ const isProduction = process.env.NODE_ENV === 'production';
 app.use(express.json({ limit: '15mb' }));
 app.use(cors());
 
-// Initialize Google GenAI if API key is present
-const apiKey = process.env.GEMINI_API_KEY;
-const ai = apiKey
-  ? new GoogleGenAI({
-      apiKey,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        },
+// Retrieve Google GenAI client dynamically from current environment
+function getGeminiClient(): GoogleGenAI | null {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key || typeof key !== 'string' || key.trim() === '' || key.trim() === 'undefined') {
+    return null;
+  }
+  return new GoogleGenAI({
+    apiKey: key.trim(),
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
       },
-    })
-  : null;
+    },
+  });
+}
 
 // Mock database / default state for financial assistant
 const financeData = {
@@ -69,35 +72,56 @@ app.post('/login', (req, res) => {
 
 // --- POST /api/chat ---
 app.post('/api/chat', async (req, res) => {
-  const { message } = req.body || {};
+  const { message, userContext } = req.body || {};
   if (!message || typeof message !== 'string') {
     return res.status(400).json({ error: 'Message is required' });
   }
 
+  // Extract user-entered credit cards, accounts, and financial profile
+  const userCards = Array.isArray(userContext?.cards) ? userContext.cards : [];
+  const userBalance = typeof userContext?.totalBalance === 'number' ? userContext.totalBalance : financeData.totalBalance;
+  const userIncome = typeof userContext?.monthlyIncome === 'number' ? userContext.monthlyIncome : 5200;
+  const userBills = Array.isArray(userContext?.bills) && userContext.bills.length ? userContext.bills : financeData.upcomingBills;
+  const userBreakdown = Array.isArray(userContext?.breakdown) && userContext.breakdown.length ? userContext.breakdown : financeData.categoryBreakdown;
+
+  // Calculate card metrics
+  const totalCardDebt = userCards.reduce((acc: number, c: any) => acc + (Number(c.balance) || 0), 0);
+  const totalCreditLimit = userCards.reduce((acc: number, c: any) => acc + (Number(c.creditLimit) || 0), 0);
+  const cardUtilization = totalCreditLimit > 0 ? ((totalCardDebt / totalCreditLimit) * 100).toFixed(1) : '0.0';
+
   // If Gemini API is available, generate response with gemini-3.8-flash
+  const ai = getGeminiClient();
   if (ai) {
     try {
       const response = await ai.models.generateContent({
         model: 'gemini-3.8-flash',
-        contents: `You are FinAgent, an expert personal financial advisor and assistant.
-The user is asking: "${message}".
-Current user financial snapshot:
-- Total Balance: $${financeData.totalBalance.toFixed(2)}
-- Budget Status: ${financeData.budgetStatus}
-- Portfolio Health: ${financeData.portfolioHealth}
-- Top Categories: ${JSON.stringify(financeData.categoryBreakdown)}
-- Upcoming Bills: ${JSON.stringify(financeData.upcomingBills)}
+        contents: `You are the Taskade AI Personal Finance Manager Agent (taskade.com/agents/personal/personal-finance-manager).
+Your persona: Expert personal financial advisor, automated budgeting strategist, and credit card auditor.
+User query: "${message}".
 
-Respond with helpful, friendly financial analysis and advice. Keep ai_reply concise and conversational (2-4 sentences).
-Also provide updated or relevant financial metrics.`,
+User's Real Profile & Credit Cards (USE THESE ACTUAL USER INPUTS IN YOUR ADVICE):
+- Liquid Cash / Checking: $${userBalance.toFixed(2)}
+- Stated Monthly Income: $${userIncome.toFixed(2)}
+- User's Connected Credit Cards & Accounts: ${JSON.stringify(userCards)}
+- Total Credit Card Debt: $${totalCardDebt.toFixed(2)}
+- Total Credit Line: $${totalCreditLimit.toFixed(2)}
+- Current Overall Utilization: ${cardUtilization}%
+- Category Expenses: ${JSON.stringify(userBreakdown)}
+- Upcoming Bills: ${JSON.stringify(userBills)}
+
+Directives:
+1. When asked about cards, debts, limits, or which card to pay first, analyze their specific cards, comparing APRs and balances directly.
+2. Emphasize keeping credit utilization below 30% (ideally under 10%).
+3. Calculate real payments based on their user input.
+4. Keep the response friendly, structured, and actionable.`,
         config: {
           responseMimeType: 'application/json',
           responseSchema: {
             type: Type.OBJECT,
             properties: {
-              ai_reply: { type: Type.STRING, description: 'Direct conversational reply to user' },
+              ai_reply: { type: Type.STRING, description: 'Direct conversational reply to user with structured markdown or clear advice' },
               total_balance: { type: Type.NUMBER, description: 'Total available balance in USD' },
-              budget_status: { type: Type.STRING, description: 'Short status like "On Track", "Over Budget", "Caution"' },
+              budget_status: { type: Type.STRING, description: 'Short status like "On Track", "Over Budget", "Optimized", "Caution"' },
               category_breakdown: {
                 type: Type.ARRAY,
                 items: {
@@ -132,50 +156,62 @@ Also provide updated or relevant financial metrics.`,
         const parsed = JSON.parse(response.text.trim());
         return res.json({
           ai_reply: parsed.ai_reply || 'Here is your current financial analysis.',
-          total_balance: parsed.total_balance ?? financeData.totalBalance,
-          budget_status: parsed.budget_status || financeData.budgetStatus,
-          category_breakdown: parsed.category_breakdown || financeData.categoryBreakdown,
-          upcoming_bills: parsed.upcoming_bills || financeData.upcomingBills,
-          portfolio_health: parsed.portfolio_health || financeData.portfolioHealth,
+          total_balance: parsed.total_balance ?? userBalance,
+          budget_status: parsed.budget_status || (Number(cardUtilization) > 30 ? 'High Utilization' : 'On Track'),
+          category_breakdown: parsed.category_breakdown || userBreakdown,
+          upcoming_bills: parsed.upcoming_bills || userBills,
+          portfolio_health: parsed.portfolio_health || `Credit Utilization: ${cardUtilization}%`,
         });
       }
-    } catch (err) {
-      console.error('Gemini chat error, falling back to local finance engine:', err);
+    } catch (err: any) {
+      console.warn('[FinAgent] Gemini chat fallback active:', err?.message || 'unknown error');
     }
   }
 
-  // Local fallback response engine
+  // Local fallback response engine with live user credit cards and accounts
   const lower = message.toLowerCase();
-  let replyText = "I've reviewed your financial portfolio. You're currently on track with your monthly targets.";
-  let breakdown = financeData.categoryBreakdown;
-  let bills = financeData.upcomingBills;
-  let status = financeData.budgetStatus;
-  let portfolio = financeData.portfolioHealth;
+  let replyText = "I've analyzed your financial profile and accounts.";
+  let status = Number(cardUtilization) > 30 ? 'Review Utilization' : 'On Track';
+  let portfolio = `Card Utilization: ${cardUtilization}%`;
 
-  if (lower.includes('bill') || lower.includes('upcoming') || lower.includes('due')) {
-    const totalDue = bills.reduce((acc, b) => acc + b.amount, 0);
-    replyText = `You have ${bills.length} upcoming bills totaling $${totalDue.toFixed(2)} due over the next few weeks. Your largest upcoming payment is Auto Insurance ($175.50).`;
-  } else if (lower.includes('spend') || lower.includes('breakdown') || lower.includes('chart') || lower.includes('pie') || lower.includes('categor')) {
-    replyText = `Here is your spending breakdown for this month. Housing represents your largest expense ($2,400), followed by Groceries ($850) and Dining & Cafes ($450).`;
-  } else if (lower.includes('portfolio') || lower.includes('invest') || lower.includes('stock') || lower.includes('market')) {
-    replyText = `Your investment portfolio is in solid health (${portfolio}). Diversification across index funds has provided steady returns despite recent market volatility.`;
-  } else if (lower.includes('budget') || lower.includes('save') || lower.includes('saving')) {
-    replyText = `Your current monthly spending is 12% below your target ceiling. You have an estimated $620 surplus this cycle that could be routed to emergency savings or high-yield savings.`;
-  } else if (lower.includes('balance') || lower.includes('money') || lower.includes('account')) {
-    replyText = `Your total liquid balance across checking and connected savings accounts stands at $${financeData.totalBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })}.`;
+  if (lower.includes('card') || lower.includes('credit') || lower.includes('utilization') || lower.includes('apr') || lower.includes('debt')) {
+    if (userCards.length === 0) {
+      replyText = `💳 **Credit Cards & Debt Analysis**\n\nYou currently haven't added any credit cards yet. Go to the **Cards & Accounts** tab to add your credit cards (balance, limit, APR, due date) so I can calculate your credit utilization ratio and optimal debt payoff strategy!`;
+    } else {
+      const highestAprCard = [...userCards].sort((a: any, b: any) => (Number(b.apr) || 0) - (Number(a.apr) || 0))[0];
+      const highestBalanceCard = [...userCards].sort((a: any, b: any) => (Number(b.balance) || 0) - (Number(a.balance) || 0))[0];
+
+      replyText = `💳 **Credit Cards & Debt Optimization Audit**\n\n• **Connected Cards**: ${userCards.length} (${userCards.map((c: any) => `${c.cardName} ending in ${c.last4 || '••••'}`).join(', ')})\n• **Total Outstanding Balance**: $${totalCardDebt.toLocaleString('en-US', { minimumFractionDigits: 2 })}\n• **Total Credit Limit**: $${totalCreditLimit.toLocaleString('en-US', { minimumFractionDigits: 2 })}\n• **Overall Utilization Ratio**: **${cardUtilization}%** (${Number(cardUtilization) <= 30 ? '✅ Healthy (Under 30% threshold)' : '⚠️ Warning: Above recommended 30% ceiling'})\n• **Highest APR Card**: **${highestAprCard.cardName}** at **${highestAprCard.apr}% APR** ($${Number(highestAprCard.balance).toFixed(2)} balance). I recommend prioritizing this card first (Avalanche Method) to minimize compound interest fees!`;
+    }
+  } else if (lower.includes('/budget') || lower.includes('50/30/20') || lower.includes('budget plan') || lower.includes('create monthly budget')) {
+    const needs50 = userIncome * 0.5;
+    const wants30 = userIncome * 0.3;
+    const savings20 = userIncome * 0.2;
+    replyText = `📊 **50/30/20 Monthly Budget Plan (Based on your $${userIncome.toLocaleString()} Income)**\n\n• **Needs (50% Target: $${needs50.toFixed(2)})**: Housing, Groceries, Utilities, Minimum Debt Payments.\n• **Wants (30% Target: $${wants30.toFixed(2)})**: Dining out, Entertainment, Subscriptions.\n• **Savings & Debt Elimination (20% Target: $${savings20.toFixed(2)})**: High-yield emergency fund and extra credit card principal reduction.\n\nYour stated liquid cash reserve is **$${userBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })}**.`;
+    status = 'Optimized';
+  } else if (lower.includes('/trends') || lower.includes('overspend') || lower.includes('habit') || lower.includes('spending habit')) {
+    replyText = `💡 **Spending Habits & Credit Utilization Audit**\n\n• **Credit Utilization**: Currently standing at **${cardUtilization}%** across all registered credit cards.\n• **Cash-to-Debt Ratio**: You have $${userBalance.toFixed(2)} liquid cash vs $${totalCardDebt.toFixed(2)} total credit card balances.\n• **Recommendation**: Keeping individual card utilization below 10% on reporting dates optimizes FICO score gains.`;
+  } else if (lower.includes('/goal') || lower.includes('emergency fund') || lower.includes('savings goal') || lower.includes('target')) {
+    replyText = `🎯 **Savings Goal & Milestone Forecast**\n\n• **Liquid Reserves**: $${userBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })}\n• **Safety Margin**: At your monthly income of $${userIncome.toLocaleString()}, your current cash represents **${(userBalance / (userIncome * 0.7)).toFixed(1)} months** of essential baseline runway.\n• **Next Milestone**: Aim for 3 to 6 months of essential reserves before investing aggressively in non-tax-advantaged accounts.`;
+  } else if (lower.includes('/report') || lower.includes('health report') || lower.includes('summary') || lower.includes('financial report')) {
+    replyText = `📈 **Personal Finance Executive Health Report**\n\n• **Net Liquid Balance**: $${userBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })}\n• **Total Credit Card Debt**: $${totalCardDebt.toLocaleString('en-US', { minimumFractionDigits: 2 })}\n• **Aggregate Credit Utilization**: ${cardUtilization}%\n• **Net Worth Estimate**: $${(userBalance - totalCardDebt).toLocaleString('en-US', { minimumFractionDigits: 2 })}\n• **Health Assessment**: ${Number(cardUtilization) <= 30 ? 'Strong stability with controlled credit exposure.' : 'Focus on paying down high-APR credit card balances.'}`;
+  } else if (lower.includes('bill') || lower.includes('upcoming') || lower.includes('due') || lower.includes('subscription')) {
+    const totalDue = userBills.reduce((acc: number, b: any) => acc + (Number(b.amount) || 0), 0);
+    replyText = `🔔 **Upcoming Bills & Payment Schedule**\n\nYou have ${userBills.length} recorded obligations totaling **$${totalDue.toFixed(2)}**:\n${userBills.slice(0, 5).map((b: any) => `• ${b.bill_name}: $${Number(b.amount).toFixed(2)} (${b.due_date || 'Due soon'})`).join('\n')}\n\nYour liquid balance of $${userBalance.toLocaleString()} provides ample coverage for all pending dues.`;
   } else {
-    replyText = `I can help monitor your monthly budget, categorize receipts, track upcoming utility bills, and analyze your spending trends. How would you like to proceed?`;
+    replyText = `Hello! I'm your **Taskade Personal Finance Manager Agent**.\n\nI'm customized with your real credit cards and financial inputs:\n• **${userCards.length} Credit Cards** registered (Overall Utilization: **${cardUtilization}%**)\n• **Liquid Cash Balance**: $${userBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })}\n• **Monthly Income**: $${userIncome.toLocaleString('en-US', { minimumFractionDigits: 2 })}\n\nAsk me anything about which card to pay first, reducing interest, or optimizing your 50/30/20 budget!`;
   }
 
   return res.json({
     ai_reply: replyText,
-    total_balance: financeData.totalBalance,
+    total_balance: userBalance,
     budget_status: status,
-    category_breakdown: breakdown,
-    upcoming_bills: bills,
+    category_breakdown: userBreakdown,
+    upcoming_bills: userBills,
     portfolio_health: portfolio,
   });
 });
+
 
 // --- POST /api/receipt ---
 app.post('/api/receipt', async (req, res) => {
@@ -186,6 +222,7 @@ app.post('/api/receipt', async (req, res) => {
   }
 
   // If Gemini API is available, analyze receipt with Vision
+  const ai = getGeminiClient();
   if (ai) {
     try {
       const response = await ai.models.generateContent({
@@ -227,8 +264,8 @@ app.post('/api/receipt', async (req, res) => {
           category: parsed.category || 'Shopping',
         });
       }
-    } catch (err) {
-      console.error('Gemini receipt OCR error, using smart fallback:', err);
+    } catch (err: any) {
+      console.warn('[FinAgent] Gemini receipt OCR fallback active:', err?.message || 'unknown error');
     }
   }
 
