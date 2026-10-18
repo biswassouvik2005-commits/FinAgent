@@ -38,7 +38,7 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 type Screen = 'home' | 'cards' | 'agent' | 'budget' | 'bills' | 'receipts';
 type CardNetwork = 'visa' | 'mastercard' | 'amex' | 'discover';
 type TransactionType = 'income' | 'expense';
-type ModalType = 'card' | 'transaction' | 'bill' | 'payment' | 'compose' | null;
+type ModalType = 'card' | 'transaction' | 'bill' | 'payment' | 'compose' | 'receipt' | null;
 type IconName = keyof typeof Ionicons.glyphMap;
 
 interface CreditCardItem {
@@ -516,6 +516,11 @@ function FinAgentApp() {
   const [debtStrategy, setDebtStrategy] = useState<'Avalanche' | 'Snowball'>('Avalanche');
   const [txSearch, setTxSearch] = useState('');
   const [txFilter, setTxFilter] = useState('All');
+  const [receiptMerchant, setReceiptMerchant] = useState('');
+  const [receiptDate, setReceiptDate] = useState('');
+  const [receiptTotal, setReceiptTotal] = useState('');
+  const [receiptCategory, setReceiptCategory] = useState('Dining');
+  const [receiptSource, setReceiptSource] = useState('Primary Checking');
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 'm-init',
@@ -1122,13 +1127,28 @@ function FinAgentApp() {
       if (!Number.isFinite(total) || total <= 0 || typeof data?.merchant !== 'string') {
         throw new Error('The receipt could not be read. Try a clearer photo.');
       }
+      const merchant = String(data.merchant).trim();
+      const category = typeof data.category === 'string' && data.category.trim() ? data.category.trim() : 'Dining';
+      const date = typeof data.date === 'string' && data.date.trim() ? data.date.trim() : new Date().toISOString().split('T')[0];
+
       setScannedReceipt({
-        merchant: data.merchant,
+        merchant,
         total,
-        category: typeof data.category === 'string' ? data.category : 'Other',
-        date: typeof data.date === 'string' ? data.date : 'Today',
+        category,
+        date,
       });
-      showToast(`Receipt scanned: ${data.merchant}`);
+
+      // Pre-fill editable fields
+      setReceiptMerchant(merchant);
+      setReceiptTotal(total.toFixed(2));
+      setReceiptCategory(category);
+      setReceiptDate(date);
+      setReceiptSource(cards.length > 0 ? cards[0].cardName : 'Primary Checking');
+
+      // Slide up bottom modal confirmation sheet
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setModal('receipt');
+      showToast(`Receipt scanned: ${merchant}`);
     } catch (error) {
       const isNetworkErr = (error as any)?.code === 'ERR_NETWORK' || (error as any)?.message?.includes('Network Error');
       const targetBase = api.defaults.baseURL || resolveDefaultApiUrl();
@@ -1146,26 +1166,70 @@ function FinAgentApp() {
     Alert.alert('Scan a receipt', 'Choose where to get the receipt image.', [
       { text: 'Take photo', onPress: () => void processReceipt(true) },
       { text: 'Photo library', onPress: () => void processReceipt(false) },
+      {
+        text: 'Demo Receipt ($14 Subway)',
+        onPress: () => {
+          const sample = {
+            merchant: 'Subway',
+            date: new Date().toISOString().split('T')[0],
+            total: 14.0,
+            category: 'Dining',
+          };
+          setScannedReceipt(sample);
+          setReceiptMerchant(sample.merchant);
+          setReceiptTotal(sample.total.toFixed(2));
+          setReceiptCategory(sample.category);
+          setReceiptDate(sample.date);
+          setReceiptSource(cards.length > 0 ? cards[0].cardName : 'Primary Checking');
+          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+          setModal('receipt');
+        },
+      },
       { text: 'Cancel', style: 'cancel' },
     ]);
   };
 
-  const confirmReceipt = (cardName: string) => {
-    if (!scannedReceipt) return;
-    const amount = scannedReceipt.total;
-    setTransactions(previous => [{
+  const confirmAndAddReceiptExpense = () => {
+    const rawAmt = receiptTotal.replace(/[^0-9.]/g, '');
+    const amount = parseFloat(rawAmt);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      Alert.alert('Invalid total', 'Please enter a valid expense total greater than 0.');
+      return;
+    }
+
+    const merchant = receiptMerchant.trim() || 'Receipt Expense';
+    const category = receiptCategory.trim() || 'General';
+    const date = receiptDate.trim() || 'Today';
+    const source = receiptSource || (cards.length > 0 ? cards[0].cardName : 'Primary Checking');
+
+    const newTx: TransactionItem = {
       id: `tx-${Date.now()}`,
-      title: scannedReceipt.merchant,
-      category: scannedReceipt.category,
-      date: scannedReceipt.date,
+      title: merchant,
+      category,
+      date,
       amount,
       type: 'expense',
-      source: cardName,
-    }, ...previous]);
-    setCards(previous => previous.map(card => card.cardName === cardName ? { ...card, balance: card.balance + amount } : card));
+      source,
+    };
+
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setTransactions(previous => [newTx, ...previous]);
+
+    const targetCard = cards.find(card => card.cardName === source);
+    if (targetCard) {
+      setCards(previous =>
+        previous.map(card =>
+          card.id === targetCard.id ? { ...card, balance: card.balance + amount } : card
+        )
+      );
+    } else {
+      setLiquidCash(previous => Math.max(0, previous - amount));
+    }
+
     setScannedReceipt(null);
+    setModal(null);
     navigateToScreen('home');
-    showToast(`Receipt added to ${cardName}`);
+    showToast(`Added $${amount.toFixed(2)} at ${merchant} to expenses!`);
   };
 
   const openTransactionModal = () => {
@@ -1816,19 +1880,35 @@ function FinAgentApp() {
       </Panel>
       {scannedReceipt ? (
         <Panel palette={palette}>
-          <Text style={[styles.eyebrow, { color: palette.accent }]}>RECEIPT READY</Text>
+          <Text style={[styles.eyebrow, { color: palette.accent }]}>RECEIPT OCR READY</Text>
           <View style={styles.rowBetween}>
             <View style={styles.flex}>
-              <Text style={[styles.sectionTitle, { color: palette.text }]}>{scannedReceipt.merchant}</Text>
-              <Text style={[styles.caption, { color: palette.muted }]}>{scannedReceipt.category} · {scannedReceipt.date}</Text>
+              <Text style={[styles.sectionTitle, { color: palette.text }]}>{receiptMerchant || scannedReceipt.merchant}</Text>
+              <Text style={[styles.caption, { color: palette.muted }]}>{receiptCategory || scannedReceipt.category} · {receiptDate || scannedReceipt.date}</Text>
             </View>
-            <Text style={[styles.sectionTitle, { color: palette.green }]}>{formatCurrency(scannedReceipt.total)}</Text>
+            <Text style={[styles.sectionTitle, { color: palette.green }]}>{formatCurrency(parseFloat(receiptTotal) || scannedReceipt.total)}</Text>
           </View>
-          <Text style={[styles.caption, styles.topGap, { color: palette.muted }]}>Choose a card to record the charge.</Text>
-          {cards.map(card => (
-            <AppButton key={card.id} label={`Charge ${card.cardName}`} icon="card-outline" onPress={() => confirmReceipt(card.cardName)} palette={palette} variant="secondary" />
-          ))}
-          <AppButton label="Discard receipt" onPress={() => setScannedReceipt(null)} palette={palette} variant="quiet" />
+          <View style={{ marginTop: 12, gap: 8 }}>
+            <AppButton
+              label="Review & Edit in Sheet"
+              icon="create-outline"
+              onPress={() => setModal('receipt')}
+              palette={palette}
+              variant="secondary"
+            />
+            <AppButton
+              label="Confirm & Add to Expenses"
+              icon="checkmark-circle-outline"
+              onPress={confirmAndAddReceiptExpense}
+              palette={palette}
+            />
+            <AppButton
+              label="Discard receipt"
+              onPress={() => setScannedReceipt(null)}
+              palette={palette}
+              variant="quiet"
+            />
+          </View>
         </Panel>
       ) : null}
     </>
@@ -2240,6 +2320,91 @@ function FinAgentApp() {
                 palette={palette}
               />
             )}
+          </View>
+        </>
+      );
+    }
+    if (modal === 'receipt') {
+      return (
+        <>
+          <View style={styles.rowBetween}>
+            <View style={styles.flex}>
+              <Text style={[styles.eyebrow, { color: palette.accent }]}>RECEIPT OCR CONFIRMATION</Text>
+              <Text style={[styles.modalTitle, { color: palette.text, marginBottom: 2 }]}>Review & Confirm Receipt</Text>
+              <Text style={[styles.caption, { color: palette.muted }]}>
+                Pre-filled from OCR scan. Tap any field to edit before adding.
+              </Text>
+            </View>
+            <Pressable
+              onPress={() => setModal(null)}
+              accessibilityLabel="Close confirmation sheet"
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="close-circle-outline" size={24} color={palette.muted} />
+            </Pressable>
+          </View>
+
+          <Field
+            label="Merchant / Business"
+            value={receiptMerchant}
+            onChangeText={setReceiptMerchant}
+            palette={palette}
+            placeholder="e.g. Subway, Target"
+          />
+
+          <View style={styles.formRow}>
+            <View style={styles.flex}>
+              <Field
+                label="Total Amount ($)"
+                value={receiptTotal}
+                onChangeText={setReceiptTotal}
+                palette={palette}
+                placeholder="0.00"
+                keyboardType="decimal-pad"
+              />
+            </View>
+            <View style={styles.flex}>
+              <Field
+                label="Date"
+                value={receiptDate}
+                onChangeText={setReceiptDate}
+                palette={palette}
+                placeholder="YYYY-MM-DD"
+              />
+            </View>
+          </View>
+
+          <Field
+            label="Category"
+            value={receiptCategory}
+            onChangeText={setReceiptCategory}
+            palette={palette}
+            placeholder="e.g. Dining, Groceries"
+          />
+
+          <Text style={[styles.fieldLabel, { color: palette.muted, marginTop: 4 }]}>Quick Category</Text>
+          <ChoiceChips
+            values={['Dining', 'Groceries', 'Shopping', 'Transportation', 'Utilities', 'Entertainment', 'Health', 'Other'] as const}
+            selected={receiptCategory}
+            onSelect={setReceiptCategory}
+            palette={palette}
+          />
+
+          <Text style={[styles.fieldLabel, { color: palette.muted, marginTop: 8 }]}>Payment Account / Card</Text>
+          <ChoiceChips
+            values={['Primary Checking', ...cards.map(c => c.cardName)]}
+            selected={receiptSource}
+            onSelect={setReceiptSource}
+            palette={palette}
+          />
+
+          <View style={{ marginTop: 20, marginBottom: 8 }}>
+            <AppButton
+              label="Confirm & Add to Expenses"
+              icon="checkmark-circle-outline"
+              onPress={confirmAndAddReceiptExpense}
+              palette={palette}
+            />
           </View>
         </>
       );

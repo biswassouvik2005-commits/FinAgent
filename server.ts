@@ -482,7 +482,7 @@ app.post('/api/receipt', async (req, res) => {
               },
             },
             {
-              text: 'Extract the merchant name, total receipt amount as a number, and expense category (e.g. Groceries, Dining, Electronics, Transportation, Utilities, Shopping) from this receipt image. Return ONLY what is visible on the image.',
+              text: 'Extract the merchant name, date of purchase (YYYY-MM-DD), total receipt amount as a number, and expense category (e.g. Groceries, Dining, Electronics, Transportation, Utilities, Shopping) from this receipt image. Return ONLY what is visible on the image.',
             },
           ],
         },
@@ -492,6 +492,7 @@ app.post('/api/receipt', async (req, res) => {
             type: Type.OBJECT,
             properties: {
               merchant: { type: Type.STRING, description: 'Store or vendor name' },
+              date: { type: Type.STRING, description: 'Date of receipt (YYYY-MM-DD)' },
               total: { type: Type.NUMBER, description: 'Total charge amount' },
               category: { type: Type.STRING, description: 'Budget category' },
             },
@@ -504,8 +505,10 @@ app.post('/api/receipt', async (req, res) => {
         const parsed = JSON.parse(response.text.trim());
         const total = Number(parsed.total);
         if (Number.isFinite(total) && total > 0 && parsed.merchant) {
+          const dateStr = parsed.date ? String(parsed.date).trim() : new Date().toISOString().split('T')[0];
           return res.json({
             merchant: String(parsed.merchant).trim(),
+            date: dateStr,
             total,
             category: parsed.category || 'Shopping',
           });

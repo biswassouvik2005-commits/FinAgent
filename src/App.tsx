@@ -497,6 +497,12 @@ export default function App() {
     category: string;
     date: string;
   } | null>(null);
+  const [showReceiptSheet, setShowReceiptSheet] = useState(false);
+  const [receiptFormMerchant, setReceiptFormMerchant] = useState('');
+  const [receiptFormDate, setReceiptFormDate] = useState('');
+  const [receiptFormTotal, setReceiptFormTotal] = useState('');
+  const [receiptFormCategory, setReceiptFormCategory] = useState('Dining');
+  const [receiptFormSource, setReceiptFormSource] = useState('Liquid Cash');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -808,14 +814,21 @@ User Message: "${userText}"`;
           throw new Error('Unable to extract receipt details');
         }
         const merchant = data.merchant;
-        const category = data.category || 'General';
+        const category = data.category || 'Dining';
+        const date = data.date || new Date().toISOString().split('T')[0];
 
         setScannedReceipt({
           merchant,
           total: totalNum,
           category,
-          date: 'Today',
+          date,
         });
+        setReceiptFormMerchant(merchant);
+        setReceiptFormDate(date);
+        setReceiptFormTotal(totalNum.toFixed(2));
+        setReceiptFormCategory(category);
+        setReceiptFormSource(cards[0]?.cardName || 'Liquid Cash');
+        setShowReceiptSheet(true);
         showToast(`Receipt analyzed: ${merchant} ($${totalNum.toFixed(2)})`);
       } catch (err) {
         console.warn('OCR error:', err);
@@ -828,7 +841,62 @@ User Message: "${userText}"`;
     reader.readAsDataURL(file);
   };
 
-  // Confirm Scanned Receipt
+  // One-Tap Confirm & Add to Expenses handler
+  const confirmAndAddReceiptExpense = () => {
+    const amount = parseFloat(receiptFormTotal.replace(/[^0-9.]/g, ''));
+    if (!Number.isFinite(amount) || amount <= 0) {
+      showToast('Please enter a valid expense total greater than $0.');
+      return;
+    }
+
+    const merchant = receiptFormMerchant.trim() || 'Receipt Expense';
+    const category = receiptFormCategory.trim() || 'General';
+    const date = receiptFormDate.trim() || 'Today';
+    const targetSource = receiptFormSource || (cards[0]?.cardName || 'Liquid Cash');
+
+    const newTx: TransactionItem = {
+      id: `tx-${Date.now()}`,
+      title: merchant,
+      category,
+      date,
+      amount,
+      type: 'expense',
+      source: targetSource,
+    };
+    setTransactions(prev => [newTx, ...prev]);
+
+    const targetCard = cards.find(c => c.cardName === targetSource);
+    if (targetCard) {
+      setCards(prev =>
+        prev.map(c => (c.cardName === targetSource ? { ...c, balance: c.balance + amount } : c))
+      );
+    } else {
+      setLiquidCash(prev => Math.max(0, prev - amount));
+    }
+
+    setShowReceiptSheet(false);
+    setScannedReceipt(null);
+    showToast(`Added $${amount.toFixed(2)} at ${merchant} to expenses!`);
+    setActiveScreen('home');
+  };
+
+  const handleDemoReceipt = () => {
+    const demo = {
+      merchant: 'Subway',
+      date: new Date().toISOString().split('T')[0],
+      total: 14.0,
+      category: 'Dining',
+    };
+    setScannedReceipt(demo);
+    setReceiptFormMerchant(demo.merchant);
+    setReceiptFormDate(demo.date);
+    setReceiptFormTotal(demo.total.toFixed(2));
+    setReceiptFormCategory(demo.category);
+    setReceiptFormSource(cards[0]?.cardName || 'Liquid Cash');
+    setShowReceiptSheet(true);
+  };
+
+  // Confirm Scanned Receipt (Legacy Quick Action)
   const confirmScannedReceipt = (targetCardName: string) => {
     if (!scannedReceipt) return;
     const amount = scannedReceipt.total;
@@ -838,7 +906,7 @@ User Message: "${userText}"`;
       id: `tx-${Date.now()}`,
       title: scannedReceipt.merchant,
       category: scannedReceipt.category,
-      date: 'Today',
+      date: scannedReceipt.date || 'Today',
       amount,
       type: 'expense',
       source: targetCardName,
@@ -1254,6 +1322,170 @@ User Message: "${userText}"`;
                 </button>
                 <button type="submit" className="flex-1 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold shadow-md">
                   Log Entry
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Slide-Up Bottom Modal: One-Tap Receipt Confirmation Sheet */}
+      {showReceiptSheet && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/70 backdrop-blur-sm animate-modal-backdrop">
+          <div
+            className="w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl border-t sm:border p-6 shadow-2xl transition-all animate-modal-content max-h-[92vh] overflow-y-auto"
+            style={{
+              backgroundColor: isDark ? '#14141a' : '#ffffff',
+              borderColor: isDark ? '#272733' : '#e2e8f0',
+            }}
+          >
+            {/* Grab handle for bottom sheet on mobile */}
+            <div className="w-10 h-1 bg-neutral-600 rounded-full mx-auto mb-4 sm:hidden" />
+
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <span className="text-[10px] font-bold text-violet-400 tracking-wider uppercase">
+                  Receipt OCR Confirmation
+                </span>
+                <h3 className="text-lg font-bold">Review & Confirm Receipt</h3>
+                <p className="text-xs text-neutral-400">
+                  Pre-filled from OCR scan. Edit fields before adding.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowReceiptSheet(false)}
+                className="text-neutral-400 hover:text-white p-1 text-lg font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form
+              onSubmit={e => {
+                e.preventDefault();
+                confirmAndAddReceiptExpense();
+              }}
+              className="space-y-4"
+            >
+              <div>
+                <label className="block text-xs font-semibold text-neutral-400 mb-1">
+                  Merchant / Business
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Subway, Target"
+                  value={receiptFormMerchant}
+                  onChange={e => setReceiptFormMerchant(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl text-sm border outline-none font-semibold"
+                  style={{
+                    backgroundColor: isDark ? '#0d0d11' : '#f8fafc',
+                    borderColor: isDark ? '#262633' : '#cbd5e1',
+                  }}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-neutral-400 mb-1">
+                    Total Amount ($)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    placeholder="0.00"
+                    value={receiptFormTotal}
+                    onChange={e => setReceiptFormTotal(e.target.value)}
+                    className="w-full px-3.5 py-2 rounded-xl text-sm border outline-none font-mono font-bold"
+                    style={{
+                      backgroundColor: isDark ? '#0d0d11' : '#f8fafc',
+                      borderColor: isDark ? '#262633' : '#cbd5e1',
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-neutral-400 mb-1">
+                    Date
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="YYYY-MM-DD"
+                    value={receiptFormDate}
+                    onChange={e => setReceiptFormDate(e.target.value)}
+                    className="w-full px-3.5 py-2 rounded-xl text-sm border outline-none font-mono"
+                    style={{
+                      backgroundColor: isDark ? '#0d0d11' : '#f8fafc',
+                      borderColor: isDark ? '#262633' : '#cbd5e1',
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-neutral-400 mb-1">
+                  Category
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Dining, Groceries"
+                  value={receiptFormCategory}
+                  onChange={e => setReceiptFormCategory(e.target.value)}
+                  className="w-full px-3.5 py-2 rounded-xl text-sm border outline-none mb-2"
+                  style={{
+                    backgroundColor: isDark ? '#0d0d11' : '#f8fafc',
+                    borderColor: isDark ? '#262633' : '#cbd5e1',
+                  }}
+                />
+                <div className="flex flex-wrap gap-1.5">
+                  {['Dining', 'Groceries', 'Shopping', 'Transport', 'Utilities', 'Entertainment'].map(cat => (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => setReceiptFormCategory(cat)}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all border ${
+                        receiptFormCategory.toLowerCase() === cat.toLowerCase()
+                          ? 'bg-violet-600 text-white border-violet-500'
+                          : 'border-neutral-800 text-neutral-400 hover:text-white'
+                      }`}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-neutral-400 mb-1">
+                  Payment Account / Card
+                </label>
+                <select
+                  value={receiptFormSource}
+                  onChange={e => setReceiptFormSource(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl text-sm border outline-none"
+                  style={{
+                    backgroundColor: isDark ? '#0d0d11' : '#f8fafc',
+                    borderColor: isDark ? '#262633' : '#cbd5e1',
+                  }}
+                >
+                  <option value="Liquid Cash">Liquid Cash / Checking</option>
+                  {cards.map(c => (
+                    <option key={c.id} value={c.cardName}>
+                      {c.cardName} (•••• {c.last4})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="pt-3">
+                <button
+                  type="submit"
+                  className="w-full py-3.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-bold text-sm shadow-lg shadow-violet-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Confirm & Add to Expenses</span>
                 </button>
               </div>
             </form>
@@ -2733,6 +2965,23 @@ User Message: "${userText}"`;
                 className="mt-5 px-5 py-2.5 rounded-xl bg-violet-600 text-white text-xs font-bold pointer-events-none"
               >
                 Choose Photo
+              </button>
+            </div>
+
+            <div className="flex items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold transition-all shadow-md cursor-pointer"
+              >
+                Upload Receipt
+              </button>
+              <button
+                type="button"
+                onClick={handleDemoReceipt}
+                className="px-4 py-2 rounded-xl border border-neutral-700 hover:border-violet-500 text-xs font-semibold transition-all cursor-pointer"
+              >
+                Demo Receipt ($14 Subway)
               </button>
             </div>
 
