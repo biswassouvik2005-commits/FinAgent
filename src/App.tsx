@@ -23,6 +23,7 @@ import {
   RotateCcw,
   Search,
   Send,
+  ShieldCheck,
   Sparkles,
   Sun,
   Trash2,
@@ -444,6 +445,65 @@ export default function App() {
     };
   }, [transactions, monthlyIncome]);
 
+  const safeToSpendData = useMemo(() => {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth();
+    const totalDaysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+    const currentDay = now.getDate();
+    const daysLeft = Math.max(1, totalDaysInMonth - currentDay + 1);
+
+    const monthlyBudget = monthlyIncome > 0 ? monthlyIncome : (liquidCash > 0 ? liquidCash : 0);
+
+    const spentSoFar = transactions
+      .filter(t => t.type === 'expense')
+      .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+
+    const upcomingBills = bills
+      .filter(b => !b.paid)
+      .reduce((sum, b) => sum + (Number(b.amount) || 0), 0);
+
+    const remainingPool = monthlyBudget - spentSoFar - upcomingBills;
+    const dailyAmount = monthlyBudget > 0 ? remainingPool / daysLeft : 0;
+    const dailyBaseline = monthlyBudget > 0 ? monthlyBudget / totalDaysInMonth : 50;
+
+    let status: 'green' | 'amber' | 'red';
+    let statusLabel: string;
+    let statusDetail: string;
+
+    if (monthlyBudget === 0) {
+      status = 'amber';
+      statusLabel = 'Budget Not Set';
+      statusDetail = 'Set your monthly income or budget in the Budget tab to activate your daily safe-to-spend allowance.';
+    } else if (dailyAmount <= 0) {
+      status = 'red';
+      statusLabel = 'Spending Deficit';
+      statusDetail = `Past spending and unpaid bills exceed your monthly budget by $${Math.abs(remainingPool).toFixed(2)}. Pause discretionary purchases.`;
+    } else if (dailyAmount < Math.min(25, dailyBaseline * 0.35)) {
+      status = 'amber';
+      statusLabel = 'Pacing Tight';
+      statusDetail = `Daily allowance is low. Cap discretionary spend at $${dailyAmount.toFixed(2)} today to keep all upcoming bills fully covered.`;
+    } else {
+      status = 'green';
+      statusLabel = 'Guilt-Free Spending';
+      statusDetail = `You have $${dailyAmount.toFixed(2)} guilt-free to spend today while staying 100% on track for all upcoming bills.`;
+    }
+
+    return {
+      dailyAmount,
+      monthlyBudget,
+      spentSoFar,
+      upcomingBills,
+      remainingPool,
+      daysLeft,
+      currentDay,
+      totalDaysInMonth,
+      status,
+      statusLabel,
+      statusDetail,
+    };
+  }, [monthlyIncome, liquidCash, transactions, bills]);
+
   // Modals
   const [showCardModal, setShowCardModal] = useState(false);
   const [editingCardId, setEditingCardId] = useState<string | null>(null);
@@ -520,6 +580,7 @@ export default function App() {
     monthlyIncome,
     bills,
     transactions,
+    safeToSpend: safeToSpendData,
   });
 
   // Voice Recording & Speech-to-Text State
@@ -1949,6 +2010,195 @@ User Message: "${userText}"`;
         {/* ========================================================================= */}
         {activeScreen === 'home' && (
           <div className="space-y-6">
+            {/* Daily Safe-to-Spend Hero Metric Card */}
+            <div
+              className={`p-6 sm:p-7 rounded-3xl border shadow-sm relative overflow-hidden transition-all duration-200 ${
+                safeToSpendData.status === 'green'
+                  ? isDark
+                    ? 'border-emerald-500/30 bg-gradient-to-br from-emerald-950/25 via-neutral-900/60 to-neutral-900/40'
+                    : 'border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-emerald-50/30'
+                  : safeToSpendData.status === 'amber'
+                  ? isDark
+                    ? 'border-amber-500/30 bg-gradient-to-br from-amber-950/25 via-neutral-900/60 to-neutral-900/40'
+                    : 'border-amber-200 bg-gradient-to-br from-amber-50 via-white to-amber-50/30'
+                  : isDark
+                  ? 'border-rose-500/30 bg-gradient-to-br from-rose-950/25 via-neutral-900/60 to-neutral-900/40'
+                  : 'border-rose-200 bg-gradient-to-br from-rose-50 via-white to-rose-50/30'
+              }`}
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                <div className="flex items-center gap-2">
+                  <div
+                    className={`w-7 h-7 rounded-lg flex items-center justify-center ${
+                      safeToSpendData.status === 'green'
+                        ? 'bg-emerald-500/20 text-emerald-400'
+                        : safeToSpendData.status === 'amber'
+                        ? 'bg-amber-500/20 text-amber-400'
+                        : 'bg-rose-500/20 text-rose-400'
+                    }`}
+                  >
+                    <ShieldCheck className="w-4 h-4" />
+                  </div>
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-400">
+                    Daily Safe-to-Spend
+                  </span>
+                </div>
+
+                <div
+                  className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide flex items-center gap-1.5 self-start sm:self-auto border ${
+                    safeToSpendData.status === 'green'
+                      ? isDark
+                        ? 'bg-emerald-950/50 text-emerald-400 border-emerald-500/30'
+                        : 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                      : safeToSpendData.status === 'amber'
+                      ? isDark
+                        ? 'bg-amber-950/50 text-amber-400 border-amber-500/30'
+                        : 'bg-amber-100 text-amber-800 border-amber-300'
+                      : isDark
+                      ? 'bg-rose-950/50 text-rose-400 border-rose-500/30'
+                      : 'bg-rose-100 text-rose-800 border-rose-300'
+                  }`}
+                >
+                  <span
+                    className={`w-2 h-2 rounded-full ${
+                      safeToSpendData.status === 'green'
+                        ? 'bg-emerald-400 animate-pulse'
+                        : safeToSpendData.status === 'amber'
+                        ? 'bg-amber-400'
+                        : 'bg-rose-400'
+                    }`}
+                  />
+                  <span>{safeToSpendData.statusLabel}</span>
+                </div>
+              </div>
+
+              {/* Big Hero Number */}
+              <div className="flex items-baseline gap-2 mb-3">
+                <span
+                  className={`text-4xl sm:text-5xl font-black font-mono tracking-tight tabular-nums ${
+                    safeToSpendData.status === 'green'
+                      ? 'text-emerald-400'
+                      : safeToSpendData.status === 'amber'
+                      ? 'text-amber-400'
+                      : 'text-rose-400'
+                  }`}
+                >
+                  {safeToSpendData.dailyAmount < 0 ? '-' : ''}$
+                  {Math.abs(safeToSpendData.dailyAmount).toLocaleString('en-US', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}
+                </span>
+                <span className="text-neutral-400 font-bold text-sm sm:text-base">/ day</span>
+                <span className="text-neutral-500 text-xs sm:text-sm ml-2 hidden sm:inline">
+                  (Guilt-free allowance for {safeToSpendData.daysLeft} days remaining this month)
+                </span>
+              </div>
+
+              {/* Status banner */}
+              <div
+                className={`p-3 rounded-xl text-xs sm:text-sm font-medium mb-4 border ${
+                  safeToSpendData.status === 'green'
+                    ? isDark
+                      ? 'bg-emerald-950/30 border-emerald-800/40 text-emerald-200'
+                      : 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                    : safeToSpendData.status === 'amber'
+                    ? isDark
+                      ? 'bg-amber-950/30 border-amber-800/40 text-amber-200'
+                      : 'bg-amber-50 border-amber-200 text-amber-900'
+                    : isDark
+                    ? 'bg-rose-950/30 border-rose-800/40 text-rose-200'
+                    : 'bg-rose-50 border-rose-200 text-rose-900'
+                }`}
+              >
+                {safeToSpendData.statusDetail}
+              </div>
+
+              {/* Breakdown Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-3">
+                <button
+                  type="button"
+                  onClick={() => navigateToScreen('budget')}
+                  className={`p-3 rounded-xl border text-left transition-all ${
+                    isDark
+                      ? 'bg-neutral-900/60 hover:bg-neutral-800/60 border-neutral-800'
+                      : 'bg-white hover:bg-neutral-50 border-neutral-200'
+                  }`}
+                >
+                  <span className="text-[10px] uppercase font-bold text-neutral-400 block mb-0.5">
+                    Monthly Budget
+                  </span>
+                  <span className="text-sm font-bold font-mono">
+                    ${safeToSpendData.monthlyBudget.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => navigateToScreen('budget')}
+                  className={`p-3 rounded-xl border text-left transition-all ${
+                    isDark
+                      ? 'bg-neutral-900/60 hover:bg-neutral-800/60 border-neutral-800'
+                      : 'bg-white hover:bg-neutral-50 border-neutral-200'
+                  }`}
+                >
+                  <span className="text-[10px] uppercase font-bold text-neutral-400 block mb-0.5">
+                    Spent So Far
+                  </span>
+                  <span className="text-sm font-bold font-mono text-rose-400">
+                    -${safeToSpendData.spentSoFar.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => navigateToScreen('bills')}
+                  className={`p-3 rounded-xl border text-left transition-all ${
+                    isDark
+                      ? 'bg-neutral-900/60 hover:bg-neutral-800/60 border-neutral-800'
+                      : 'bg-white hover:bg-neutral-50 border-neutral-200'
+                  }`}
+                >
+                  <span className="text-[10px] uppercase font-bold text-neutral-400 block mb-0.5">
+                    Upcoming Bills
+                  </span>
+                  <span className="text-sm font-bold font-mono text-amber-400">
+                    -${safeToSpendData.upcomingBills.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                  </span>
+                </button>
+
+                <div
+                  className={`p-3 rounded-xl border text-left ${
+                    isDark ? 'bg-neutral-900/60 border-neutral-800' : 'bg-white border-neutral-200'
+                  }`}
+                >
+                  <span className="text-[10px] uppercase font-bold text-neutral-400 block mb-0.5">
+                    Days Left
+                  </span>
+                  <span className="text-sm font-bold font-mono text-emerald-400">
+                    {safeToSpendData.daysLeft} days
+                  </span>
+                </div>
+              </div>
+
+              {/* Equation bar */}
+              <div
+                className="pt-2.5 border-t flex flex-col sm:flex-row sm:items-center justify-between text-[11px] font-mono text-neutral-400 gap-1"
+                style={{ borderColor: isDark ? '#262630' : '#e5e7eb' }}
+              >
+                <span>
+                  Formula: (${safeToSpendData.monthlyBudget.toFixed(0)} Budget − ${safeToSpendData.spentSoFar.toFixed(0)} Spent − ${safeToSpendData.upcomingBills.toFixed(0)} Bills) ÷ {safeToSpendData.daysLeft} Days
+                </span>
+                <button
+                  type="button"
+                  onClick={() => navigateToScreen('budget')}
+                  className="text-violet-400 hover:text-violet-300 font-sans font-bold self-start sm:self-auto"
+                >
+                  Audit Budget &rarr;
+                </button>
+              </div>
+            </div>
+
             {/* Top Net Worth Hero Card with Interactive Chart */}
             <div
               className="p-6 sm:p-7 rounded-3xl border shadow-sm relative overflow-hidden transition-all duration-200"

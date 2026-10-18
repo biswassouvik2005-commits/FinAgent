@@ -626,6 +626,105 @@ function FinAgentApp() {
     debtStrategy === 'Avalanche' ? b.apr - a.apr : a.balance - b.balance
   );
 
+  const safeToSpendData = useMemo(() => {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth();
+    const totalDaysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+    const currentDay = now.getDate();
+    const daysLeft = Math.max(1, totalDaysInMonth - currentDay + 1);
+
+    const monthlyBudget = monthlyIncome > 0 ? monthlyIncome : (liquidCash > 0 ? liquidCash : 0);
+
+    const spentSoFar = transactions
+      .filter(t => t.type === 'expense')
+      .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+
+    const upcomingBills = bills
+      .filter(b => !b.paid)
+      .reduce((sum, b) => sum + (Number(b.amount) || 0), 0);
+
+    const remainingPool = monthlyBudget - spentSoFar - upcomingBills;
+    const dailyAmount = monthlyBudget > 0 ? remainingPool / daysLeft : 0;
+    const dailyBaseline = monthlyBudget > 0 ? monthlyBudget / totalDaysInMonth : 50;
+
+    let status: 'green' | 'amber' | 'red';
+    let statusLabel: string;
+    let statusDetail: string;
+
+    if (monthlyBudget === 0) {
+      status = 'amber';
+      statusLabel = 'Budget Not Set';
+      statusDetail = 'Set your monthly income or budget to activate real-time safe-to-spend tracking.';
+    } else if (dailyAmount <= 0) {
+      status = 'red';
+      statusLabel = 'Spending Deficit';
+      statusDetail = `Past spending and unpaid bills exceed your monthly budget by ${formatCurrency(Math.abs(remainingPool))}. Pause non-essential purchases.`;
+    } else if (dailyAmount < Math.min(25, dailyBaseline * 0.35)) {
+      status = 'amber';
+      statusLabel = 'Pacing Tight';
+      statusDetail = `Daily allowance is low. Cap discretionary spending at ${formatCurrency(dailyAmount)} today to ensure remaining bills stay covered.`;
+    } else {
+      status = 'green';
+      statusLabel = 'Guilt-Free Spending';
+      statusDetail = `You have ${formatCurrency(dailyAmount)} guilt-free to spend today while remaining 100% on track for all upcoming bills.`;
+    }
+
+    return {
+      dailyAmount,
+      monthlyBudget,
+      spentSoFar,
+      upcomingBills,
+      remainingPool,
+      daysLeft,
+      currentDay,
+      totalDaysInMonth,
+      status,
+      statusLabel,
+      statusDetail,
+    };
+  }, [monthlyIncome, liquidCash, transactions, bills]);
+
+  const safeToSpendColors = useMemo(() => {
+    if (safeToSpendData.status === 'green') {
+      return {
+        badgeBg: isDark ? '#064e3b50' : '#d1fae5',
+        badgeBorder: isDark ? '#05966960' : '#a7f3d0',
+        badgeText: isDark ? '#34d399' : '#047857',
+        heroAmount: isDark ? '#34d399' : '#059669',
+        dot: '#10b981',
+        cardBorder: isDark ? '#05966940' : '#a7f3d0',
+        bannerBg: isDark ? '#064e3b25' : '#ecfdf5',
+        bannerBorder: isDark ? '#05966940' : '#bbf7d0',
+        bannerText: isDark ? '#a7f3d0' : '#065f46',
+      };
+    }
+    if (safeToSpendData.status === 'amber') {
+      return {
+        badgeBg: isDark ? '#78350f50' : '#fef3c7',
+        badgeBorder: isDark ? '#d9770660' : '#fde68a',
+        badgeText: isDark ? '#fbbf24' : '#b45309',
+        heroAmount: isDark ? '#fbbf24' : '#d97706',
+        dot: '#f59e0b',
+        cardBorder: isDark ? '#d9770640' : '#fde68a',
+        bannerBg: isDark ? '#78350f25' : '#fffbeb',
+        bannerBorder: isDark ? '#d9770640' : '#fed7aa',
+        bannerText: isDark ? '#fde68a' : '#92400e',
+      };
+    }
+    return {
+      badgeBg: isDark ? '#7f1d1d50' : '#fee2e2',
+      badgeBorder: isDark ? '#dc262660' : '#fecaca',
+      badgeText: isDark ? '#f87171' : '#b91c1c',
+      heroAmount: isDark ? '#f87171' : '#dc2626',
+      dot: '#ef4444',
+      cardBorder: isDark ? '#dc262640' : '#fecaca',
+      bannerBg: isDark ? '#7f1d1d25' : '#fef2f2',
+      bannerBorder: isDark ? '#dc262640' : '#fca5a5',
+      bannerText: isDark ? '#fca5a5' : '#991b1b',
+    };
+  }, [safeToSpendData.status, isDark]);
+
   useEffect(() => {
     let mounted = true;
     const load = async () => {
@@ -1014,7 +1113,7 @@ function FinAgentApp() {
         '/api/chat',
         {
           message: text,
-          userContext: { cards, totalBalance: liquidCash, monthlyIncome, bills, transactions },
+          userContext: { cards, totalBalance: liquidCash, monthlyIncome, bills, transactions, safeToSpend: safeToSpendData },
         },
         {
           signal: abortController.signal,
@@ -1363,6 +1462,159 @@ function FinAgentApp() {
         <Text style={[styles.eyebrow, { color: palette.muted }]}>PERSONAL FINANCE OVERVIEW</Text>
         <Text style={[styles.pageTitle, { color: palette.text }]}>Welcome{userName ? `, ${userName}` : ''}</Text>
       </View>
+
+      {/* Daily Safe-to-Spend Hero Metric Card */}
+      <Panel
+        palette={palette}
+        style={[
+          styles.safeToSpendCard,
+          {
+            borderColor: safeToSpendColors.cardBorder,
+            backgroundColor: isDark ? '#101015' : '#ffffff',
+          },
+        ]}
+      >
+        <View style={styles.safeToSpendHeader}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Ionicons name="shield-checkmark" size={17} color={safeToSpendColors.dot} />
+            <Text style={[styles.eyebrow, { color: palette.muted, marginBottom: 0 }]}>
+              DAILY SAFE-TO-SPEND
+            </Text>
+          </View>
+          <View
+            style={[
+              styles.safeToSpendBadge,
+              {
+                backgroundColor: safeToSpendColors.badgeBg,
+                borderColor: safeToSpendColors.badgeBorder,
+                borderWidth: 1,
+              },
+            ]}
+          >
+            <View style={[styles.safeToSpendDot, { backgroundColor: safeToSpendColors.dot }]} />
+            <Text style={[styles.safeToSpendBadgeText, { color: safeToSpendColors.badgeText }]}>
+              {safeToSpendData.statusLabel}
+            </Text>
+          </View>
+        </View>
+
+        {/* Hero Number */}
+        <View style={styles.safeToSpendHeroRow}>
+          <Text style={[styles.safeToSpendHeroAmount, { color: safeToSpendColors.heroAmount }]}>
+            {safeToSpendData.dailyAmount < 0 ? '-' : ''}
+            {formatCurrency(Math.abs(safeToSpendData.dailyAmount))}
+          </Text>
+          <View style={{ marginBottom: 4 }}>
+            <Text style={[styles.safeToSpendHeroUnit, { color: palette.muted }]}>/ day</Text>
+            <Text style={[styles.caption, { color: palette.muted, fontSize: 11 }]}>
+              {safeToSpendData.daysLeft} days left this month
+            </Text>
+          </View>
+        </View>
+
+        {/* Status Message */}
+        <View
+          style={[
+            styles.safeToSpendDetailBanner,
+            {
+              backgroundColor: safeToSpendColors.bannerBg,
+              borderColor: safeToSpendColors.bannerBorder,
+            },
+          ]}
+        >
+          <Text style={[styles.safeToSpendDetailText, { color: safeToSpendColors.bannerText }]}>
+            {safeToSpendData.statusDetail}
+          </Text>
+        </View>
+
+        {/* Formula Breakdown Chips */}
+        <View style={styles.safeToSpendBreakdownGrid}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => navigateToScreen('budget')}
+            style={({ pressed }) => [
+              styles.safeToSpendBreakdownChip,
+              {
+                backgroundColor: palette.elevated,
+                borderColor: palette.border,
+                opacity: pressed ? 0.75 : 1,
+              },
+            ]}
+          >
+            <Text style={[styles.safeToSpendBreakdownLabel, { color: palette.muted }]}>Budget</Text>
+            <Text style={[styles.safeToSpendBreakdownValue, { color: palette.text }]}>
+              {formatCurrency(safeToSpendData.monthlyBudget, 0)}
+            </Text>
+          </Pressable>
+
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => navigateToScreen('budget')}
+            style={({ pressed }) => [
+              styles.safeToSpendBreakdownChip,
+              {
+                backgroundColor: palette.elevated,
+                borderColor: palette.border,
+                opacity: pressed ? 0.75 : 1,
+              },
+            ]}
+          >
+            <Text style={[styles.safeToSpendBreakdownLabel, { color: palette.muted }]}>Spent</Text>
+            <Text style={[styles.safeToSpendBreakdownValue, { color: palette.red }]}>
+              -{formatCurrency(safeToSpendData.spentSoFar, 0)}
+            </Text>
+          </Pressable>
+
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => navigateToScreen('bills')}
+            style={({ pressed }) => [
+              styles.safeToSpendBreakdownChip,
+              {
+                backgroundColor: palette.elevated,
+                borderColor: palette.border,
+                opacity: pressed ? 0.75 : 1,
+              },
+            ]}
+          >
+            <Text style={[styles.safeToSpendBreakdownLabel, { color: palette.muted }]}>Bills Due</Text>
+            <Text style={[styles.safeToSpendBreakdownValue, { color: '#f59e0b' }]}>
+              -{formatCurrency(safeToSpendData.upcomingBills, 0)}
+            </Text>
+          </Pressable>
+
+          <View
+            style={[
+              styles.safeToSpendBreakdownChip,
+              {
+                backgroundColor: palette.elevated,
+                borderColor: palette.border,
+              },
+            ]}
+          >
+            <Text style={[styles.safeToSpendBreakdownLabel, { color: palette.muted }]}>Days Left</Text>
+            <Text style={[styles.safeToSpendBreakdownValue, { color: palette.green }]}>
+              {safeToSpendData.daysLeft}d
+            </Text>
+          </View>
+        </View>
+
+        {/* Traceable Formula */}
+        <View style={[styles.safeToSpendFormulaRow, { borderTopColor: palette.border }]}>
+          <Text style={[styles.safeToSpendFormulaText, { color: palette.muted }]} numberOfLines={1}>
+            Formula: (${formatCurrency(safeToSpendData.monthlyBudget, 0)} - ${formatCurrency(safeToSpendData.spentSoFar, 0)} - ${formatCurrency(safeToSpendData.upcomingBills, 0)}) ÷ {safeToSpendData.daysLeft}d
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => navigateToScreen('budget')}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={[styles.caption, { color: palette.accent, fontWeight: '700' }]}>
+              Audit &rarr;
+            </Text>
+          </Pressable>
+        </View>
+      </Panel>
 
       {/* Hero Net Worth Card */}
       <Panel palette={palette} style={styles.heroPanel}>
@@ -2698,6 +2950,100 @@ const styles = StyleSheet.create({
   eyebrowWhite: { color: '#ffffffbb', fontSize: 10, fontWeight: '800', letterSpacing: 0.8, marginBottom: 4 },
   netWorth: { fontSize: 32, fontWeight: '900', letterSpacing: -0.7, marginTop: 5, marginBottom: 10 },
   panel: { borderRadius: 20, borderWidth: 1, padding: 16, gap: 12 },
+  safeToSpendCard: {
+    borderRadius: 22,
+    borderWidth: 1.5,
+    padding: 18,
+    gap: 12,
+  },
+  safeToSpendHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  safeToSpendBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 20,
+    gap: 5,
+  },
+  safeToSpendDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+  },
+  safeToSpendBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+  },
+  safeToSpendHeroRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 8,
+    marginTop: 2,
+  },
+  safeToSpendHeroAmount: {
+    fontSize: 36,
+    fontWeight: '900',
+    letterSpacing: -1,
+  },
+  safeToSpendHeroUnit: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  safeToSpendDetailBanner: {
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderWidth: 1,
+  },
+  safeToSpendDetailText: {
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '600',
+  },
+  safeToSpendBreakdownGrid: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  safeToSpendBreakdownChip: {
+    flex: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  safeToSpendBreakdownLabel: {
+    fontSize: 9.5,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+    marginBottom: 2,
+  },
+  safeToSpendBreakdownValue: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  safeToSpendFormulaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    marginTop: 2,
+  },
+  safeToSpendFormulaText: {
+    fontSize: 10,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    fontWeight: '600',
+    flex: 1,
+    marginRight: 6,
+  },
   heroPanel: { padding: 18, gap: 12 },
   heroStatRow: { flexDirection: 'row', gap: 10, marginBottom: 4 },
   statChip: { flex: 1, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 12, borderWidth: 1, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
