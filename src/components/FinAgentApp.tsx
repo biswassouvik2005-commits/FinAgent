@@ -1,4 +1,3 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -20,46 +19,29 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import api from '../lib/api';
-import { NetWorthChart } from './NetWorthChart';
+import api, { getApiErrorMessage } from '../lib/api';
+import {
+  allocateBudget,
+  calculateFinancialSummary,
+  cardPayoffOrder,
+  type Bill as UpcomingBill,
+  type CreditCard as CreditCardItem,
+  type Transaction as TransactionItem,
+} from '../lib/finance';
+import {
+  clearFinancialData,
+  defaultFinancialData,
+  loadFinancialData,
+  saveFinancialData,
+  type FinancialData,
+} from '../lib/storage';
 import { PieChart, type CategoryItem } from './PieChart';
 
-type Screen = 'home' | 'cards' | 'agent' | 'budget' | 'bills' | 'receipts';
-type CardNetwork = 'visa' | 'mastercard' | 'amex' | 'discover';
+type Screen = 'home' | 'cards' | 'agent' | 'budget' | 'bills' | 'receipts' | 'settings';
 type TransactionType = 'income' | 'expense';
 type ModalType = 'card' | 'transaction' | 'bill' | 'payment' | null;
 type IconName = keyof typeof Ionicons.glyphMap;
-
-interface CreditCardItem {
-  id: string;
-  cardName: string;
-  network: CardNetwork;
-  last4: string;
-  balance: number;
-  creditLimit: number;
-  apr: number;
-  dueDate: string;
-  minPayment: number;
-}
-
-interface TransactionItem {
-  id: string;
-  title: string;
-  category: string;
-  date: string;
-  amount: number;
-  type: TransactionType;
-  source: string;
-}
-
-interface UpcomingBill {
-  id: string;
-  bill_name: string;
-  due_date: string;
-  amount: number;
-  paid: boolean;
-  category: string;
-}
+type CardNetwork = CreditCardItem['network'];
 
 interface ChatMessage {
   id: string;
@@ -75,58 +57,14 @@ interface ScannedReceipt {
   date: string;
 }
 
-const defaultCards: CreditCardItem[] = [
-  {
-    id: 'c-1',
-    cardName: 'Chase Sapphire Preferred',
-    network: 'visa',
-    last4: '4821',
-    balance: 1420,
-    creditLimit: 10000,
-    apr: 22.49,
-    dueDate: 'Nov 14',
-    minPayment: 45,
-  },
-  {
-    id: 'c-2',
-    cardName: 'American Express Gold',
-    network: 'amex',
-    last4: '1004',
-    balance: 680,
-    creditLimit: 8000,
-    apr: 19.99,
-    dueDate: 'Nov 22',
-    minPayment: 35,
-  },
-  {
-    id: 'c-3',
-    cardName: 'Apple Card Titanium',
-    network: 'mastercard',
-    last4: '7729',
-    balance: 240,
-    creditLimit: 5000,
-    apr: 15.99,
-    dueDate: 'Nov 30',
-    minPayment: 25,
-  },
-];
+interface Confirmation {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  onConfirm: () => void;
+}
 
-const defaultTransactions: TransactionItem[] = [
-  { id: 'tx-1', title: 'Salary Direct Deposit', category: 'Income', date: 'Oct 16', amount: 2700, type: 'income', source: 'Primary Checking' },
-  { id: 'tx-2', title: 'Apartment Rent ACH', category: 'Housing', date: 'Oct 15', amount: 1850, type: 'expense', source: 'Primary Checking' },
-  { id: 'tx-3', title: 'Whole Foods Market', category: 'Groceries', date: 'Oct 14', amount: 142.85, type: 'expense', source: 'Chase Sapphire Preferred' },
-  { id: 'tx-4', title: 'Blue Bottle Coffee', category: 'Dining', date: 'Oct 12', amount: 14.5, type: 'expense', source: 'American Express Gold' },
-  { id: 'tx-5', title: 'Equinox Gym Membership', category: 'Health', date: 'Oct 10', amount: 195, type: 'expense', source: 'Chase Sapphire Preferred' },
-];
-
-const defaultBills: UpcomingBill[] = [
-  { id: 'b-1', bill_name: 'Chase Sapphire Min Payment', due_date: 'Nov 14', amount: 45, paid: false, category: 'Credit Card' },
-  { id: 'b-2', bill_name: 'High-Speed Fiber Internet', due_date: 'Nov 05', amount: 80, paid: false, category: 'Utilities' },
-  { id: 'b-3', bill_name: 'Electric Utility Grid', due_date: 'Nov 02', amount: 145, paid: false, category: 'Utilities' },
-  { id: 'b-4', bill_name: 'Health Care Premium', due_date: 'Nov 15', amount: 260, paid: false, category: 'Healthcare' },
-];
-
-const categories = ['Groceries', 'Dining', 'Housing', 'Utilities', 'Transportation', 'Entertainment', 'Health', 'Income'];
+const categories = ['Groceries', 'Dining', 'Housing', 'Utilities', 'Transportation', 'Entertainment', 'Health', 'Income', 'Other'];
 const categoryColors = ['#60a5fa', '#c084fc', '#fb923c', '#34d399', '#fbbf24', '#f472b6', '#22d3ee', '#a3e635'];
 const cardColors: Record<CardNetwork, string> = {
   visa: '#272b63',
@@ -134,30 +72,8 @@ const cardColors: Record<CardNetwork, string> = {
   amex: '#654b17',
   discover: '#155e55',
 };
-const storageKeys = ['fin_theme', 'fin_cards', 'fin_transactions', 'fin_bills', 'fin_monthly_income', 'fin_liquid_cash'] as const;
-
 const formatCurrency = (value: number, decimals = 2) =>
   `$${value.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}`;
-
-const parseArray = <T,>(value: string | null, fallback: T[], key: string): T[] => {
-  if (!value) return fallback;
-  try {
-    const parsed: unknown = JSON.parse(value);
-    if (!Array.isArray(parsed)) throw new Error(`Stored value for ${key} is not an array`);
-    return parsed as T[];
-  } catch (error) {
-    console.error(`Failed to parse ${key} from AsyncStorage`, error);
-    return fallback;
-  }
-};
-
-const parseNumber = (value: string | null, fallback: number, key: string) => {
-  if (value === null) return fallback;
-  const parsed = Number(value);
-  if (Number.isFinite(parsed)) return parsed;
-  console.error(`Invalid numeric value for ${key} in AsyncStorage`);
-  return fallback;
-};
 
 interface Palette {
   background: string;
@@ -333,7 +249,17 @@ function ChoiceChips<T extends string>({
   );
 }
 
-function TransactionRow({ item, palette }: { item: TransactionItem; palette: Palette }) {
+function TransactionRow({
+  item,
+  palette,
+  onEdit,
+  onRemove,
+}: {
+  item: TransactionItem;
+  palette: Palette;
+  onEdit?: () => void;
+  onRemove?: () => void;
+}) {
   const income = item.type === 'income';
   return (
     <View style={[styles.transactionRow, { borderBottomColor: palette.border }]}>
@@ -347,29 +273,38 @@ function TransactionRow({ item, palette }: { item: TransactionItem; palette: Pal
       <Text style={[styles.transactionAmount, { color: income ? palette.green : palette.text }]}>
         {income ? '+' : '-'}{formatCurrency(item.amount)}
       </Text>
+      {onEdit ? <Pressable accessibilityLabel={`Edit ${item.title}`} onPress={onEdit} hitSlop={8}><Ionicons name="create-outline" size={18} color={palette.accent} /></Pressable> : null}
+      {onRemove ? <Pressable accessibilityLabel={`Delete ${item.title}`} onPress={onRemove} hitSlop={8}><Ionicons name="trash-outline" size={18} color={palette.red} /></Pressable> : null}
     </View>
   );
 }
 
 function FinAgentApp() {
   const [storageStatus, setStorageStatus] = useState<'loading' | 'ready' | 'failed'>('loading');
+  const [storageError, setStorageError] = useState('');
+  const [storageWarnings, setStorageWarnings] = useState<string[]>([]);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [screen, setScreen] = useState<Screen>('home');
-  const [monthlyIncome, setMonthlyIncome] = useState(5400);
-  const [liquidCash, setLiquidCash] = useState(12850);
-  const [cards, setCards] = useState(defaultCards);
-  const [transactions, setTransactions] = useState(defaultTransactions);
-  const [bills, setBills] = useState(defaultBills);
+  const [displayName, setDisplayName] = useState(defaultFinancialData.profile.displayName);
+  const [monthlyIncome, setMonthlyIncome] = useState(defaultFinancialData.profile.monthlyIncome);
+  const [monthlyExpenses, setMonthlyExpenses] = useState(defaultFinancialData.profile.monthlyExpenses);
+  const [liquidCash, setLiquidCash] = useState(defaultFinancialData.profile.liquidCash);
+  const [cards, setCards] = useState<CreditCardItem[]>(defaultFinancialData.cards);
+  const [transactions, setTransactions] = useState<TransactionItem[]>(defaultFinancialData.transactions);
+  const [bills, setBills] = useState<UpcomingBill[]>(defaultFinancialData.bills);
   const [modal, setModal] = useState<ModalType>(null);
+  const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const [editingCardId, setEditingCardId] = useState<string | null>(null);
+  const [editingTransactionId, setEditingTransactionId] = useState<string | null>(null);
+  const [editingBillId, setEditingBillId] = useState<string | null>(null);
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
   const [cardName, setCardName] = useState('');
   const [cardNetwork, setCardNetwork] = useState<CardNetwork>('visa');
   const [cardLast4, setCardLast4] = useState('');
   const [cardBalance, setCardBalance] = useState('');
   const [cardLimit, setCardLimit] = useState('');
-  const [cardApr, setCardApr] = useState('21.99');
-  const [cardDueDate, setCardDueDate] = useState('Nov 15');
+  const [cardApr, setCardApr] = useState('');
+  const [cardDueDate, setCardDueDate] = useState('');
   const [txTitle, setTxTitle] = useState('');
   const [txAmount, setTxAmount] = useState('');
   const [txCategory, setTxCategory] = useState('Groceries');
@@ -378,8 +313,13 @@ function FinAgentApp() {
   const [billName, setBillName] = useState('');
   const [billAmount, setBillAmount] = useState('');
   const [billDueDate, setBillDueDate] = useState('');
+  const [profileNameDraft, setProfileNameDraft] = useState('');
+  const [incomeDraft, setIncomeDraft] = useState('');
+  const [expensesDraft, setExpensesDraft] = useState('');
+  const [cashDraft, setCashDraft] = useState('');
+  const [saveRevision, setSaveRevision] = useState(0);
   const [paymentAmount, setPaymentAmount] = useState('');
-  const [debtStrategy, setDebtStrategy] = useState<'Avalanche' | 'Snowball'>('Avalanche');
+  const [debtStrategy, setDebtStrategy] = useState<'Avalanche' | 'Snowball'>(defaultFinancialData.debtStrategy);
   const [txSearch, setTxSearch] = useState('');
   const [txFilter, setTxFilter] = useState('All');
   const [messages, setMessages] = useState<ChatMessage[]>([
@@ -395,37 +335,56 @@ function FinAgentApp() {
   const [isScanning, setIsScanning] = useState(false);
   const [scannedReceipt, setScannedReceipt] = useState<ScannedReceipt | null>(null);
   const [toast, setToast] = useState('');
+  const [toastIsError, setToastIsError] = useState(false);
   const [apiError, setApiError] = useState('');
   const chatScroll = useRef<ScrollViewRef>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isDark = theme === 'dark';
   const palette = useMemo(() => paletteFor(isDark), [isDark]);
 
-  const totalCardDebt = cards.reduce((sum, card) => sum + (card.balance || 0), 0);
-  const totalCreditLimit = cards.reduce((sum, card) => sum + (card.creditLimit || 0), 0);
-  const utilization = totalCreditLimit > 0 ? (totalCardDebt / totalCreditLimit) * 100 : 0;
-  const netWorth = liquidCash - totalCardDebt;
-  const sortedCards = [...cards].sort((a, b) =>
-    debtStrategy === 'Avalanche' ? b.apr - a.apr : a.balance - b.balance
-  );
+  const financialContext = useMemo(() => ({
+    cards,
+    transactions,
+    bills,
+    monthlyIncome,
+    monthlyExpenses,
+    totalBalance: liquidCash,
+  }), [cards, transactions, bills, monthlyIncome, monthlyExpenses, liquidCash]);
+  const summary = useMemo(() => calculateFinancialSummary(financialContext), [financialContext]);
+  const totalCardDebt = summary.cardDebt;
+  const totalCreditLimit = summary.creditLimit;
+  const utilization = summary.utilizationPercent;
+  const netWorth = summary.netWorth;
+  const budgetTargets = allocateBudget(monthlyIncome);
+  const sortedCards = cardPayoffOrder(cards, debtStrategy.toLowerCase() as 'avalanche' | 'snowball');
 
   useEffect(() => {
     let mounted = true;
     const load = async () => {
       try {
-        const entries = await AsyncStorage.multiGet([...storageKeys]);
+        const loaded = await loadFinancialData();
         if (!mounted) return;
-        const stored = Object.fromEntries(entries);
-        if (stored.fin_theme === 'dark' || stored.fin_theme === 'light') setTheme(stored.fin_theme);
-        setCards(parseArray(stored.fin_cards ?? null, defaultCards, 'fin_cards'));
-        setTransactions(parseArray(stored.fin_transactions ?? null, defaultTransactions, 'fin_transactions'));
-        setBills(parseArray(stored.fin_bills ?? null, defaultBills, 'fin_bills'));
-        setMonthlyIncome(parseNumber(stored.fin_monthly_income ?? null, 5400, 'fin_monthly_income'));
-        setLiquidCash(parseNumber(stored.fin_liquid_cash ?? null, 12850, 'fin_liquid_cash'));
+        setStorageWarnings(loaded.warnings);
+        setTheme(loaded.data.theme);
+        setDebtStrategy(loaded.data.debtStrategy);
+        setDisplayName(loaded.data.profile.displayName);
+        setMonthlyIncome(loaded.data.profile.monthlyIncome);
+        setMonthlyExpenses(loaded.data.profile.monthlyExpenses);
+        setLiquidCash(loaded.data.profile.liquidCash);
+        setProfileNameDraft(loaded.data.profile.displayName);
+        setIncomeDraft(String(loaded.data.profile.monthlyIncome));
+        setExpensesDraft(String(loaded.data.profile.monthlyExpenses));
+        setCashDraft(String(loaded.data.profile.liquidCash));
+        setCards(loaded.data.cards);
+        setTransactions(loaded.data.transactions);
+        setBills(loaded.data.bills);
         setStorageStatus('ready');
       } catch (error) {
         console.error('Failed to load app data from AsyncStorage', error);
-        if (mounted) setStorageStatus('failed');
+        if (mounted) {
+          setStorageError(error instanceof Error ? error.message : 'Saved information could not be loaded.');
+          setStorageStatus('failed');
+        }
       }
     };
     void load();
@@ -437,18 +396,22 @@ function FinAgentApp() {
 
   useEffect(() => {
     if (storageStatus !== 'ready') return;
-    void AsyncStorage.multiSet([
-      ['fin_theme', theme],
-      ['fin_cards', JSON.stringify(cards)],
-      ['fin_transactions', JSON.stringify(transactions)],
-      ['fin_bills', JSON.stringify(bills)],
-      ['fin_monthly_income', String(monthlyIncome)],
-      ['fin_liquid_cash', String(liquidCash)],
-    ]).catch(error => {
+    const data: FinancialData = {
+      version: 2,
+      theme,
+      debtStrategy,
+      profile: { displayName, monthlyIncome, monthlyExpenses, liquidCash },
+      cards,
+      transactions,
+      bills,
+    };
+    void saveFinancialData(data).then(() => {
+      setStorageError('');
+    }).catch(error => {
       console.error('Failed to save app data to AsyncStorage', error);
-      setStorageStatus('failed');
+      setStorageError('Your changes could not be saved. Check device storage and retry.');
     });
-  }, [storageStatus, theme, cards, transactions, bills, monthlyIncome, liquidCash]);
+  }, [storageStatus, theme, debtStrategy, displayName, monthlyIncome, monthlyExpenses, liquidCash, cards, transactions, bills, saveRevision]);
 
   useEffect(() => {
     if (screen === 'agent') {
@@ -456,10 +419,88 @@ function FinAgentApp() {
     }
   }, [messages, isLoadingChat, screen]);
 
-  const showToast = (message: string) => {
+  const showToast = (message: string, isError = false) => {
     setToast(message);
+    setToastIsError(isError);
     if (toastTimer.current) clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(''), 2800);
+  };
+
+  const applyLoadedData = (data: FinancialData) => {
+    setTheme(data.theme);
+    setDebtStrategy(data.debtStrategy);
+    setDisplayName(data.profile.displayName);
+    setMonthlyIncome(data.profile.monthlyIncome);
+    setMonthlyExpenses(data.profile.monthlyExpenses);
+    setLiquidCash(data.profile.liquidCash);
+    setCards(data.cards);
+    setTransactions(data.transactions);
+    setBills(data.bills);
+    setProfileNameDraft(data.profile.displayName);
+    setIncomeDraft(String(data.profile.monthlyIncome));
+    setExpensesDraft(String(data.profile.monthlyExpenses));
+    setCashDraft(String(data.profile.liquidCash));
+  };
+
+  const retryStorageLoad = async () => {
+    setStorageStatus('loading');
+    try {
+      const loaded = await loadFinancialData();
+      setStorageWarnings(loaded.warnings);
+      applyLoadedData(loaded.data);
+      setStorageError('');
+      setStorageStatus('ready');
+    } catch (error) {
+      console.error('Failed to reload app data from AsyncStorage', error);
+      setStorageError(error instanceof Error ? error.message : 'Saved information could not be loaded.');
+      setStorageStatus('failed');
+    }
+  };
+
+  const resetStoredData = () => {
+    setConfirmation({
+      title: 'Delete all saved information?',
+      message: 'This permanently removes your profile, cards, transactions, bills, and preferences from this device.',
+      confirmLabel: 'Delete all',
+      onConfirm: () => {
+        void (async () => {
+          try {
+            await clearFinancialData();
+            applyLoadedData(defaultFinancialData);
+            setStorageWarnings([]);
+            setStorageError('');
+            setStorageStatus('ready');
+            showToast('Saved information cleared');
+          } catch (error) {
+            console.error('Failed to clear saved app data', error);
+            setStorageError('Saved information could not be cleared. Try again.');
+          }
+        })();
+      },
+    });
+  };
+
+  const saveProfile = () => {
+    const parsedIncome = Number(incomeDraft);
+    const parsedExpenses = Number(expensesDraft);
+    const parsedCash = Number(cashDraft);
+    if (
+      ![parsedIncome, parsedExpenses, parsedCash].every(Number.isFinite)
+      || parsedIncome < 0
+      || parsedExpenses < 0
+      || parsedCash < -1_000_000_000
+      || parsedIncome > 1_000_000_000
+      || parsedExpenses > 1_000_000_000
+      || parsedCash > 1_000_000_000
+    ) {
+      showToast('Income and monthly expenses must be between zero and 1,000,000,000. Cash must be between -1,000,000,000 and 1,000,000,000.', true);
+      return;
+    }
+    setDisplayName(profileNameDraft.trim());
+    setMonthlyIncome(parsedIncome);
+    setMonthlyExpenses(parsedExpenses);
+    setLiquidCash(parsedCash);
+    showToast('Profile updated');
   };
 
   const openNewCard = () => {
@@ -469,8 +510,8 @@ function FinAgentApp() {
     setCardLast4('');
     setCardBalance('');
     setCardLimit('');
-    setCardApr('21.99');
-    setCardDueDate('Nov 15');
+    setCardApr('');
+    setCardDueDate('');
     setModal('card');
   };
 
@@ -486,17 +527,87 @@ function FinAgentApp() {
     setModal('card');
   };
 
-  const saveCard = () => {
-    if (!cardName.trim()) {
-      Alert.alert('Card name required', 'Enter a name for this card before saving.');
+  const updateTransactionImpact = (transaction: TransactionItem, direction: 1 | -1) => {
+    if (transaction.type === 'income') {
+      setLiquidCash(previous => previous + direction * transaction.amount);
       return;
     }
-    const balance = Number.parseFloat(cardBalance) || 0;
-    const limit = Number.parseFloat(cardLimit) || 1000;
-    const apr = Number.parseFloat(cardApr) || 21.99;
+    const card = cards.find(item => item.cardName === transaction.source);
+    if (card) {
+      setCards(previous => previous.map(item => item.id === card.id
+        ? { ...item, balance: Math.max(0, item.balance + direction * transaction.amount) }
+        : item));
+    } else if (transaction.source === 'Primary Checking') {
+      setLiquidCash(previous => previous - direction * transaction.amount);
+    }
+  };
+
+  const openNewTransaction = () => {
+    setEditingTransactionId(null);
+    setTxTitle('');
+    setTxAmount('');
+    setTxType('expense');
+    setTxCategory('Groceries');
+    setTxSource('Primary Checking');
+    setModal('transaction');
+  };
+
+  const openEditTransaction = (transaction: TransactionItem) => {
+    setEditingTransactionId(transaction.id);
+    setTxTitle(transaction.title);
+    setTxAmount(String(transaction.amount));
+    setTxType(transaction.type);
+    setTxCategory(transaction.category);
+    setTxSource(transaction.source);
+    setModal('transaction');
+  };
+
+  const removeTransaction = (transaction: TransactionItem) => {
+    setConfirmation({
+      title: 'Delete transaction?',
+      message: `Delete ${transaction.title} and adjust its account balance?`,
+      confirmLabel: 'Delete',
+      onConfirm: () => {
+        updateTransactionImpact(transaction, -1);
+        setTransactions(previous => previous.filter(item => item.id !== transaction.id));
+        showToast('Transaction deleted');
+      },
+    });
+  };
+
+  const saveCard = () => {
+    if (!cardName.trim()) {
+      showToast('Enter a name for this card before saving.', true);
+      return;
+    }
+    const balance = Number(cardBalance);
+    const limit = Number(cardLimit);
+    const apr = Number(cardApr);
+    const last4 = cardLast4.trim() || (editingCardId ? cards.find(card => card.id === editingCardId)?.last4 : '');
+    if (
+      !cardBalance.trim()
+      || !cardLimit.trim()
+      || !cardApr.trim()
+      || !last4
+      || !/^\d{4}$/.test(last4)
+      || ![balance, limit, apr].every(Number.isFinite)
+      || balance < 0
+      || balance > 1_000_000_000
+      || limit <= 0
+      || limit > 1_000_000_000
+      || apr < 0
+      || apr > 100
+    ) {
+      showToast('Enter the last four digits, a balance up to 1,000,000,000, a credit limit between 0 and 1,000,000,000, and an APR from 0 to 100.', true);
+      return;
+    }
+    if (cards.some(card => card.id !== editingCardId && card.cardName.toLowerCase() === cardName.trim().toLowerCase())) {
+      showToast('Choose a unique card name so transactions can be assigned to the right card.', true);
+      return;
+    }
     if (editingCardId) {
       setCards(previous => previous.map(card => card.id === editingCardId
-        ? { ...card, cardName: cardName.trim(), network: cardNetwork, last4: cardLast4 || card.last4, balance, creditLimit: limit, apr, dueDate: cardDueDate }
+        ? { ...card, cardName: cardName.trim(), network: cardNetwork, last4, balance, creditLimit: limit, apr, dueDate: cardDueDate.trim(), minPayment: balance === 0 ? 0 : Math.min(balance, Math.max(25, balance * 0.025)) }
         : card));
       showToast('Card updated');
     } else {
@@ -504,12 +615,12 @@ function FinAgentApp() {
         id: `c-${Date.now()}`,
         cardName: cardName.trim(),
         network: cardNetwork,
-        last4: cardLast4 || String(Math.floor(1000 + Math.random() * 9000)),
+        last4,
         balance,
         creditLimit: limit,
         apr,
-        dueDate: cardDueDate || 'Nov 15',
-        minPayment: Math.max(25, balance * 0.025),
+        dueDate: cardDueDate.trim(),
+        minPayment: balance === 0 ? 0 : Math.min(balance, Math.max(25, balance * 0.025)),
       }]);
       showToast(`Added ${cardName.trim()}`);
     }
@@ -519,82 +630,119 @@ function FinAgentApp() {
   const saveTransaction = () => {
     const title = txTitle.trim();
     const amount = Number.parseFloat(txAmount);
-    if (!title || !Number.isFinite(amount) || amount <= 0) {
-      Alert.alert('Check transaction details', 'Enter a payee and an amount greater than zero.');
+    if (!title || !Number.isFinite(amount) || amount <= 0 || amount > 1_000_000_000) {
+      showToast('Enter a payee and an amount greater than zero and no greater than 1,000,000,000.', true);
       return;
     }
     const transaction: TransactionItem = {
-      id: `tx-${Date.now()}`,
+      id: editingTransactionId ?? `tx-${Date.now()}`,
       title,
       category: txCategory,
-      date: 'Today',
+      date: editingTransactionId
+        ? transactions.find(item => item.id === editingTransactionId)?.date ?? 'Today'
+        : 'Today',
       amount,
       type: txType,
       source: txSource,
     };
-    setTransactions(previous => [transaction, ...previous]);
-    if (txType === 'income') {
-      setLiquidCash(previous => previous + amount);
-    } else if (cards.some(card => card.cardName === txSource)) {
-      setCards(previous => previous.map(card => card.cardName === txSource ? { ...card, balance: card.balance + amount } : card));
+    if (editingTransactionId) {
+      const previousTransaction = transactions.find(item => item.id === editingTransactionId);
+      if (!previousTransaction) {
+        showToast('This transaction could not be found. Close the form and try again.', true);
+        return;
+      }
+      updateTransactionImpact(previousTransaction, -1);
+      updateTransactionImpact(transaction, 1);
+      setTransactions(previous => previous.map(item => item.id === editingTransactionId ? transaction : item));
     } else {
-      setLiquidCash(previous => Math.max(0, previous - amount));
+      setTransactions(previous => [transaction, ...previous]);
+      updateTransactionImpact(transaction, 1);
     }
     setTxTitle('');
     setTxAmount('');
     setModal(null);
-    showToast(`Logged ${txType}: ${formatCurrency(amount)}`);
+    showToast(editingTransactionId ? 'Transaction updated' : `Logged ${txType}: ${formatCurrency(amount)}`);
+  };
+
+  const openEditBill = (bill: UpcomingBill) => {
+    setEditingBillId(bill.id);
+    setBillName(bill.bill_name);
+    setBillAmount(String(bill.amount));
+    setBillDueDate(bill.due_date);
+    setModal('bill');
+  };
+
+  const openNewBill = () => {
+    setEditingBillId(null);
+    setBillName('');
+    setBillAmount('');
+    setBillDueDate('');
+    setModal('bill');
   };
 
   const saveBill = () => {
     const amount = Number.parseFloat(billAmount);
-    if (!billName.trim() || !Number.isFinite(amount) || amount <= 0) {
-      Alert.alert('Check bill details', 'Enter a bill name and an amount greater than zero.');
+    if (!billName.trim() || !Number.isFinite(amount) || amount <= 0 || amount > 1_000_000_000) {
+      showToast('Enter a bill name and an amount greater than zero and no greater than 1,000,000,000.', true);
       return;
     }
-    setBills(previous => [...previous, {
-      id: `b-${Date.now()}`,
+    const bill: UpcomingBill = {
+      id: editingBillId ?? `b-${Date.now()}`,
       bill_name: billName.trim(),
       amount,
       due_date: billDueDate.trim() || 'Date not set',
-      paid: false,
+      paid: editingBillId ? bills.find(item => item.id === editingBillId)?.paid ?? false : false,
       category: 'Recurring',
-    }]);
+    };
+    setBills(previous => editingBillId
+      ? previous.map(item => item.id === editingBillId ? bill : item)
+      : [...previous, bill]);
     setBillName('');
     setBillAmount('');
     setBillDueDate('');
     setModal(null);
-    showToast('Bill added');
+    setEditingBillId(null);
+    showToast(editingBillId ? 'Bill updated' : 'Bill added');
+  };
+
+  const removeBill = (bill: UpcomingBill) => {
+    setConfirmation({
+      title: 'Delete bill?',
+      message: `Remove ${bill.bill_name} from your bill list?`,
+      confirmLabel: 'Delete',
+      onConfirm: () => {
+        setBills(previous => previous.filter(item => item.id !== bill.id));
+        showToast('Bill deleted');
+      },
+    });
   };
 
   const savePayment = () => {
     const amount = Number.parseFloat(paymentAmount);
     const card = cards.find(item => item.id === activeCardId);
-    if (!card || !Number.isFinite(amount) || amount <= 0) {
-      Alert.alert('Check payment amount', 'Enter an amount greater than zero.');
+    if (!card || !Number.isFinite(amount) || amount <= 0 || amount > card.balance || amount > liquidCash) {
+      showToast('Enter an amount greater than zero and no greater than the card balance or available cash.', true);
       return;
     }
     setCards(previous => previous.map(item => item.id === card.id
       ? { ...item, balance: Math.max(0, item.balance - amount) }
       : item));
-    setLiquidCash(previous => Math.max(0, previous - amount));
+    setLiquidCash(previous => previous - amount);
     setModal(null);
     setPaymentAmount('');
     showToast(`Payment applied to ${card.cardName}`);
   };
 
   const removeCard = (card: CreditCardItem) => {
-    Alert.alert('Remove card?', `Remove ${card.cardName} from your wallet?`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Remove',
-        style: 'destructive',
-        onPress: () => {
-          setCards(previous => previous.filter(item => item.id !== card.id));
-          showToast('Card removed');
-        },
+    setConfirmation({
+      title: 'Remove card?',
+      message: `Remove ${card.cardName} from your wallet?`,
+      confirmLabel: 'Remove',
+      onConfirm: () => {
+        setCards(previous => previous.filter(item => item.id !== card.id));
+        showToast('Card removed');
       },
-    ]);
+    });
   };
 
   const sendMessage = async (prompt?: string) => {
@@ -612,7 +760,7 @@ function FinAgentApp() {
       }
       const response = await api.post('/api/chat', {
         message: text,
-        userContext: { cards, totalBalance: liquidCash, monthlyIncome, bills, transactions },
+        userContext: { cards, totalBalance: liquidCash, monthlyIncome, monthlyExpenses, bills, transactions },
       });
       const reply = response.data?.ai_reply;
       if (typeof reply !== 'string' || !reply.trim()) throw new Error('The AI service returned an empty response.');
@@ -623,8 +771,8 @@ function FinAgentApp() {
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       }]);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to connect to the AI service.';
-      console.error('AI chat request failed', error);
+      const message = getApiErrorMessage(error, 'chat');
+      console.warn('AI chat request failed:', message);
       setApiError(message);
       setMessages(previous => [...previous, {
         id: `ai-${Date.now()}`,
@@ -654,7 +802,7 @@ function FinAgentApp() {
       if (fromCamera) {
         const permission = await ImagePicker.requestCameraPermissionsAsync();
         if (!permission.granted) {
-          Alert.alert('Camera permission needed', 'Allow camera access to scan a receipt, or choose a photo from your library.');
+          showToast('Allow camera access to scan a receipt, or choose a photo from your library.', true);
           return;
         }
       }
@@ -685,15 +833,19 @@ function FinAgentApp() {
       });
       showToast(`Receipt scanned: ${data.merchant}`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to scan this receipt.';
-      console.error('Receipt scan failed', error);
-      Alert.alert('Receipt scan failed', message);
+      const message = getApiErrorMessage(error, 'receipt');
+      console.warn('Receipt scan failed:', message);
+      showToast(message, true);
     } finally {
       setIsScanning(false);
     }
   };
 
   const chooseReceiptSource = () => {
+    if (Platform.OS === 'web') {
+      void processReceipt(false);
+      return;
+    }
     Alert.alert('Scan a receipt', 'Choose where to get the receipt image.', [
       { text: 'Take photo', onPress: () => void processReceipt(true) },
       { text: 'Photo library', onPress: () => void processReceipt(false) },
@@ -704,7 +856,7 @@ function FinAgentApp() {
   const confirmReceipt = (cardName: string) => {
     if (!scannedReceipt) return;
     const amount = scannedReceipt.total;
-    setTransactions(previous => [{
+    const transaction: TransactionItem = {
       id: `tx-${Date.now()}`,
       title: scannedReceipt.merchant,
       category: scannedReceipt.category,
@@ -712,27 +864,19 @@ function FinAgentApp() {
       amount,
       type: 'expense',
       source: cardName,
-    }, ...previous]);
-    setCards(previous => previous.map(card => card.cardName === cardName ? { ...card, balance: card.balance + amount } : card));
+    };
+    setTransactions(previous => [transaction, ...previous]);
+    updateTransactionImpact(transaction, 1);
     setScannedReceipt(null);
     setScreen('home');
     showToast(`Receipt added to ${cardName}`);
   };
 
   const openTransactionModal = () => {
-    setTxType('expense');
-    setTxCategory('Groceries');
-    setTxSource('Primary Checking');
-    setModal('transaction');
+    openNewTransaction();
   };
 
-  const expenseByCategory: CategoryItem[] = useMemo(() => {
-    const totals = new Map<string, number>();
-    transactions.filter(item => item.type === 'expense').forEach(item => {
-      totals.set(item.category, (totals.get(item.category) ?? 0) + item.amount);
-    });
-    return [...totals.entries()].map(([category, amount]) => ({ category, amount }));
-  }, [transactions]);
+  const expenseByCategory: CategoryItem[] = summary.categorySpending;
 
   const filteredTransactions = transactions.filter(item => {
     const query = txSearch.trim().toLowerCase();
@@ -741,9 +885,17 @@ function FinAgentApp() {
     return matchesSearch && matchesCategory;
   });
 
-  const renderTransactionList = (list: TransactionItem[]) => (
+  const renderTransactionList = (list: TransactionItem[], canEdit = false) => (
     <View>
-      {list.length ? list.map(item => <TransactionRow key={item.id} item={item} palette={palette} />)
+      {list.length ? list.map(item => (
+        <TransactionRow
+          key={item.id}
+          item={item}
+          palette={palette}
+          onEdit={canEdit ? () => openEditTransaction(item) : undefined}
+          onRemove={canEdit ? () => removeTransaction(item) : undefined}
+        />
+      ))
         : <Text style={[styles.emptyText, { color: palette.muted }]}>No transactions match these filters.</Text>}
     </View>
   );
@@ -796,7 +948,7 @@ function FinAgentApp() {
     <>
       <View style={styles.welcomeBlock}>
         <Text style={[styles.eyebrow, { color: palette.muted }]}>PERSONAL FINANCE OVERVIEW</Text>
-        <Text style={[styles.pageTitle, { color: palette.text }]}>Welcome back, Souvik</Text>
+        <Text style={[styles.pageTitle, { color: palette.text }]}>Welcome back{displayName ? `, ${displayName}` : ''}</Text>
       </View>
       <Panel palette={palette}>
         <View style={styles.rowBetween}>
@@ -814,7 +966,6 @@ function FinAgentApp() {
             <Text style={[styles.metricValue, { color: palette.red }]}>{formatCurrency(totalCardDebt, 0)}</Text>
           </View>
         </View>
-        <NetWorthChart currentValue={netWorth} isDark={isDark} />
       </Panel>
 
       <View style={styles.quickActions}>
@@ -837,14 +988,14 @@ function FinAgentApp() {
       <Panel palette={palette}>
         <SectionTitle title="50 / 30 / 20 budget" subtitle={`Based on ${formatCurrency(monthlyIncome, 0)} monthly income`} palette={palette} />
         {[
-          { label: 'Needs · 50%', percentage: 50, color: '#60a5fa' },
-          { label: 'Wants · 30%', percentage: 30, color: '#c084fc' },
-          { label: 'Savings & debt · 20%', percentage: 20, color: '#34d399' },
+          { label: 'Needs · 50%', percentage: 50, amount: budgetTargets.needs, color: '#60a5fa' },
+          { label: 'Wants · 30%', percentage: 30, amount: budgetTargets.wants, color: '#c084fc' },
+          { label: 'Savings & debt · 20%', percentage: 20, amount: budgetTargets.savingsAndDebt, color: '#34d399' },
         ].map(item => (
           <View key={item.label} style={styles.budgetMeter}>
             <View style={styles.rowBetween}>
               <Text style={[styles.bodyStrong, { color: palette.text }]}>{item.label}</Text>
-              <Text style={[styles.caption, { color: palette.muted }]}>{formatCurrency(monthlyIncome * item.percentage / 100, 0)}</Text>
+              <Text style={[styles.caption, { color: palette.muted }]}>{formatCurrency(item.amount, 0)}</Text>
             </View>
             <View style={[styles.progressTrack, { backgroundColor: palette.elevated }]}>
               <View style={[styles.progressFill, { width: `${item.percentage}%`, backgroundColor: item.color }]} />
@@ -859,7 +1010,7 @@ function FinAgentApp() {
           <SectionTitle title="Recent activity" subtitle="Latest account entries" palette={palette} />
           <Pressable onPress={() => setScreen('budget')}><Text style={[styles.link, { color: palette.accent }]}>See all</Text></Pressable>
         </View>
-        {renderTransactionList(transactions.slice(0, 5))}
+        {renderTransactionList(transactions.slice(0, 5), true)}
       </Panel>
     </>
   );
@@ -992,12 +1143,11 @@ function FinAgentApp() {
       </View>
       <Panel palette={palette}>
         <SectionTitle title="Monthly profile" subtitle="Update your current figures." palette={palette} />
-        <Field label="Monthly income" value={String(monthlyIncome)} onChangeText={value => setMonthlyIncome(Number.parseFloat(value) || 0)} palette={palette} keyboardType="decimal-pad" />
-        <Field label="Liquid cash" value={String(liquidCash)} onChangeText={value => setLiquidCash(Number.parseFloat(value) || 0)} palette={palette} keyboardType="decimal-pad" />
         <View style={styles.rowBetween}>
           <Text style={[styles.bodyStrong, { color: palette.muted }]}>Estimated net worth</Text>
           <Text style={[styles.bodyStrong, { color: palette.green }]}>{formatCurrency(netWorth)}</Text>
         </View>
+        <AppButton label="Manage profile" icon="person-outline" onPress={() => setScreen('settings')} palette={palette} variant="quiet" compact />
       </Panel>
       <Panel palette={palette}>
         <SectionTitle title="Spending by category" subtitle="Based on your recorded expenses." palette={palette} />
@@ -1018,7 +1168,7 @@ function FinAgentApp() {
           style={[styles.field, styles.searchField, { backgroundColor: palette.input, borderColor: palette.border, color: palette.text }]}
         />
         <ChoiceChips values={['All', ...categories]} selected={txFilter} onSelect={setTxFilter} palette={palette} />
-        {renderTransactionList(filteredTransactions)}
+        {renderTransactionList(filteredTransactions, true)}
       </Panel>
     </>
   );
@@ -1030,7 +1180,7 @@ function FinAgentApp() {
           <Text style={[styles.pageTitle, { color: palette.text }]}>Upcoming bills</Text>
           <Text style={[styles.caption, { color: palette.muted }]}>Keep track of recurring payments and due dates.</Text>
         </View>
-        <AppButton label="Add bill" icon="add" onPress={() => setModal('bill')} palette={palette} compact />
+        <AppButton label="Add bill" icon="add" onPress={openNewBill} palette={palette} compact />
       </View>
       <Panel palette={palette}>
         {bills.length ? bills.map(bill => (
@@ -1048,6 +1198,8 @@ function FinAgentApp() {
               <Text style={[styles.caption, { color: palette.muted }]}>Due {bill.due_date} · {bill.category}</Text>
             </View>
             <Text style={[styles.bodyStrong, { color: palette.accent }]}>{formatCurrency(bill.amount)}</Text>
+            <Pressable accessibilityLabel={`Edit ${bill.bill_name}`} onPress={() => openEditBill(bill)} hitSlop={8}><Ionicons name="create-outline" size={18} color={palette.accent} /></Pressable>
+            <Pressable accessibilityLabel={`Delete ${bill.bill_name}`} onPress={() => removeBill(bill)} hitSlop={8}><Ionicons name="trash-outline" size={18} color={palette.red} /></Pressable>
           </View>
         )) : <Text style={[styles.emptyText, { color: palette.muted }]}>No bills added yet.</Text>}
       </Panel>
@@ -1083,12 +1235,63 @@ function FinAgentApp() {
             <Text style={[styles.sectionTitle, { color: palette.green }]}>{formatCurrency(scannedReceipt.total)}</Text>
           </View>
           <Text style={[styles.caption, styles.topGap, { color: palette.muted }]}>Choose a card to record the charge.</Text>
+          <AppButton label="Record from cash" icon="wallet-outline" onPress={() => confirmReceipt('Primary Checking')} palette={palette} variant="secondary" />
           {cards.map(card => (
             <AppButton key={card.id} label={`Charge ${card.cardName}`} icon="card-outline" onPress={() => confirmReceipt(card.cardName)} palette={palette} variant="secondary" />
           ))}
           <AppButton label="Discard receipt" onPress={() => setScannedReceipt(null)} palette={palette} variant="quiet" />
         </Panel>
       ) : null}
+    </>
+  );
+
+  const renderSettings = () => (
+    <>
+      <View style={styles.welcomeBlock}>
+        <Text style={[styles.pageTitle, { color: palette.text }]}>Profile & settings</Text>
+        <Text style={[styles.caption, { color: palette.muted }]}>Manage the information used across your dashboard and finance calculations.</Text>
+      </View>
+      <Panel palette={palette}>
+        <SectionTitle title="Financial profile" subtitle="Amounts are stored only on this device." palette={palette} />
+        <Field label="Display name" value={profileNameDraft} onChangeText={setProfileNameDraft} palette={palette} placeholder="Your name" maxLength={100} />
+        <Field label="Monthly income" value={incomeDraft} onChangeText={setIncomeDraft} palette={palette} placeholder="0.00" keyboardType="decimal-pad" />
+        <Field label="Average monthly expenses" value={expensesDraft} onChangeText={setExpensesDraft} palette={palette} placeholder="0.00" keyboardType="decimal-pad" />
+        <Text style={[styles.caption, { color: palette.muted }]}>Used only to estimate cash runway. Recorded transactions do not have reliable monthly periods.</Text>
+        <Field label="Liquid cash" value={cashDraft} onChangeText={setCashDraft} palette={palette} placeholder="0.00" keyboardType="decimal-pad" />
+        <AppButton label="Save profile" icon="checkmark-outline" onPress={saveProfile} palette={palette} />
+      </Panel>
+      <Panel palette={palette}>
+        <SectionTitle title="Preferences" subtitle="These preferences are saved on this device." palette={palette} />
+        <Text style={[styles.fieldLabel, { color: palette.muted }]}>Payoff strategy</Text>
+        <ChoiceChips values={['Avalanche', 'Snowball'] as const} selected={debtStrategy} onSelect={setDebtStrategy} palette={palette} />
+        <Text style={[styles.caption, styles.topGap, { color: palette.muted }]}>Theme: {theme}. Use the sun/moon button in the header to switch modes.</Text>
+      </Panel>
+      <Panel palette={palette}>
+        <SectionTitle title="On-device storage" subtitle="Financial data and preferences use Expo AsyncStorage on this device." palette={palette} />
+        {storageStatus === 'failed' ? (
+          <>
+            <Text style={[styles.caption, { color: palette.red }]}>{storageError || 'Saved information could not be loaded.'}</Text>
+            <View style={styles.modalButtons}>
+              <AppButton label="Retry loading" icon="refresh-outline" onPress={() => void retryStorageLoad()} palette={palette} compact />
+              <AppButton label="Delete all saved data" icon="trash-outline" onPress={resetStoredData} palette={palette} variant="danger" compact />
+            </View>
+          </>
+        ) : (
+          <>
+            <Text style={[styles.caption, { color: palette.muted }]}>Changes are saved automatically after each update.</Text>
+            {storageError ? (
+              <>
+                <Text style={[styles.caption, { color: palette.red }]}>{storageError}</Text>
+                <AppButton label="Retry saving" icon="refresh-outline" onPress={() => setSaveRevision(value => value + 1)} palette={palette} />
+              </>
+            ) : null}
+            <AppButton label="Delete all saved data" icon="trash-outline" onPress={resetStoredData} palette={palette} variant="danger" />
+          </>
+        )}
+        {storageWarnings.map((warning, index) => (
+          <Text key={`${warning}-${index}`} style={[styles.caption, { color: palette.red }]}>{warning}</Text>
+        ))}
+      </Panel>
     </>
   );
 
@@ -1100,6 +1303,7 @@ function FinAgentApp() {
       case 'budget': return renderBudget();
       case 'bills': return renderBills();
       case 'receipts': return renderReceipts();
+      case 'settings': return renderSettings();
     }
   };
 
@@ -1128,7 +1332,7 @@ function FinAgentApp() {
     if (modal === 'transaction') {
       return (
         <>
-          <Text style={[styles.modalTitle, { color: palette.text }]}>Log transaction</Text>
+          <Text style={[styles.modalTitle, { color: palette.text }]}>{editingTransactionId ? 'Edit transaction' : 'Log transaction'}</Text>
           <ChoiceChips values={['expense', 'income'] as const} selected={txType} onSelect={setTxType} palette={palette} />
           <Field label="Merchant / payee" value={txTitle} onChangeText={setTxTitle} palette={palette} placeholder="e.g. Target, salary" />
           <Field label="Amount" value={txAmount} onChangeText={setTxAmount} palette={palette} placeholder="45.00" keyboardType="decimal-pad" />
@@ -1138,7 +1342,7 @@ function FinAgentApp() {
           <ChoiceChips values={['Primary Checking', ...cards.map(card => card.cardName)]} selected={txSource} onSelect={setTxSource} palette={palette} />
           <View style={styles.modalButtons}>
             <AppButton label="Cancel" onPress={() => setModal(null)} palette={palette} variant="secondary" />
-            <AppButton label="Save transaction" onPress={saveTransaction} palette={palette} />
+            <AppButton label={editingTransactionId ? 'Save changes' : 'Save transaction'} onPress={saveTransaction} palette={palette} />
           </View>
         </>
       );
@@ -1146,13 +1350,13 @@ function FinAgentApp() {
     if (modal === 'bill') {
       return (
         <>
-          <Text style={[styles.modalTitle, { color: palette.text }]}>Add a bill</Text>
+          <Text style={[styles.modalTitle, { color: palette.text }]}>{editingBillId ? 'Edit bill' : 'Add a bill'}</Text>
           <Field label="Bill name" value={billName} onChangeText={setBillName} palette={palette} placeholder="Internet, insurance…" />
           <Field label="Amount" value={billAmount} onChangeText={setBillAmount} palette={palette} placeholder="80.00" keyboardType="decimal-pad" />
           <Field label="Due date" value={billDueDate} onChangeText={setBillDueDate} palette={palette} placeholder="e.g. Nov 25" />
           <View style={styles.modalButtons}>
             <AppButton label="Cancel" onPress={() => setModal(null)} palette={palette} variant="secondary" />
-            <AppButton label="Save bill" onPress={saveBill} palette={palette} />
+            <AppButton label={editingBillId ? 'Save changes' : 'Save bill'} onPress={saveBill} palette={palette} />
           </View>
         </>
       );
@@ -1192,6 +1396,7 @@ function FinAgentApp() {
     { id: 'budget', label: 'Budget', icon: 'pie-chart-outline' },
     { id: 'bills', label: 'Bills', icon: 'calendar-outline' },
     { id: 'receipts', label: 'Scan', icon: 'camera-outline' },
+    { id: 'settings', label: 'Settings', icon: 'settings-outline' },
   ];
 
   return (
@@ -1212,10 +1417,17 @@ function FinAgentApp() {
           </Pressable>
         </View>
 
-        {storageStatus === 'failed' ? (
-          <View style={[styles.storageWarning, { backgroundColor: '#7f1d1d' }]}>
+        {storageStatus === 'failed' || storageError || storageWarnings.length ? (
+          <View style={[styles.storageWarning, { backgroundColor: storageError || storageStatus === 'failed' ? '#7f1d1d' : '#854d0e' }]}>
             <Ionicons name="alert-circle-outline" size={17} color="#fff" />
-            <Text style={styles.storageWarningText}>Storage could not be loaded or saved. Changes may not persist.</Text>
+            <Text style={styles.storageWarningText}>
+              {storageError || (storageStatus === 'failed' ? 'Saved information could not be loaded.' : storageWarnings.join(' '))}
+            </Text>
+            {storageStatus === 'failed'
+              ? <Pressable onPress={() => void retryStorageLoad()} accessibilityLabel="Retry loading saved information"><Ionicons name="refresh-outline" size={19} color="#fff" /></Pressable>
+              : storageError
+                ? <Pressable onPress={() => setSaveRevision(value => value + 1)} accessibilityLabel="Retry saving"><Ionicons name="refresh-outline" size={19} color="#fff" /></Pressable>
+                : null}
           </View>
         ) : null}
 
@@ -1249,8 +1461,8 @@ function FinAgentApp() {
       </KeyboardAvoidingView>
 
       {toast ? (
-        <View pointerEvents="none" style={[styles.toast, { backgroundColor: palette.accent }]}>
-          <Ionicons name="checkmark-circle" size={18} color="#fff" />
+        <View pointerEvents="none" style={[styles.toast, { backgroundColor: toastIsError ? '#be123c' : palette.accent }]}>
+          <Ionicons name={toastIsError ? 'alert-circle' : 'checkmark-circle'} size={18} color="#fff" />
           <Text style={styles.toastText}>{toast}</Text>
         </View>
       ) : null}
@@ -1265,6 +1477,28 @@ function FinAgentApp() {
               </ScrollView>
             </View>
           </KeyboardAvoidingView>
+        </View>
+      </Modal>
+
+      <Modal visible={confirmation !== null} transparent animationType="fade" onRequestClose={() => setConfirmation(null)}>
+        <View style={styles.confirmationBackdrop}>
+          <View style={[styles.confirmationCard, { backgroundColor: palette.surface, borderColor: palette.border }]}>
+            <Text style={[styles.modalTitle, { color: palette.text }]}>{confirmation?.title}</Text>
+            <Text style={[styles.caption, { color: palette.muted }]}>{confirmation?.message}</Text>
+            <View style={styles.modalButtons}>
+              <AppButton label="Cancel" onPress={() => setConfirmation(null)} palette={palette} variant="secondary" />
+              <AppButton
+                label={confirmation?.confirmLabel ?? 'Confirm'}
+                onPress={() => {
+                  const action = confirmation?.onConfirm;
+                  setConfirmation(null);
+                  action?.();
+                }}
+                palette={palette}
+                variant="danger"
+              />
+            </View>
+          </View>
         </View>
       </Modal>
     </SafeAreaView>
@@ -1365,6 +1599,8 @@ const styles = StyleSheet.create({
   tabItem: { minWidth: 46, flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3, paddingVertical: 6 },
   tabLabel: { fontSize: 9, fontWeight: '700' },
   toast: { position: 'absolute', bottom: 76, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 15, paddingHorizontal: 14, paddingVertical: 11, elevation: 8 },
+  confirmationBackdrop: { flex: 1, backgroundColor: '#0009', alignItems: 'center', justifyContent: 'center', padding: 20 },
+  confirmationCard: { width: '100%', maxWidth: 420, borderWidth: 1, borderRadius: 20, padding: 20, gap: 8 },
   toastText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   modalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: '#0009' },
   modalKeyboard: { maxHeight: '92%' },
