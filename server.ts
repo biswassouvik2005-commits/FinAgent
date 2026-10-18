@@ -1,11 +1,13 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import cors from 'cors';
 import express from 'express';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const DATA_FILE = path.join(__dirname, 'user_data.json');
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
@@ -133,6 +135,113 @@ export function parseExpenseFromNaturalLanguage(text: string): ExtractedExpense 
   };
 }
 
+// ==========================================
+// MOCK DATABASE & PERSISTENT STORAGE
+// ==========================================
+export interface UserData {
+  accounts: {
+    checking: number;
+    savings: number;
+    crypto: number;
+    stocks: number;
+  };
+  monthlyBudget: number;
+  recentTransactions: Array<{
+    id: number | string;
+    date: string;
+    merchant: string;
+    title?: string;
+    amount: number;
+    category: string;
+    type?: string;
+    recurring?: boolean;
+  }>;
+  upcomingBills: Array<{
+    name: string;
+    dueDate: string;
+    amount: number;
+  }>;
+}
+
+export const DEFAULT_USER_DATA: UserData = {
+  accounts: { checking: 2450.00, savings: 8500.00, crypto: 1200.00, stocks: 4500.00 },
+  monthlyBudget: 300.00,
+  recentTransactions: [
+    { id: 1, date: "2026-10-14", merchant: "Whole Foods", title: "Whole Foods", amount: 120.50, category: "Groceries", type: "expense" },
+    { id: 2, date: "2026-10-16", merchant: "Netflix", title: "Netflix", amount: 15.99, category: "Subscriptions", recurring: true, type: "expense" }
+  ],
+  upcomingBills: [
+    { name: "Electricity", dueDate: "2026-10-20", amount: 85.00 },
+    { name: "Spotify", dueDate: "2026-10-22", amount: 10.99 }
+  ]
+};
+
+export let mockUserData: UserData = JSON.parse(JSON.stringify(DEFAULT_USER_DATA));
+
+export function saveUserData() {
+  try {
+    fs.writeFileSync(DATA_FILE, JSON.stringify(mockUserData, null, 2), 'utf8');
+    console.log(`[Storage] Saved live user data to ${DATA_FILE}`);
+  } catch (err: any) {
+    console.error('[Storage] Error saving to user_data.json:', err.message);
+  }
+}
+
+export function loadUserData() {
+  try {
+    if (fs.existsSync(DATA_FILE)) {
+      const raw = fs.readFileSync(DATA_FILE, 'utf8');
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        mockUserData = {
+          ...DEFAULT_USER_DATA,
+          ...parsed,
+          accounts: {
+            ...DEFAULT_USER_DATA.accounts,
+            ...(parsed.accounts || {})
+          },
+          recentTransactions: Array.isArray(parsed.recentTransactions)
+            ? parsed.recentTransactions
+            : DEFAULT_USER_DATA.recentTransactions
+        };
+        console.log(`[Storage] Successfully loaded live user data from ${DATA_FILE}`);
+        return;
+      }
+    }
+  } catch (err: any) {
+    console.warn('[Storage] Error loading user_data.json, using default data:', err.message);
+  }
+  saveUserData();
+}
+
+loadUserData();
+
+export function recordExpense({ amount, merchant, category, date }: { amount: number; merchant: string; category: string; date?: string }) {
+  const numAmount = Math.max(0, Number(amount) || 0);
+  const validMerchant = String(merchant || 'Expense').trim();
+  const validCategory = String(category || 'General').trim();
+  const validDate = String(date || new Date().toISOString().split('T')[0]).trim();
+
+  const newTx = {
+    id: `tx-${Date.now()}`,
+    date: validDate,
+    merchant: validMerchant,
+    title: validMerchant,
+    amount: numAmount,
+    category: validCategory,
+    type: 'expense' as const
+  };
+
+  if (numAmount > 0) {
+    mockUserData.recentTransactions.unshift(newTx);
+    mockUserData.accounts.checking = Math.max(0, Math.round(((mockUserData.accounts.checking || 0) - numAmount) * 100) / 100);
+    saveUserData();
+    console.log(`[Live State] Deducted $${numAmount.toFixed(2)} from checking. New checking: $${mockUserData.accounts.checking.toFixed(2)}. Total transactions: ${mockUserData.recentTransactions.length}`);
+  }
+
+  return newTx;
+}
+
 // --- POST /login ---
 app.post('/login', (req, res) => {
   const { username, password } = req.body || {};
@@ -212,20 +321,21 @@ Return amount (positive number), merchant (string), category (string e.g. Dining
       }
     }
 
-    const newTx = {
-      id: `tx-${Date.now()}`,
-      title: extracted.merchant,
-      merchant: extracted.merchant,
+    const newTx = recordExpense({
       amount: extracted.amount,
+      merchant: extracted.merchant,
       category: extracted.category,
       date: extracted.date,
-      type: 'expense' as const,
-    };
-    const newBalance = Math.max(0, userBalance - extracted.amount);
+    });
+    const totalBalance = typeof userBalance === 'number' && userBalance > 0
+      ? Math.max(0, userBalance - extracted.amount)
+      : Math.round(Object.values(mockUserData.accounts).reduce((a, b) => a + b, 0) * 100) / 100;
 
     return res.json({
       ai_reply: extracted.ai_reply,
-      total_balance: newBalance,
+      total_balance: totalBalance,
+      accounts: mockUserData.accounts,
+      recentTransactions: mockUserData.recentTransactions,
       budget_status: 'On Track',
       category_breakdown: userBreakdown,
       upcoming_bills: userBills,
@@ -430,18 +540,17 @@ User query: "${query}"`,
     }
   }
 
-  const newTx = {
-    id: `tx-${Date.now()}`,
-    title: extracted.merchant,
-    merchant: extracted.merchant,
+  const newTx = recordExpense({
     amount: extracted.amount,
+    merchant: extracted.merchant,
     category: extracted.category,
     date: extracted.date,
-    type: 'expense' as const,
-  };
+  });
 
   const userBalance = typeof userContext?.totalBalance === 'number' ? userContext.totalBalance : 0;
-  const newBalance = Math.max(0, userBalance - extracted.amount);
+  const totalBalance = userBalance > 0
+    ? Math.max(0, userBalance - extracted.amount)
+    : Math.round(Object.values(mockUserData.accounts).reduce((a, b) => a + b, 0) * 100) / 100;
 
   return res.json({
     success: true,
@@ -451,7 +560,9 @@ User query: "${query}"`,
     category: extracted.category,
     transaction: newTx,
     logged_expense: newTx,
-    total_balance: newBalance,
+    accounts: mockUserData.accounts,
+    recentTransactions: mockUserData.recentTransactions,
+    total_balance: totalBalance,
   });
 }
 
@@ -506,11 +617,27 @@ app.post('/api/receipt', async (req, res) => {
         const total = Number(parsed.total);
         if (Number.isFinite(total) && total > 0 && parsed.merchant) {
           const dateStr = parsed.date ? String(parsed.date).trim() : new Date().toISOString().split('T')[0];
+          const merchantStr = String(parsed.merchant).trim();
+          const categoryStr = parsed.category || 'Dining';
+
+          // Push new item into mockUserData.recentTransactions and deduct total from mockUserData.accounts.checking
+          const newTx = recordExpense({
+            amount: total,
+            merchant: merchantStr,
+            category: categoryStr,
+            date: dateStr,
+          });
+          const totalBalance = Math.round(Object.values(mockUserData.accounts).reduce((a, b) => a + b, 0) * 100) / 100;
+
           return res.json({
-            merchant: String(parsed.merchant).trim(),
+            merchant: merchantStr,
             date: dateStr,
             total,
-            category: parsed.category || 'Shopping',
+            category: categoryStr,
+            transaction: newTx,
+            accounts: mockUserData.accounts,
+            total_balance: totalBalance,
+            recentTransactions: mockUserData.recentTransactions,
           });
         }
       }
@@ -523,6 +650,29 @@ app.post('/api/receipt', async (req, res) => {
   return res.status(422).json({
     error: 'Could not extract valid receipt details from image. Please enter the transaction details manually.',
   });
+});
+
+// --- GET /api/user & /api/data (Live State & Charts) ---
+app.get('/api/user', (_req, res) => {
+  const totalBalance = Math.round(Object.values(mockUserData.accounts).reduce((a, b) => a + b, 0) * 100) / 100;
+  res.json({
+    ...mockUserData,
+    total_balance: totalBalance,
+  });
+});
+
+app.get('/api/data', (_req, res) => {
+  const totalBalance = Math.round(Object.values(mockUserData.accounts).reduce((a, b) => a + b, 0) * 100) / 100;
+  res.json({
+    ...mockUserData,
+    total_balance: totalBalance,
+  });
+});
+
+app.post('/api/user/reset', (_req, res) => {
+  mockUserData = JSON.parse(JSON.stringify(DEFAULT_USER_DATA));
+  saveUserData();
+  res.json({ success: true, message: 'User data reset to default', data: mockUserData });
 });
 
 // Mount Vite or static server

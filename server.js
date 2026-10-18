@@ -92,5 +92,44 @@ export function fallbackParseExpense(text) {
   };
 }
 
+export const DEFAULT_USER_DATA = {
+  accounts: { checking: 2450.00, savings: 8500.00, crypto: 1200.00, stocks: 4500.00 },
+  monthlyBudget: 300.00,
+  recentTransactions: [
+    { id: 1, date: "2026-10-14", merchant: "Whole Foods", amount: 120.50, category: "Groceries", type: "expense" },
+    { id: 2, date: "2026-10-16", merchant: "Netflix", amount: 15.99, category: "Subscriptions", recurring: true, type: "expense" }
+  ],
+  upcomingBills: [
+    { name: "Electricity", dueDate: "2026-10-20", amount: 85.00 },
+    { name: "Spotify", dueDate: "2026-10-22", amount: 10.99 }
+  ]
+};
+
+export let mockUserData = JSON.parse(JSON.stringify(DEFAULT_USER_DATA));
+
+export function recordExpense({ amount, merchant, category, date }) {
+  const numAmount = Math.max(0, Number(amount) || 0);
+  const validMerchant = String(merchant || 'Expense').trim();
+  const validCategory = String(category || 'General').trim();
+  const validDate = String(date || new Date().toISOString().split('T')[0]).trim();
+
+  const newTx = {
+    id: `tx-${Date.now()}`,
+    date: validDate,
+    merchant: validMerchant,
+    title: validMerchant,
+    amount: numAmount,
+    category: validCategory,
+    type: 'expense'
+  };
+
+  if (numAmount > 0) {
+    mockUserData.recentTransactions.unshift(newTx);
+    mockUserData.accounts.checking = Math.max(0, Math.round(((mockUserData.accounts.checking || 0) - numAmount) * 100) / 100);
+  }
+
+  return newTx;
+}
+
 export default routerModel;
 
