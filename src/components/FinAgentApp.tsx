@@ -324,6 +324,62 @@ function TransactionRow({ item, palette }: { item: TransactionItem; palette: Pal
   );
 }
 
+// Conversational Expense Parser
+function parseExpenseFromNaturalLanguage(text: string) {
+  if (!text || typeof text !== 'string') return null;
+  const clean = text.trim();
+  const hasExpenseIntent =
+    /(spent|paid|bought|cost|charged)\s*(\$|\d)/i.test(clean) ||
+    /\$\s*\d+.*(on|at|for)/i.test(clean) ||
+    /(on lunch|on dinner|for coffee|at subway|at starbucks|at walmart|for groceries)/i.test(clean);
+
+  if (!hasExpenseIntent) return null;
+
+  let amount = 0;
+  const explicitDollar = clean.match(/\$\s*(\d+(?:\.\d{1,2})?)/);
+  const spentPattern = clean.match(/(?:spent|paid|bought|cost|charged)\s*(?:\$)?\s*(\d+(?:\.\d{1,2})?)/i);
+  const genericNumber = clean.match(/(?:^|\s)(\d+(?:\.\d{1,2})?)(?:\s*(?:dollars?|bucks?|usd))?/i);
+  if (explicitDollar) {
+    amount = parseFloat(explicitDollar[1]);
+  } else if (spentPattern) {
+    amount = parseFloat(spentPattern[1]);
+  } else if (genericNumber) {
+    amount = parseFloat(genericNumber[1]);
+  }
+
+  if (!amount || amount <= 0) return null;
+
+  let merchant = '';
+  const atMatch = clean.match(/(?:at|from|to|with)\s+([A-Za-z0-9\s'&]+?)(?:\s+(?:for|on|yesterday|today|with|using|in|\.|$)|$)/i);
+  if (atMatch && atMatch[1]) {
+    merchant = atMatch[1].trim();
+  } else {
+    const commonMerchants = ['subway', 'starbucks', 'walmart', 'target', 'amazon', 'uber', 'lyft', 'shell', 'mcdonalds', 'whole foods', "trader joe's"];
+    const found = commonMerchants.find(m => clean.toLowerCase().includes(m));
+    merchant = found ? (found.charAt(0).toUpperCase() + found.slice(1)) : 'Expense';
+  }
+
+  const lower = clean.toLowerCase();
+  let category = 'General';
+  if (/groceries|grocery|supermarket|apples|milk|produce/i.test(lower)) {
+    category = 'Groceries';
+  } else if (/lunch|dinner|breakfast|meal|food|subway|starbucks|mcdonalds|burger|sandwich|pizza|coffee|cafe|restaurant|dining|snack|drink/i.test(lower)) {
+    category = 'Dining';
+  } else if (/gas|fuel|shell|chevron|exxon|uber|lyft|taxi|subway fare|train|bus|transport|parking|toll/i.test(lower)) {
+    category = 'Transportation';
+  } else if (/movie|cinema|netflix|spotify|game|entertainment|concert|ticket/i.test(lower)) {
+    category = 'Entertainment';
+  } else if (/clothes|shoes|amazon|target|shopping|mall|electronics|store|retail/i.test(lower)) {
+    category = 'Shopping';
+  } else if (/bill|electric|power|water|internet|utility|utilities|wifi|phone|rent/i.test(lower)) {
+    category = 'Utilities';
+  } else if (/gym|pharmacy|medicine|doctor|health|dentist/i.test(lower)) {
+    category = 'Healthcare';
+  }
+
+  return { amount, merchant, category };
+}
+
 function FinAgentApp() {
   const [storageStatus, setStorageStatus] = useState<'loading' | 'ready' | 'failed'>('loading');
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
@@ -470,6 +526,67 @@ function FinAgentApp() {
   ]);
   const [chatInput, setChatInput] = useState('');
   const [isLoadingChat, setIsLoadingChat] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const speechRecognitionRef = useRef<any>(null);
+
+  const toggleVoice = () => {
+    if (isListening) {
+      if (speechRecognitionRef.current) {
+        try { speechRecognitionRef.current.stop(); } catch {}
+      }
+      setIsListening(false);
+      return;
+    }
+
+    if (Platform.OS === 'web') {
+      const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (!SpeechRec) {
+        showToast('Speech recognition is not supported in this browser. You can type directly.');
+        return;
+      }
+
+      try {
+        const recognition = new SpeechRec();
+        speechRecognitionRef.current = recognition;
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.lang = 'en-US';
+
+        recognition.onstart = () => {
+          setIsListening(true);
+          showToast('Listening... Speak your expense (e.g. "Spent $14 on lunch at Subway")');
+        };
+
+        recognition.onresult = (event: any) => {
+          const transcript = event.results?.[0]?.[0]?.transcript;
+          if (transcript) {
+            setChatInput(transcript);
+            void sendMessage(transcript);
+          }
+        };
+
+        recognition.onerror = (event: any) => {
+          console.warn('Speech recognition error:', event.error);
+          setIsListening(false);
+          if (event.error === 'not-allowed') {
+            showToast('Microphone access denied. Please grant microphone permission.');
+          }
+        };
+
+        recognition.onend = () => {
+          setIsListening(false);
+        };
+
+        recognition.start();
+      } catch (err) {
+        console.warn('Speech recognition start failed:', err);
+        setIsListening(false);
+      }
+    } else {
+      showToast('Dictate or type your expense statement directly.');
+    }
+  };
+
   const [isScanning, setIsScanning] = useState(false);
   const [scannedReceipt, setScannedReceipt] = useState<ScannedReceipt | null>(null);
   const [toast, setToast] = useState('');
@@ -886,6 +1003,28 @@ function FinAgentApp() {
       );
       const reply = response.data?.ai_reply;
       if (typeof reply !== 'string' || !reply.trim()) throw new Error('The AI service returned an empty response.');
+
+      if (response.data?.logged_expense || response.data?.transaction) {
+        const exp = response.data.logged_expense || response.data.transaction;
+        const newTx: TransactionItem = {
+          id: exp.id || `tx-${Date.now()}`,
+          title: exp.merchant || exp.title || 'Expense',
+          amount: Number(exp.amount) || 0,
+          category: exp.category || 'General',
+          date: exp.date || 'Today',
+          type: 'expense',
+          source: exp.source || 'AI Log',
+        };
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        setTransactions(previous => [newTx, ...previous]);
+        if (typeof response.data.total_balance === 'number') {
+          setLiquidCash(response.data.total_balance);
+        } else {
+          setLiquidCash(prev => Math.max(0, prev - newTx.amount));
+        }
+        showToast(`Auto-logged $${newTx.amount.toFixed(2)} at ${newTx.title}!`);
+      }
+
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       setMessages(previous => [...previous, {
         id: `ai-${Date.now()}`,
@@ -898,6 +1037,32 @@ function FinAgentApp() {
         return;
       }
       console.error('AI chat request failed', error);
+
+      // Local fallback expense parsing if network fails or server unreachable
+      const localExp = parseExpenseFromNaturalLanguage(text);
+      if (localExp && localExp.amount > 0) {
+        const newTx: TransactionItem = {
+          id: `tx-${Date.now()}`,
+          title: localExp.merchant,
+          amount: localExp.amount,
+          category: localExp.category,
+          date: 'Today',
+          type: 'expense',
+          source: 'AI Log',
+        };
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        setTransactions(previous => [newTx, ...previous]);
+        setLiquidCash(prev => Math.max(0, prev - newTx.amount));
+        showToast(`Auto-logged $${newTx.amount.toFixed(2)} at ${newTx.title}!`);
+        setMessages(previous => [...previous, {
+          id: `ai-${Date.now()}`,
+          text: `Logged $${newTx.amount.toFixed(2)} at ${newTx.title} under ${newTx.category} automatically. Added to your transactions!`,
+          sender: 'ai',
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        }]);
+        return;
+      }
+
       const isNetworkErr = error?.code === 'ERR_NETWORK' || error?.message?.includes('Network Error') || error?.message?.includes('Failed to fetch');
       const targetBase = api.defaults.baseURL || resolveDefaultApiUrl();
       const message = isNetworkErr
@@ -1389,6 +1554,7 @@ function FinAgentApp() {
       </Panel>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow} style={styles.chipsContainer}>
         {[
+          'Spent $14 on lunch at Subway',
           'Which card should I pay first?',
           'Audit my credit utilization',
           'How much should I allocate to savings?',
@@ -1457,10 +1623,25 @@ function FinAgentApp() {
           >
             <Ionicons name="expand-outline" size={17} color={palette.accent} />
           </Pressable>
+          <Pressable
+            onPress={toggleVoice}
+            accessibilityLabel="Voice expense logging"
+            accessibilityHint="Speak an expense like Spent $14 on lunch at Subway"
+            style={[
+              styles.composerIconButton,
+              {
+                backgroundColor: isListening ? '#ef4444' : palette.elevated,
+                borderColor: isListening ? '#dc2626' : palette.border,
+              },
+            ]}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name={isListening ? 'mic' : 'mic-outline'} size={17} color={isListening ? '#fff' : palette.accent} />
+          </Pressable>
           <TextInput
             value={chatInput}
             onChangeText={setChatInput}
-            placeholder="Ask about debt, cash flow, or a goal..."
+            placeholder="Type or speak (e.g. 'Spent $14 on lunch at Subway')..."
             placeholderTextColor={palette.muted}
             multiline
             maxLength={2000}

@@ -31,6 +31,108 @@ function getGeminiClient(): GoogleGenAI | null {
   });
 }
 
+// ==========================================
+// 1. ROUTER AGENT & MODEL (Intent Routing Table & Fast Classification)
+// 4th Route: "log_expense"
+// ==========================================
+export const routerModel = {
+  routes: ['expense', 'bills', 'investments', 'log_expense'] as const,
+  login: '/login',
+  chat: '/api/chat',
+  receipt: '/api/receipt',
+  log_expense: '/api/log_expense',
+  systemInstruction: `Classify the user's financial query into exactly one of these strings: 
+    "expense" (spending, budgets, general questions), 
+    "bills" (subscriptions, recurring costs, due dates), 
+    "investments" (stocks, crypto, portfolio growth),
+    "log_expense" (when the user states or speaks an expense, purchase, or money spent to record, e.g. "Spent $14 on lunch at Subway", "Bought coffee for $5 at Starbucks").
+    Return ONLY the single word. Do not include punctuation.`,
+  classify: (query: string): 'expense' | 'bills' | 'investments' | 'log_expense' => {
+    const clean = query.trim().toLowerCase();
+    if (
+      /(spent|paid|bought|cost|charged)\s*(\$|\d)/i.test(clean) ||
+      /\$\s*\d+.*(on|at|for)/i.test(clean) ||
+      /(on lunch|on dinner|for coffee|at subway|at starbucks|at walmart|for groceries)/i.test(clean)
+    ) {
+      return 'log_expense';
+    }
+    if (/(bill|due|subscription|spotify|netflix|utilities|recurring)/i.test(clean)) {
+      return 'bills';
+    }
+    if (/(stock|crypto|invest|portfolio|401k|dividend|asset)/i.test(clean)) {
+      return 'investments';
+    }
+    return 'expense';
+  },
+};
+
+export interface ExtractedExpense {
+  amount: number;
+  merchant: string;
+  category: string;
+  date: string;
+  ai_reply: string;
+}
+
+// Fallback rule-based NLP extraction for offline / no-key mode
+export function parseExpenseFromNaturalLanguage(text: string): ExtractedExpense {
+  if (!text || typeof text !== 'string') {
+    return { amount: 0, merchant: 'Expense', category: 'General', date: 'Today', ai_reply: 'Could not parse expense.' };
+  }
+  const clean = text.trim();
+
+  // Extract amount
+  let amount = 0;
+  const explicitDollar = clean.match(/\$\s*(\d+(?:\.\d{1,2})?)/);
+  const spentPattern = clean.match(/(?:spent|paid|bought|cost|charged)\s*(?:\$)?\s*(\d+(?:\.\d{1,2})?)/i);
+  const genericNumber = clean.match(/(?:^|\s)(\d+(?:\.\d{1,2})?)(?:\s*(?:dollars?|bucks?|usd))?/i);
+  if (explicitDollar) {
+    amount = parseFloat(explicitDollar[1]);
+  } else if (spentPattern) {
+    amount = parseFloat(spentPattern[1]);
+  } else if (genericNumber) {
+    amount = parseFloat(genericNumber[1]);
+  }
+
+  // Extract merchant
+  let merchant = '';
+  const atMatch = clean.match(/(?:at|from|to|with)\s+([A-Za-z0-9\s'&]+?)(?:\s+(?:for|on|yesterday|today|with|using|in|\.|$)|$)/i);
+  if (atMatch && atMatch[1]) {
+    merchant = atMatch[1].trim();
+  } else {
+    const commonMerchants = ['subway', 'starbucks', 'walmart', 'target', 'amazon', 'uber', 'lyft', 'shell', 'mcdonalds', 'whole foods', "trader joe's"];
+    const found = commonMerchants.find(m => clean.toLowerCase().includes(m));
+    merchant = found ? (found.charAt(0).toUpperCase() + found.slice(1)) : 'Expense';
+  }
+
+  // Extract category
+  const lower = clean.toLowerCase();
+  let category = 'General';
+  if (/groceries|grocery|supermarket|apples|milk|produce/i.test(lower)) {
+    category = 'Groceries';
+  } else if (/lunch|dinner|breakfast|meal|food|subway|starbucks|mcdonalds|burger|sandwich|pizza|coffee|cafe|restaurant|dining|snack|drink/i.test(lower)) {
+    category = 'Dining';
+  } else if (/gas|fuel|shell|chevron|exxon|uber|lyft|taxi|subway fare|train|bus|transport|parking|toll/i.test(lower)) {
+    category = 'Transportation';
+  } else if (/movie|cinema|netflix|spotify|game|entertainment|concert|ticket/i.test(lower)) {
+    category = 'Entertainment';
+  } else if (/clothes|shoes|amazon|target|shopping|mall|electronics|store|retail/i.test(lower)) {
+    category = 'Shopping';
+  } else if (/bill|electric|power|water|internet|utility|utilities|wifi|phone|rent/i.test(lower)) {
+    category = 'Utilities';
+  } else if (/gym|pharmacy|medicine|doctor|health|dentist/i.test(lower)) {
+    category = 'Healthcare';
+  }
+
+  return {
+    amount,
+    merchant,
+    category,
+    date: 'Today',
+    ai_reply: `Logged $${amount.toFixed(2)} at ${merchant} under ${category}. Added to your transactions automatically!`,
+  };
+}
+
 // --- POST /login ---
 app.post('/login', (req, res) => {
   const { username, password } = req.body || {};
@@ -67,6 +169,72 @@ app.post('/api/chat', async (req, res) => {
   const totalCardDebt = userCards.reduce((acc: number, c: any) => acc + (Number(c.balance) || 0), 0);
   const totalCreditLimit = userCards.reduce((acc: number, c: any) => acc + (Number(c.creditLimit) || 0), 0);
   const cardUtilization = totalCreditLimit > 0 ? ((totalCardDebt / totalCreditLimit) * 100).toFixed(1) : '0.0';
+
+  // 4th route: Conversational Expense Logging ("Spent $14 on lunch at Subway")
+  if (routerModel.classify(message) === 'log_expense') {
+    let extracted: ExtractedExpense = parseExpenseFromNaturalLanguage(message);
+    const ai = getGeminiClient();
+    if (ai) {
+      try {
+        const response = await ai.models.generateContent({
+          model: 'gemini-3.8-flash',
+          contents: `Extract transaction details from user statement: "${message}".
+Return amount (positive number), merchant (string), category (string e.g. Dining, Groceries, Shopping, Transportation, Entertainment, Utilities, Healthcare, Other), and a friendly ai_reply confirming the expense has been recorded.`,
+          config: {
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                amount: { type: Type.NUMBER },
+                merchant: { type: Type.STRING },
+                category: { type: Type.STRING },
+                ai_reply: { type: Type.STRING },
+              },
+              required: ['amount', 'merchant', 'category', 'ai_reply'],
+            },
+          },
+        });
+        if (response.text) {
+          const parsed = JSON.parse(response.text.trim());
+          const amt = Number(parsed.amount);
+          if (Number.isFinite(amt) && amt > 0 && parsed.merchant) {
+            extracted = {
+              amount: amt,
+              merchant: String(parsed.merchant).trim(),
+              category: parsed.category ? String(parsed.category).trim() : extracted.category,
+              date: 'Today',
+              ai_reply: parsed.ai_reply || `Logged $${amt.toFixed(2)} at ${parsed.merchant} under ${parsed.category || extracted.category}. Added to your transactions automatically!`,
+            };
+          }
+        }
+      } catch (err: any) {
+        console.warn('[FinAgent] Gemini chat log_expense fallback active:', err?.message || 'unknown error');
+      }
+    }
+
+    const newTx = {
+      id: `tx-${Date.now()}`,
+      title: extracted.merchant,
+      merchant: extracted.merchant,
+      amount: extracted.amount,
+      category: extracted.category,
+      date: extracted.date,
+      type: 'expense' as const,
+    };
+    const newBalance = Math.max(0, userBalance - extracted.amount);
+
+    return res.json({
+      ai_reply: extracted.ai_reply,
+      total_balance: newBalance,
+      budget_status: 'On Track',
+      category_breakdown: userBreakdown,
+      upcoming_bills: userBills,
+      portfolio_health: `Credit Utilization: ${cardUtilization}%`,
+      logged_expense: newTx,
+      transaction: newTx,
+      intent: 'log_expense',
+    });
+  }
 
   // If Gemini API is available, generate response with gemini-3.8-flash
   const ai = getGeminiClient();
@@ -205,6 +373,90 @@ Directives:
     portfolio_health: portfolio,
   });
 });
+
+// --- POST /api/log_expense & /log_expense (Conversational Expense Logging via Text & Voice) ---
+async function handleLogExpense(req: express.Request, res: express.Response) {
+  const { message, text, userContext } = req.body || {};
+  const query = message || text;
+  if (!query || typeof query !== 'string') {
+    return res.status(400).json({ error: 'Message or text query is required' });
+  }
+
+  const ai = getGeminiClient();
+  let extracted: ExtractedExpense = parseExpenseFromNaturalLanguage(query);
+
+  if (ai) {
+    try {
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.8-flash',
+        contents: `You are the Conversational Expense Logging Agent.
+When a user types or speaks an expense (e.g. "Spent $14 on lunch at Subway"), extract:
+1. amount: exact numeric amount spent (e.g. 14)
+2. merchant: vendor, store or restaurant name (e.g. "Subway")
+3. category: budget category (e.g. Dining, Groceries, Transportation, Shopping, Entertainment, Utilities, Healthcare, Other)
+4. ai_reply: a friendly confirmation confirming the expense is logged and added to transactions.
+
+User query: "${query}"`,
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              amount: { type: Type.NUMBER, description: 'Dollar amount spent' },
+              merchant: { type: Type.STRING, description: 'Store, merchant or vendor name' },
+              category: { type: Type.STRING, description: 'Budget category' },
+              ai_reply: { type: Type.STRING, description: 'Short friendly confirmation message' },
+            },
+            required: ['amount', 'merchant', 'category', 'ai_reply'],
+          },
+        },
+      });
+
+      if (response.text) {
+        const parsed = JSON.parse(response.text.trim());
+        const amt = Number(parsed.amount);
+        if (Number.isFinite(amt) && amt > 0 && parsed.merchant) {
+          extracted = {
+            amount: amt,
+            merchant: String(parsed.merchant).trim(),
+            category: parsed.category ? String(parsed.category).trim() : extracted.category,
+            date: 'Today',
+            ai_reply: parsed.ai_reply || `Logged $${amt.toFixed(2)} at ${parsed.merchant} under ${parsed.category || extracted.category}. Added to your transactions automatically!`,
+          };
+        }
+      }
+    } catch (err: any) {
+      console.warn('[FinAgent] Gemini log_expense fallback active:', err?.message || 'unknown error');
+    }
+  }
+
+  const newTx = {
+    id: `tx-${Date.now()}`,
+    title: extracted.merchant,
+    merchant: extracted.merchant,
+    amount: extracted.amount,
+    category: extracted.category,
+    date: extracted.date,
+    type: 'expense' as const,
+  };
+
+  const userBalance = typeof userContext?.totalBalance === 'number' ? userContext.totalBalance : 0;
+  const newBalance = Math.max(0, userBalance - extracted.amount);
+
+  return res.json({
+    success: true,
+    ai_reply: extracted.ai_reply,
+    amount: extracted.amount,
+    merchant: extracted.merchant,
+    category: extracted.category,
+    transaction: newTx,
+    logged_expense: newTx,
+    total_balance: newBalance,
+  });
+}
+
+app.post('/api/log_expense', handleLogExpense);
+app.post('/log_expense', handleLogExpense);
 
 
 // --- POST /api/receipt ---

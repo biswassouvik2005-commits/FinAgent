@@ -15,6 +15,8 @@ import {
   Edit3,
   Home,
   Layers,
+  Mic,
+  MicOff,
   Moon,
   Plus,
   Receipt,
@@ -514,6 +516,120 @@ export default function App() {
     transactions,
   });
 
+  // Voice Recording & Speech-to-Text State
+  const [isListening, setIsListening] = useState(false);
+  const speechRecognitionRef = useRef<any>(null);
+
+  const toggleVoiceRecording = () => {
+    if (isListening) {
+      if (speechRecognitionRef.current) {
+        try { speechRecognitionRef.current.stop(); } catch {}
+      }
+      setIsListening(false);
+      return;
+    }
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      showToast('Speech recognition is not supported in this browser. You can type directly.');
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognition();
+      speechRecognitionRef.current = recognition;
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.lang = 'en-US';
+
+      recognition.onstart = () => {
+        setIsListening(true);
+        showToast('Listening... Speak your expense (e.g. "Spent $14 on lunch at Subway")');
+      };
+
+      recognition.onresult = (event: any) => {
+        const transcript = event.results?.[0]?.[0]?.transcript;
+        if (transcript) {
+          setInputText(transcript);
+          handleSendMessage(transcript);
+        }
+      };
+
+      recognition.onerror = (event: any) => {
+        console.warn('Speech recognition error:', event.error);
+        setIsListening(false);
+        if (event.error === 'not-allowed') {
+          showToast('Microphone access denied. Please grant microphone permission.');
+        }
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      recognition.start();
+    } catch (err) {
+      console.warn('Speech recognition initialization error:', err);
+      setIsListening(false);
+    }
+  };
+
+  // Conversational Expense Parser
+  const parseExpenseText = (text: string) => {
+    if (!text || typeof text !== 'string') return null;
+    const clean = text.trim();
+    const hasExpenseIntent =
+      /(spent|paid|bought|cost|charged)\s*(\$|\d)/i.test(clean) ||
+      /\$\s*\d+.*(on|at|for)/i.test(clean) ||
+      /(on lunch|on dinner|for coffee|at subway|at starbucks|at walmart|for groceries)/i.test(clean);
+
+    if (!hasExpenseIntent) return null;
+
+    let amount = 0;
+    const explicitDollar = clean.match(/\$\s*(\d+(?:\.\d{1,2})?)/);
+    const spentPattern = clean.match(/(?:spent|paid|bought|cost|charged)\s*(?:\$)?\s*(\d+(?:\.\d{1,2})?)/i);
+    const genericNumber = clean.match(/(?:^|\s)(\d+(?:\.\d{1,2})?)(?:\s*(?:dollars?|bucks?|usd))?/i);
+    if (explicitDollar) {
+      amount = parseFloat(explicitDollar[1]);
+    } else if (spentPattern) {
+      amount = parseFloat(spentPattern[1]);
+    } else if (genericNumber) {
+      amount = parseFloat(genericNumber[1]);
+    }
+
+    if (!amount || amount <= 0) return null;
+
+    let merchant = '';
+    const atMatch = clean.match(/(?:at|from|to|with)\s+([A-Za-z0-9\s'&]+?)(?:\s+(?:for|on|yesterday|today|with|using|in|\.|$)|$)/i);
+    if (atMatch && atMatch[1]) {
+      merchant = atMatch[1].trim();
+    } else {
+      const commonMerchants = ['subway', 'starbucks', 'walmart', 'target', 'amazon', 'uber', 'lyft', 'shell', 'mcdonalds', 'whole foods', "trader joe's"];
+      const found = commonMerchants.find(m => clean.toLowerCase().includes(m));
+      merchant = found ? (found.charAt(0).toUpperCase() + found.slice(1)) : 'Expense';
+    }
+
+    const lower = clean.toLowerCase();
+    let category = 'General';
+    if (/groceries|grocery|supermarket|apples|milk|produce/i.test(lower)) {
+      category = 'Groceries';
+    } else if (/lunch|dinner|breakfast|meal|food|subway|starbucks|mcdonalds|burger|sandwich|pizza|coffee|cafe|restaurant|dining|snack|drink/i.test(lower)) {
+      category = 'Dining';
+    } else if (/gas|fuel|shell|chevron|exxon|uber|lyft|taxi|subway fare|train|bus|transport|parking|toll/i.test(lower)) {
+      category = 'Transportation';
+    } else if (/movie|cinema|netflix|spotify|game|entertainment|concert|ticket/i.test(lower)) {
+      category = 'Entertainment';
+    } else if (/clothes|shoes|amazon|target|shopping|mall|electronics|store|retail/i.test(lower)) {
+      category = 'Shopping';
+    } else if (/bill|electric|power|water|internet|utility|utilities|wifi|phone|rent/i.test(lower)) {
+      category = 'Utilities';
+    } else if (/gym|pharmacy|medicine|doctor|health|dentist/i.test(lower)) {
+      category = 'Healthcare';
+    }
+
+    return { amount, merchant, category };
+  };
+
   // Send message to AI Agent
   const handleSendMessage = async (userText: string = inputText) => {
     if (!userText.trim()) return;
@@ -532,6 +648,72 @@ export default function App() {
 
     const abortController = new AbortController();
     chatAbortControllerRef.current = abortController;
+
+    // Conversational Expense Logging Check (e.g. "Spent $14 on lunch at Subway")
+    const localExpense = parseExpenseText(userText);
+
+    // Try posting to server's 4th route (/api/log_expense) first
+    try {
+      const serverRes = await axios.post('/api/log_expense', {
+        message: userText,
+        userContext: getUserContext()
+      }, { signal: abortController.signal, timeout: 6000 });
+
+      if (serverRes.data?.logged_expense || serverRes.data?.transaction) {
+        const exp = serverRes.data.logged_expense || serverRes.data.transaction;
+        const newTx: TransactionItem = {
+          id: exp.id || `tx-${Date.now()}`,
+          title: exp.merchant || exp.title || 'Expense',
+          amount: Number(exp.amount) || 0,
+          category: exp.category || 'Dining',
+          date: exp.date || 'Today',
+          type: 'expense',
+          source: exp.source || 'AI Log',
+        };
+        setTransactions(prev => [newTx, ...prev]);
+        if (typeof serverRes.data.total_balance === 'number') {
+          setLiquidCash(serverRes.data.total_balance);
+        } else {
+          setLiquidCash(prev => Math.max(0, prev - newTx.amount));
+        }
+        showToast(`Auto-logged $${newTx.amount.toFixed(2)} at ${newTx.title} under ${newTx.category}!`);
+        setMessages(prev => [...prev, {
+          id: `ai-${Date.now()}`,
+          text: serverRes.data.ai_reply || `Logged $${newTx.amount.toFixed(2)} at ${newTx.title} under ${newTx.category} automatically. Added to your transactions!`,
+          sender: 'ai',
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        }]);
+        setIsLoadingChat(false);
+        chatAbortControllerRef.current = null;
+        return;
+      }
+    } catch {
+      // Server not reachable or route errored; fall back to local parser or Gemini
+    }
+
+    if (localExpense) {
+      const newTx: TransactionItem = {
+        id: `tx-${Date.now()}`,
+        title: localExpense.merchant,
+        amount: localExpense.amount,
+        category: localExpense.category,
+        date: 'Today',
+        type: 'expense',
+        source: 'AI Log',
+      };
+      setTransactions(prev => [newTx, ...prev]);
+      setLiquidCash(prev => Math.max(0, prev - newTx.amount));
+      showToast(`Auto-logged $${newTx.amount.toFixed(2)} at ${newTx.title} under ${newTx.category}!`);
+      setMessages(prev => [...prev, {
+        id: `ai-${Date.now()}`,
+        text: `Logged $${newTx.amount.toFixed(2)} at ${newTx.title} under ${newTx.category} automatically. Added to your transactions!`,
+        sender: 'ai',
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      }]);
+      setIsLoadingChat(false);
+      chatAbortControllerRef.current = null;
+      return;
+    }
 
     try {
       // 2. Fetch Request to Gemini API with full user financial grounding
@@ -2171,6 +2353,7 @@ User Message: "${userText}"`;
             {/* Quick Prompt Chips */}
             <div className="flex items-center gap-2 overflow-x-auto pb-2 shrink-0">
               {[
+                'Spent $14 on lunch at Subway',
                 'Which card should I pay first?',
                 'Audit my credit utilization ratio',
                 'How much should I allocate to savings?',
@@ -2260,6 +2443,23 @@ User Message: "${userText}"`;
                 <Camera className="w-4 h-4" />
               </button>
 
+              <button
+                type="button"
+                onClick={toggleVoiceRecording}
+                className={`w-10 h-10 rounded-xl flex items-center justify-center border transition-all ${
+                  isListening
+                    ? 'bg-red-500/20 text-red-400 border-red-500 animate-pulse'
+                    : 'text-neutral-400 hover:text-violet-400'
+                }`}
+                style={{
+                  backgroundColor: isListening ? undefined : (isDark ? '#16161e' : '#f1f5f9'),
+                  borderColor: isListening ? undefined : (isDark ? '#242432' : '#e2e8f0'),
+                }}
+                title={isListening ? 'Listening... click to stop' : 'Speak to log expense (Voice, e.g. "Spent $14 on lunch at Subway")'}
+              >
+                {isListening ? <MicOff className="w-4 h-4 text-red-400" /> : <Mic className="w-4 h-4" />}
+              </button>
+
               <input
                 type="text"
                 value={inputText}
@@ -2272,7 +2472,7 @@ User Message: "${userText}"`;
                 onKeyDown={e => {
                   if (e.key === 'Enter') handleSendMessage();
                 }}
-                placeholder="Ask about debt payoff, your cards, or saving goals..."
+                placeholder="Type or speak (e.g. 'Spent $14 on lunch at Subway')..."
                 disabled={isLoadingChat}
                 className="flex-1 bg-transparent px-3 py-2 text-xs sm:text-sm outline-none"
               />
