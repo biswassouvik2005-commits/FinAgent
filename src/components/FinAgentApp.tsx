@@ -380,6 +380,20 @@ function parseExpenseFromNaturalLanguage(text: string) {
   return { amount, merchant, category };
 }
 
+interface QuickPromptItem {
+  id: string;
+  label: string;
+  prompt: string;
+  action?: 'receipt' | 'prompt';
+}
+
+const quickPrompts: QuickPromptItem[] = [
+  { id: 'budget', label: '📊 Am I on budget?', prompt: 'Am I on budget?' },
+  { id: 'receipt', label: '🧾 Scan a receipt', prompt: 'Scan a receipt', action: 'receipt' },
+  { id: 'bills', label: '📅 Bills due soon', prompt: 'Which bills are due soon?' },
+  { id: 'cut_spending', label: '💡 Where can I cut spending?', prompt: 'Where can I cut spending?' },
+];
+
 function FinAgentApp() {
   const [storageStatus, setStorageStatus] = useState<'loading' | 'ready' | 'failed'>('loading');
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
@@ -1616,24 +1630,6 @@ function FinAgentApp() {
           <Ionicons name="refresh-outline" size={20} color={palette.muted} />
         </Pressable>
       </Panel>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow} style={styles.chipsContainer}>
-        {[
-          'Spent $14 on lunch at Subway',
-          'Which card should I pay first?',
-          'Audit my credit utilization',
-          'How much should I allocate to savings?',
-          'Review my monthly budget',
-        ].map(question => (
-          <Pressable
-            key={question}
-            onPress={() => void sendMessage(question)}
-            disabled={isLoadingChat}
-            style={[styles.chip, { backgroundColor: palette.elevated, borderColor: palette.border, opacity: isLoadingChat ? 0.5 : 1 }]}
-          >
-            <Text style={[styles.chipText, { color: palette.text }]}>{question}</Text>
-          </Pressable>
-        ))}
-      </ScrollView>
       <Panel palette={palette} style={styles.chatPanel}>
         <ScrollView
           ref={chatScroll}
@@ -1677,6 +1673,42 @@ function FinAgentApp() {
             </View>
           ) : null}
         </ScrollView>
+
+        {/* Quick-Prompt Chips Above the Keyboard / Chat Input */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.quickPromptChipsRow}
+          style={styles.quickPromptChipsScroll}
+          keyboardShouldPersistTaps="handled"
+        >
+          {quickPrompts.map(item => (
+            <Pressable
+              key={item.id}
+              onPress={() => {
+                if (item.action === 'receipt') {
+                  chooseReceiptSource();
+                } else {
+                  void sendMessage(item.prompt);
+                }
+              }}
+              disabled={isLoadingChat}
+              accessibilityRole="button"
+              accessibilityLabel={item.label}
+              style={({ pressed }) => [
+                styles.quickPromptChip,
+                {
+                  backgroundColor: pressed ? palette.surface : palette.elevated,
+                  borderColor: palette.border,
+                  opacity: isLoadingChat ? 0.6 : 1,
+                },
+              ]}
+            >
+              <Text style={[styles.quickPromptChipText, { color: palette.text }]}>{item.label}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+
         <View style={[styles.chatComposer, { borderColor: palette.border, backgroundColor: palette.input }]}>
           <Pressable
             onPress={() => setModal('compose')}
@@ -2296,6 +2328,43 @@ function FinAgentApp() {
               </Pressable>
             ) : null}
           </View>
+
+          {/* Quick-Prompt Chips inside Modal Compose */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.quickPromptChipsRow}
+            style={[styles.quickPromptChipsScroll, { marginTop: 2, marginBottom: 10 }]}
+            keyboardShouldPersistTaps="handled"
+          >
+            {quickPrompts.map(item => (
+              <Pressable
+                key={item.id}
+                onPress={() => {
+                  if (item.action === 'receipt') {
+                    setModal(null);
+                    chooseReceiptSource();
+                  } else {
+                    setChatInput(item.prompt);
+                  }
+                }}
+                disabled={isLoadingChat}
+                accessibilityRole="button"
+                accessibilityLabel={item.label}
+                style={({ pressed }) => [
+                  styles.quickPromptChip,
+                  {
+                    backgroundColor: pressed ? palette.surface : palette.elevated,
+                    borderColor: palette.border,
+                    opacity: isLoadingChat ? 0.6 : 1,
+                  },
+                ]}
+              >
+                <Text style={[styles.quickPromptChipText, { color: palette.text }]}>{item.label}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+
           <View style={styles.modalButtons}>
             <AppButton label="Cancel" onPress={() => setModal(null)} palette={palette} variant="secondary" />
             {isLoadingChat ? (
@@ -2730,6 +2799,10 @@ const styles = StyleSheet.create({
   modalChipsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 },
   emptyCardPrompt: { width: 200, minHeight: 170, borderRadius: 20, borderWidth: 1, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', padding: 16 },
   centerPanel: { alignItems: 'center', justifyContent: 'center', paddingVertical: 24, paddingHorizontal: 16 },
+  quickPromptChipsScroll: { maxHeight: 42, flexGrow: 0, marginTop: 4, marginBottom: 8 },
+  quickPromptChipsRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 2, alignItems: 'center' },
+  quickPromptChip: { paddingVertical: 7, paddingHorizontal: 12, borderRadius: 16, borderWidth: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+  quickPromptChipText: { fontSize: 12, fontWeight: '700' },
 });
 
 export default FinAgentApp;

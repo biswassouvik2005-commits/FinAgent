@@ -2582,27 +2582,6 @@ User Message: "${userText}"`;
               </button>
             </div>
 
-            {/* Quick Prompt Chips */}
-            <div className="flex items-center gap-2 overflow-x-auto pb-2 shrink-0">
-              {[
-                'Spent $14 on lunch at Subway',
-                'Which card should I pay first?',
-                'Audit my credit utilization ratio',
-                'How much should I allocate to savings?',
-                '50/30/20 budget breakdown for my income',
-              ].map((q, i) => (
-                <button
-                  key={i}
-                  onClick={() => handleSendMessage(q)}
-                  disabled={isLoadingChat}
-                  className="px-3 py-1.5 rounded-xl border text-xs font-semibold whitespace-nowrap transition-all hover:border-violet-500 cursor-pointer shrink-0"
-                  style={{ backgroundColor: isDark ? '#14141c' : '#ffffff', borderColor: isDark ? '#23232e' : '#e2e8f0' }}
-                >
-                  {q}
-                </button>
-              ))}
-            </div>
-
             {/* Messages Feed */}
             <div
               className="flex-1 overflow-y-auto rounded-2xl border p-4 sm:p-5 space-y-4 my-2"
@@ -2659,6 +2638,36 @@ User Message: "${userText}"`;
                 </div>
               )}
               <div ref={messagesEndRef} />
+            </div>
+
+            {/* Quick-Prompt Chips Above the Keyboard / Chat Input */}
+            <div className="flex items-center gap-2 overflow-x-auto pb-2 shrink-0 scrollbar-none">
+              {[
+                { id: 'budget', label: '📊 Am I on budget?', prompt: 'Am I on budget?' },
+                { id: 'receipt', label: '🧾 Scan a receipt', prompt: 'Scan a receipt', action: 'receipt' },
+                { id: 'bills', label: '📅 Bills due soon', prompt: 'Which bills are due soon?' },
+                { id: 'cut_spending', label: '💡 Where can I cut spending?', prompt: 'Where can I cut spending?' },
+              ].map(chip => (
+                <button
+                  key={chip.id}
+                  type="button"
+                  onClick={() => {
+                    if (chip.action === 'receipt') {
+                      fileInputRef.current?.click();
+                    } else {
+                      handleSendMessage(chip.prompt);
+                    }
+                  }}
+                  disabled={isLoadingChat}
+                  className="px-3.5 py-1.5 rounded-full border text-xs font-semibold whitespace-nowrap transition-all hover:border-violet-500 cursor-pointer shrink-0 disabled:opacity-50"
+                  style={{
+                    backgroundColor: isDark ? '#14141c' : '#ffffff',
+                    borderColor: isDark ? '#23232e' : '#e2e8f0',
+                  }}
+                >
+                  {chip.label}
+                </button>
+              ))}
             </div>
 
             {/* Chat Input */}
