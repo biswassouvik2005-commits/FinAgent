@@ -73,11 +73,37 @@ interface UpcomingBill {
   category: string;
 }
 
+export interface ChatMessageData {
+  intent?: 'expense' | 'bills' | 'investments' | 'log_expense' | string;
+  total_balance?: number;
+  budget_status?: string;
+  category_breakdown?: Array<{ category: string; amount: number }>;
+  upcoming_bills?: Array<{ bill_name: string; due_date: string; amount: number }>;
+  portfolio_health?: string;
+  logged_expense?: {
+    amount: number;
+    merchant: string;
+    category: string;
+    date?: string;
+    id?: string | number;
+  };
+  safe_to_spend?: {
+    dailySafeToSpend: number;
+    daysLeft: number;
+    status: string;
+    statusLabel?: string;
+    monthlyBudget?: number;
+    spentSoFar?: number;
+    upcomingBills?: number;
+  };
+}
+
 interface ChatMessage {
   id: string;
   text: string;
   sender: 'ai' | 'user';
   timestamp: string;
+  data?: ChatMessageData;
 }
 
 interface ScannedReceipt {
@@ -322,6 +348,304 @@ function TransactionRow({ item, palette }: { item: TransactionItem; palette: Pal
       </Text>
     </View>
   );
+}
+
+function ChatDataWidget({
+  data,
+  palette,
+  isDark,
+  navigateToScreen,
+}: {
+  data: ChatMessageData;
+  palette: Palette;
+  isDark: boolean;
+  navigateToScreen: (screen: Screen) => void;
+}) {
+  if (!data) return null;
+
+  // 1. Auto-Logged Expense Card
+  if (data.logged_expense) {
+    const exp = data.logged_expense;
+    return (
+      <View style={[styles.chatWidgetCard, { backgroundColor: isDark ? '#064e3b25' : '#ecfdf5', borderColor: isDark ? '#05966950' : '#a7f3d0' }]}>
+        <View style={styles.chatWidgetHeader}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Ionicons name="checkmark-circle" size={17} color="#10b981" />
+            <Text style={[styles.chatWidgetHeaderTitle, { color: isDark ? '#34d399' : '#047857' }]}>
+              TRANSACTION AUTO-LOGGED
+            </Text>
+          </View>
+          <View style={[styles.chatWidgetStatusBadge, { backgroundColor: isDark ? '#064e3b60' : '#d1fae5', borderColor: '#10b981' }]}>
+            <Text style={[styles.chatWidgetStatusBadgeText, { color: isDark ? '#6ee7b7' : '#065f46' }]}>Live Saved</Text>
+          </View>
+        </View>
+
+        <View style={styles.chatWidgetHeroRow}>
+          <Text style={[styles.chatWidgetHeroAmount, { color: palette.red }]}>
+            -{formatCurrency(exp.amount)}
+          </Text>
+          <Text style={[styles.caption, { color: palette.muted }]}>
+            Deducted from Checking
+          </Text>
+        </View>
+
+        <View style={styles.chatWidgetDetailsRow}>
+          <View style={[styles.chatWidgetDetailPill, { backgroundColor: palette.elevated, borderColor: palette.border }]}>
+            <Ionicons name="storefront-outline" size={13} color={palette.muted} />
+            <Text numberOfLines={1} style={[styles.caption, { color: palette.text, fontWeight: '700' }]}>{exp.merchant}</Text>
+          </View>
+          <View style={[styles.chatWidgetDetailPill, { backgroundColor: palette.elevated, borderColor: palette.border }]}>
+            <Ionicons name="pricetag-outline" size={13} color={palette.accent} />
+            <Text numberOfLines={1} style={[styles.caption, { color: palette.accent, fontWeight: '700' }]}>{exp.category}</Text>
+          </View>
+          <View style={[styles.chatWidgetDetailPill, { backgroundColor: palette.elevated, borderColor: palette.border }]}>
+            <Ionicons name="calendar-outline" size={13} color={palette.muted} />
+            <Text numberOfLines={1} style={[styles.caption, { color: palette.muted }]}>{exp.date || 'Today'}</Text>
+          </View>
+        </View>
+
+        {typeof data.total_balance === 'number' && (
+          <View style={[styles.chatWidgetBalanceRow, { borderTopColor: isDark ? '#05966940' : '#a7f3d0' }]}>
+            <Text style={[styles.caption, { color: palette.muted }]}>New Checking Reserve:</Text>
+            <Text style={[styles.bodyStrong, { color: palette.green }]}>{formatCurrency(data.total_balance)}</Text>
+          </View>
+        )}
+
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => navigateToScreen('budget')}
+          style={({ pressed }) => [
+            styles.chatWidgetActionBtn,
+            { backgroundColor: isDark ? '#064e3b60' : '#d1fae5', opacity: pressed ? 0.75 : 1 },
+          ]}
+        >
+          <Ionicons name="receipt-outline" size={14} color={isDark ? '#6ee7b7' : '#047857'} />
+          <Text style={[styles.chatWidgetActionBtnText, { color: isDark ? '#6ee7b7' : '#047857' }]}>
+            View in Ledger & Activity
+          </Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  // 2. Budget & Category Breakdown Card
+  if (data.category_breakdown && data.category_breakdown.length > 0) {
+    const totalSpentInBreakdown = data.category_breakdown.reduce((s, c) => s + (Number(c.amount) || 0), 0);
+    const statusColor = data.budget_status === 'Over Budget' ? palette.red : (data.budget_status === 'Nearing Limit' ? '#f59e0b' : palette.green);
+
+    return (
+      <View style={[styles.chatWidgetCard, { backgroundColor: isDark ? '#161622' : '#f8fafc', borderColor: palette.border }]}>
+        <View style={styles.chatWidgetHeader}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Ionicons name="pie-chart" size={16} color={palette.accent} />
+            <Text style={[styles.chatWidgetHeaderTitle, { color: palette.text }]}>
+              EXPENSE ANALYST BREAKDOWN
+            </Text>
+          </View>
+          {data.budget_status ? (
+            <View style={[styles.chatWidgetStatusBadge, { backgroundColor: `${statusColor}22`, borderColor: statusColor }]}>
+              <Text style={[styles.chatWidgetStatusBadgeText, { color: statusColor }]}>
+                {data.budget_status}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+
+        <View style={{ gap: 8, marginVertical: 4 }}>
+          {data.category_breakdown.map((item, idx) => {
+            const pct = totalSpentInBreakdown > 0 ? (item.amount / totalSpentInBreakdown) * 100 : 0;
+            const barColor = categoryColors[idx % categoryColors.length];
+            return (
+              <View key={`${item.category}-${idx}`} style={{ gap: 3 }}>
+                <View style={styles.rowBetween}>
+                  <Text style={[styles.caption, { color: palette.text, fontWeight: '700' }]}>{item.category}</Text>
+                  <Text style={[styles.caption, { color: palette.muted, fontWeight: '800' }]}>
+                    {formatCurrency(item.amount)} ({pct.toFixed(0)}%)
+                  </Text>
+                </View>
+                <View style={[styles.progressTrack, { backgroundColor: isDark ? '#272733' : '#e2e8f0', height: 5 }]}>
+                  <View style={[styles.progressFill, { width: `${Math.min(100, pct)}%`, backgroundColor: barColor }]} />
+                </View>
+              </View>
+            );
+          })}
+        </View>
+
+        {data.safe_to_spend ? (
+          <View style={[styles.chatWidgetMiniCallout, { backgroundColor: palette.elevated, borderColor: palette.border }]}>
+            <Ionicons name="shield-checkmark" size={14} color={palette.green} />
+            <Text style={[styles.caption, { color: palette.muted, flex: 1 }]}>
+              Daily Safe-to-Spend: <Text style={{ color: palette.green, fontWeight: '800' }}>{formatCurrency(data.safe_to_spend.dailySafeToSpend)}/day</Text> ({data.safe_to_spend.daysLeft}d left)
+            </Text>
+          </View>
+        ) : null}
+
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => navigateToScreen('budget')}
+          style={({ pressed }) => [
+            styles.chatWidgetActionBtn,
+            { backgroundColor: palette.elevated, borderColor: palette.border, borderWidth: 1, opacity: pressed ? 0.75 : 1 },
+          ]}
+        >
+          <Ionicons name="bar-chart-outline" size={14} color={palette.accent} />
+          <Text style={[styles.chatWidgetActionBtnText, { color: palette.accent }]}>
+            Open 50/30/20 Targets & Ledger
+          </Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  // 3. Upcoming Bills & Subscriptions Card
+  if (data.upcoming_bills && data.upcoming_bills.length > 0) {
+    const totalBills = data.upcoming_bills.reduce((s, b) => s + (Number(b.amount) || 0), 0);
+    return (
+      <View style={[styles.chatWidgetCard, { backgroundColor: isDark ? '#161622' : '#f8fafc', borderColor: palette.border }]}>
+        <View style={styles.chatWidgetHeader}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Ionicons name="calendar" size={16} color="#f59e0b" />
+            <Text style={[styles.chatWidgetHeaderTitle, { color: palette.text }]}>
+              UPCOMING BILLS & SUBSCRIPTIONS
+            </Text>
+          </View>
+          <View style={[styles.chatWidgetStatusBadge, { backgroundColor: '#f59e0b25', borderColor: '#f59e0b' }]}>
+            <Text style={[styles.chatWidgetStatusBadgeText, { color: '#fbbf24' }]}>
+              {data.upcoming_bills.length} Due Soon
+            </Text>
+          </View>
+        </View>
+
+        <View style={{ gap: 6, marginVertical: 4 }}>
+          {data.upcoming_bills.map((bill, idx) => (
+            <View key={`${bill.bill_name}-${idx}`} style={[styles.chatWidgetBillItem, { backgroundColor: palette.elevated, borderColor: palette.border }]}>
+              <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+                <Text numberOfLines={1} style={[styles.bodyStrong, { color: palette.text, fontSize: 13 }]}>{bill.bill_name}</Text>
+                <Text style={[styles.caption, { color: palette.muted, fontSize: 11 }]}>Due {bill.due_date}</Text>
+              </View>
+              <Text style={[styles.bodyStrong, { color: '#f59e0b', fontSize: 14 }]}>
+                {formatCurrency(bill.amount)}
+              </Text>
+            </View>
+          ))}
+        </View>
+
+        <View style={styles.rowBetween}>
+          <Text style={[styles.caption, { color: palette.muted }]}>Total Upcoming Due:</Text>
+          <Text style={[styles.bodyStrong, { color: palette.red, fontSize: 14 }]}>{formatCurrency(totalBills)}</Text>
+        </View>
+
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => navigateToScreen('bills')}
+          style={({ pressed }) => [
+            styles.chatWidgetActionBtn,
+            { backgroundColor: palette.elevated, borderColor: palette.border, borderWidth: 1, opacity: pressed ? 0.75 : 1 },
+          ]}
+        >
+          <Ionicons name="calendar-outline" size={14} color="#f59e0b" />
+          <Text style={[styles.chatWidgetActionBtnText, { color: '#f59e0b' }]}>
+            Manage & Schedule Bills
+          </Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  // 4. Portfolio Health & Investment Card
+  if (data.portfolio_health) {
+    const isHealthy = data.portfolio_health.toLowerCase().includes('healthy') || data.portfolio_health.toLowerCase().includes('good');
+    return (
+      <View style={[styles.chatWidgetCard, { backgroundColor: isDark ? '#161622' : '#f8fafc', borderColor: palette.border }]}>
+        <View style={styles.chatWidgetHeader}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Ionicons name="trending-up" size={16} color={palette.accent} />
+            <Text style={[styles.chatWidgetHeaderTitle, { color: palette.text }]}>
+              PORTFOLIO HEALTH
+            </Text>
+          </View>
+          <View style={[styles.chatWidgetStatusBadge, { backgroundColor: isHealthy ? '#10b98125' : '#f59e0b25', borderColor: isHealthy ? palette.green : '#f59e0b' }]}>
+            <Text style={[styles.chatWidgetStatusBadgeText, { color: isHealthy ? palette.green : '#fbbf24' }]}>
+              {data.portfolio_health}
+            </Text>
+          </View>
+        </View>
+
+        {typeof data.total_balance === 'number' && (
+          <View style={styles.chatWidgetHeroRow}>
+            <Text style={[styles.chatWidgetHeroAmount, { color: palette.text }]}>
+              {formatCurrency(data.total_balance)}
+            </Text>
+            <Text style={[styles.caption, { color: palette.muted }]}>
+              Combined Liquid Assets
+            </Text>
+          </View>
+        )}
+
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => navigateToScreen('cards')}
+          style={({ pressed }) => [
+            styles.chatWidgetActionBtn,
+            { backgroundColor: palette.elevated, borderColor: palette.border, borderWidth: 1, opacity: pressed ? 0.75 : 1 },
+          ]}
+        >
+          <Ionicons name="card-outline" size={14} color={palette.accent} />
+          <Text style={[styles.chatWidgetActionBtnText, { color: palette.accent }]}>
+            View Cards & Strategy
+          </Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  // 5. Standalone Safe-to-Spend Card
+  if (data.safe_to_spend) {
+    const sts = data.safe_to_spend;
+    const isGood = sts.dailySafeToSpend > 0;
+    return (
+      <View style={[styles.chatWidgetCard, { backgroundColor: isDark ? '#161622' : '#f8fafc', borderColor: palette.border }]}>
+        <View style={styles.chatWidgetHeader}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Ionicons name="shield-checkmark" size={16} color={isGood ? palette.green : palette.red} />
+            <Text style={[styles.chatWidgetHeaderTitle, { color: palette.text }]}>
+              SAFE-TO-SPEND SNAPSHOT
+            </Text>
+          </View>
+          <View style={[styles.chatWidgetStatusBadge, { backgroundColor: isGood ? '#10b98125' : '#ef444425', borderColor: isGood ? palette.green : palette.red }]}>
+            <Text style={[styles.chatWidgetStatusBadgeText, { color: isGood ? palette.green : palette.red }]}>
+              {sts.statusLabel || (isGood ? 'Guilt-Free' : 'Deficit')}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.chatWidgetHeroRow}>
+          <Text style={[styles.chatWidgetHeroAmount, { color: isGood ? palette.green : palette.red }]}>
+            {formatCurrency(sts.dailySafeToSpend)}
+          </Text>
+          <Text style={[styles.caption, { color: palette.muted }]}>
+            / day ({sts.daysLeft} days remaining)
+          </Text>
+        </View>
+
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => navigateToScreen('budget')}
+          style={({ pressed }) => [
+            styles.chatWidgetActionBtn,
+            { backgroundColor: palette.elevated, borderColor: palette.border, borderWidth: 1, opacity: pressed ? 0.75 : 1 },
+          ]}
+        >
+          <Ionicons name="analytics-outline" size={14} color={palette.accent} />
+          <Text style={[styles.chatWidgetActionBtnText, { color: palette.accent }]}>
+            Review Monthly Budget
+          </Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  return null;
 }
 
 // Conversational Expense Parser
@@ -1143,12 +1467,37 @@ function FinAgentApp() {
         showToast(`Auto-logged $${newTx.amount.toFixed(2)} at ${newTx.title}!`);
       }
 
+      const structuredData: ChatMessageData = {
+        intent: response.data?.intent,
+        total_balance: response.data?.total_balance,
+        budget_status: response.data?.budget_status,
+        category_breakdown: response.data?.category_breakdown,
+        upcoming_bills: response.data?.upcoming_bills,
+        portfolio_health: response.data?.portfolio_health,
+        logged_expense: response.data?.logged_expense || (response.data?.transaction ? {
+          amount: Number(response.data.transaction.amount) || 0,
+          merchant: response.data.transaction.merchant || response.data.transaction.title || 'Expense',
+          category: response.data.transaction.category || 'General',
+          date: response.data.transaction.date || 'Today',
+        } : undefined),
+        safe_to_spend: response.data?.safe_to_spend,
+      };
+
+      const hasStructuredContent = Boolean(
+        structuredData.logged_expense ||
+        (structuredData.category_breakdown && structuredData.category_breakdown.length > 0) ||
+        (structuredData.upcoming_bills && structuredData.upcoming_bills.length > 0) ||
+        structuredData.portfolio_health ||
+        structuredData.safe_to_spend
+      );
+
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       setMessages(previous => [...previous, {
         id: `ai-${Date.now()}`,
         text: reply,
         sender: 'ai',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        data: hasStructuredContent ? structuredData : undefined,
       }]);
     } catch (error: any) {
       if (abortController.signal.aborted || error?.name === 'CanceledError' || axios.isCancel(error)) {
@@ -1177,6 +1526,16 @@ function FinAgentApp() {
           text: `Logged $${newTx.amount.toFixed(2)} at ${newTx.title} under ${newTx.category} automatically. Added to your transactions!`,
           sender: 'ai',
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          data: {
+            intent: 'log_expense',
+            logged_expense: {
+              amount: newTx.amount,
+              merchant: newTx.title,
+              category: newTx.category,
+              date: newTx.date,
+            },
+            total_balance: Math.max(0, liquidCash - newTx.amount),
+          },
         }]);
         return;
       }
@@ -1898,6 +2257,14 @@ function FinAgentApp() {
                 message.sender === 'user' && styles.userMessageBubble,
               ]}>
                 <Text style={[styles.messageText, { color: palette.text }]}>{message.text}</Text>
+                {message.data ? (
+                  <ChatDataWidget
+                    data={message.data}
+                    palette={palette}
+                    isDark={isDark}
+                    navigateToScreen={navigateToScreen}
+                  />
+                ) : null}
                 <View style={styles.messageFooter}>
                   <Text style={[styles.messageTime, { color: message.sender === 'user' ? '#e9ddff' : palette.muted }]}>{message.timestamp}</Text>
                   {message.sender === 'ai' ? (
@@ -3149,6 +3516,100 @@ const styles = StyleSheet.create({
   quickPromptChipsRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 2, alignItems: 'center' },
   quickPromptChip: { paddingVertical: 7, paddingHorizontal: 12, borderRadius: 16, borderWidth: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
   quickPromptChipText: { fontSize: 12, fontWeight: '700' },
+  chatWidgetCard: {
+    marginTop: 10,
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 12,
+    gap: 8,
+  },
+  chatWidgetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 6,
+  },
+  chatWidgetHeaderTitle: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  chatWidgetStatusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  chatWidgetStatusBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  chatWidgetHeroRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 8,
+    marginVertical: 2,
+  },
+  chatWidgetHeroAmount: {
+    fontSize: 22,
+    fontWeight: '900',
+    letterSpacing: -0.5,
+  },
+  chatWidgetDetailsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  chatWidgetDetailPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  chatWidgetBalanceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 6,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  chatWidgetBillItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 10,
+    borderWidth: 1,
+    gap: 8,
+  },
+  chatWidgetMiniCallout: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  chatWidgetActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    marginTop: 2,
+  },
+  chatWidgetActionBtnText: {
+    fontSize: 11.5,
+    fontWeight: '800',
+  },
 });
 
 export default FinAgentApp;

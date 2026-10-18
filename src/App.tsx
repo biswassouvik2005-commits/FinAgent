@@ -3,6 +3,7 @@ import axios from 'axios';
 import {
   ArrowDownLeft,
   ArrowUpRight,
+  BarChart2,
   Bot,
   Calendar,
   Camera,
@@ -13,6 +14,7 @@ import {
   Copy,
   CreditCard,
   Edit3,
+  ExternalLink,
   Home,
   Layers,
   Mic,
@@ -25,9 +27,13 @@ import {
   Send,
   ShieldCheck,
   Sparkles,
+  Store,
   Sun,
+  Tag,
   Trash2,
-  User
+  TrendingUp,
+  User,
+  Wallet
 } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { NetWorthChart } from './components/NetWorthChart.web';
@@ -65,12 +71,38 @@ export interface UpcomingBill {
   category: string;
 }
 
+export interface ChatMessageData {
+  intent?: 'expense' | 'bills' | 'investments' | 'log_expense' | string;
+  total_balance?: number;
+  budget_status?: string;
+  category_breakdown?: Array<{ category: string; amount: number }>;
+  upcoming_bills?: Array<{ bill_name: string; due_date: string; amount: number }>;
+  portfolio_health?: string;
+  logged_expense?: {
+    amount: number;
+    merchant: string;
+    category: string;
+    date?: string;
+    id?: string | number;
+  };
+  safe_to_spend?: {
+    dailySafeToSpend: number;
+    daysLeft: number;
+    status: string;
+    statusLabel?: string;
+    monthlyBudget?: number;
+    spentSoFar?: number;
+    upcomingBills?: number;
+  };
+}
+
 export interface ChatMessage {
   id: string;
   text: string;
   sender: 'ai' | 'user';
   timestamp: string;
   imagePreview?: string;
+  data?: ChatMessageData;
 }
 
 const parseStoredArray = <T,>(value: string | null, fallback: T[], key: string): T[] => {
@@ -92,6 +124,368 @@ const parseStoredArray = <T,>(value: string | null, fallback: T[], key: string):
 const defaultCards: CreditCardItem[] = [];
 const defaultTransactions: TransactionItem[] = [];
 const defaultBills: UpcomingBill[] = [];
+
+function ChatDataWidgetWeb({
+  data,
+  isDark,
+  setActiveScreen,
+}: {
+  data: ChatMessageData;
+  isDark: boolean;
+  setActiveScreen: (screen: 'home' | 'cards' | 'agent' | 'budget' | 'bills' | 'ocr') => void;
+}) {
+  if (!data) return null;
+
+  // 1. Auto-Logged Expense Card
+  if (data.logged_expense) {
+    const exp = data.logged_expense;
+    return (
+      <div
+        className={`mt-3 p-3.5 rounded-2xl border text-left shadow-xs transition-all ${
+          isDark
+            ? 'bg-emerald-950/20 border-emerald-500/30 text-emerald-100'
+            : 'bg-emerald-50/80 border-emerald-200 text-emerald-900'
+        }`}
+      >
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <div className="flex items-center gap-1.5">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+            <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400">
+              Transaction Auto-Logged
+            </span>
+          </div>
+          <span
+            className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide border ${
+              isDark
+                ? 'bg-emerald-950/60 text-emerald-300 border-emerald-500/30'
+                : 'bg-emerald-100 text-emerald-800 border-emerald-300'
+            }`}
+          >
+            Saved Live
+          </span>
+        </div>
+
+        <div className="flex items-baseline gap-2 mb-2.5">
+          <span className="text-2xl font-black font-mono text-rose-400 tabular-nums">
+            -${exp.amount.toFixed(2)}
+          </span>
+          <span className="text-xs text-neutral-400">deducted from Checking</span>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-1.5 mb-2.5 text-xs">
+          <div
+            className={`px-2.5 py-1 rounded-lg border flex items-center gap-1 font-semibold ${
+              isDark ? 'bg-neutral-900/80 border-neutral-800 text-neutral-200' : 'bg-white border-neutral-200 text-neutral-800'
+            }`}
+          >
+            <Store className="w-3.5 h-3.5 text-neutral-400" />
+            <span>{exp.merchant}</span>
+          </div>
+
+          <div
+            className={`px-2.5 py-1 rounded-lg border flex items-center gap-1 font-semibold ${
+              isDark ? 'bg-violet-950/40 border-violet-800/40 text-violet-300' : 'bg-violet-50 border-violet-200 text-violet-700'
+            }`}
+          >
+            <Tag className="w-3.5 h-3.5 text-violet-400" />
+            <span>{exp.category}</span>
+          </div>
+
+          <div
+            className={`px-2.5 py-1 rounded-lg border flex items-center gap-1 text-neutral-400 ${
+              isDark ? 'bg-neutral-900/80 border-neutral-800' : 'bg-white border-neutral-200'
+            }`}
+          >
+            <Calendar className="w-3.5 h-3.5" />
+            <span>{exp.date || 'Today'}</span>
+          </div>
+        </div>
+
+        {typeof data.total_balance === 'number' && (
+          <div
+            className="flex items-center justify-between text-xs pt-2 border-t font-mono mb-2"
+            style={{ borderColor: isDark ? '#05966930' : '#a7f3d0' }}
+          >
+            <span className="text-neutral-400">Updated Checking Reserve:</span>
+            <span className="font-bold text-emerald-400">${data.total_balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+          </div>
+        )}
+
+        <button
+          type="button"
+          onClick={() => setActiveScreen('budget')}
+          className={`w-full py-1.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+            isDark
+              ? 'bg-emerald-900/40 hover:bg-emerald-900/60 text-emerald-300 border border-emerald-700/40'
+              : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-300'
+          }`}
+        >
+          <Receipt className="w-3.5 h-3.5" />
+          <span>View in Ledger & Activity &rarr;</span>
+        </button>
+      </div>
+    );
+  }
+
+  // 2. Budget & Category Breakdown Card
+  if (data.category_breakdown && data.category_breakdown.length > 0) {
+    const totalSpent = data.category_breakdown.reduce((s, c) => s + (Number(c.amount) || 0), 0);
+    const isOver = data.budget_status === 'Over Budget';
+    const isNear = data.budget_status === 'Nearing Limit';
+    const statusColorClass = isOver ? 'text-rose-400 border-rose-500/30 bg-rose-950/40' : (isNear ? 'text-amber-400 border-amber-500/30 bg-amber-950/40' : 'text-emerald-400 border-emerald-500/30 bg-emerald-950/40');
+
+    return (
+      <div
+        className={`mt-3 p-3.5 rounded-2xl border text-left shadow-xs transition-all ${
+          isDark
+            ? 'bg-neutral-900/60 border-neutral-800 text-neutral-100'
+            : 'bg-white border-neutral-200 text-neutral-900'
+        }`}
+      >
+        <div className="flex items-center justify-between gap-2 mb-2.5">
+          <div className="flex items-center gap-1.5">
+            <BarChart2 className="w-4 h-4 text-violet-400" />
+            <span className="text-[10px] font-black uppercase tracking-wider text-neutral-400">
+              Expense Analyst Breakdown
+            </span>
+          </div>
+          {data.budget_status ? (
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide border ${statusColorClass}`}>
+              {data.budget_status}
+            </span>
+          ) : null}
+        </div>
+
+        <div className="space-y-2 mb-3">
+          {data.category_breakdown.map((item, idx) => {
+            const pct = totalSpent > 0 ? (item.amount / totalSpent) * 100 : 0;
+            return (
+              <div key={`${item.category}-${idx}`} className="space-y-1">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-semibold">{item.category}</span>
+                  <span className="font-mono text-neutral-400">
+                    ${item.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })} ({pct.toFixed(0)}%)
+                  </span>
+                </div>
+                <div className={`h-1.5 rounded-full overflow-hidden ${isDark ? 'bg-neutral-800' : 'bg-neutral-100'}`}>
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-violet-500 to-indigo-500"
+                    style={{ width: `${Math.min(100, pct)}%` }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {data.safe_to_spend ? (
+          <div
+            className={`p-2 rounded-xl text-xs flex items-center justify-between mb-2.5 border ${
+              isDark ? 'bg-neutral-950/50 border-neutral-800' : 'bg-neutral-50 border-neutral-200'
+            }`}
+          >
+            <div className="flex items-center gap-1.5">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="text-neutral-400">Daily Safe-to-Spend:</span>
+            </div>
+            <span className="font-bold font-mono text-emerald-400">
+              ${data.safe_to_spend.dailySafeToSpend.toFixed(2)}/day
+            </span>
+          </div>
+        ) : null}
+
+        <button
+          type="button"
+          onClick={() => setActiveScreen('budget')}
+          className={`w-full py-1.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+            isDark
+              ? 'bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700'
+              : 'bg-neutral-100 hover:bg-neutral-200 text-neutral-800 border border-neutral-300'
+          }`}
+        >
+          <Layers className="w-3.5 h-3.5 text-violet-400" />
+          <span>Open 50/30/20 Targets & Ledger &rarr;</span>
+        </button>
+      </div>
+    );
+  }
+
+  // 3. Upcoming Bills & Subscriptions Card
+  if (data.upcoming_bills && data.upcoming_bills.length > 0) {
+    const totalDue = data.upcoming_bills.reduce((s, b) => s + (Number(b.amount) || 0), 0);
+    return (
+      <div
+        className={`mt-3 p-3.5 rounded-2xl border text-left shadow-xs transition-all ${
+          isDark
+            ? 'bg-neutral-900/60 border-neutral-800 text-neutral-100'
+            : 'bg-white border-neutral-200 text-neutral-900'
+        }`}
+      >
+        <div className="flex items-center justify-between gap-2 mb-2.5">
+          <div className="flex items-center gap-1.5">
+            <Calendar className="w-4 h-4 text-amber-400" />
+            <span className="text-[10px] font-black uppercase tracking-wider text-neutral-400">
+              Upcoming Bills & Subscriptions
+            </span>
+          </div>
+          <span
+            className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide border ${
+              isDark ? 'bg-amber-950/40 text-amber-400 border-amber-500/30' : 'bg-amber-100 text-amber-800 border-amber-300'
+            }`}
+          >
+            {data.upcoming_bills.length} Due Soon
+          </span>
+        </div>
+
+        <div className="space-y-1.5 mb-2.5">
+          {data.upcoming_bills.map((bill, idx) => (
+            <div
+              key={`${bill.bill_name}-${idx}`}
+              className={`p-2 rounded-xl border flex items-center justify-between text-xs ${
+                isDark ? 'bg-neutral-950/50 border-neutral-800' : 'bg-neutral-50 border-neutral-200'
+              }`}
+            >
+              <div>
+                <div className="font-bold">{bill.bill_name}</div>
+                <div className="text-[10px] text-neutral-400">Due {bill.due_date}</div>
+              </div>
+              <div className="font-mono font-bold text-amber-400">
+                ${bill.amount.toFixed(2)}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex items-center justify-between text-xs px-1 mb-2.5">
+          <span className="text-neutral-400">Total Upcoming Bills:</span>
+          <span className="font-bold font-mono text-rose-400">${totalDue.toFixed(2)}</span>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setActiveScreen('bills')}
+          className={`w-full py-1.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+            isDark
+              ? 'bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700'
+              : 'bg-neutral-100 hover:bg-neutral-200 text-neutral-800 border border-neutral-300'
+          }`}
+        >
+          <Calendar className="w-3.5 h-3.5 text-amber-400" />
+          <span>Manage & Schedule Bills &rarr;</span>
+        </button>
+      </div>
+    );
+  }
+
+  // 4. Portfolio Health & Investment Card
+  if (data.portfolio_health) {
+    const isHealthy = data.portfolio_health.toLowerCase().includes('healthy') || data.portfolio_health.toLowerCase().includes('good');
+    return (
+      <div
+        className={`mt-3 p-3.5 rounded-2xl border text-left shadow-xs transition-all ${
+          isDark
+            ? 'bg-neutral-900/60 border-neutral-800 text-neutral-100'
+            : 'bg-white border-neutral-200 text-neutral-900'
+        }`}
+      >
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <div className="flex items-center gap-1.5">
+            <TrendingUp className="w-4 h-4 text-violet-400" />
+            <span className="text-[10px] font-black uppercase tracking-wider text-neutral-400">
+              Portfolio Health
+            </span>
+          </div>
+          <span
+            className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide border ${
+              isHealthy
+                ? isDark ? 'bg-emerald-950/40 text-emerald-400 border-emerald-500/30' : 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                : isDark ? 'bg-amber-950/40 text-amber-400 border-amber-500/30' : 'bg-amber-100 text-amber-800 border-amber-300'
+            }`}
+          >
+            {data.portfolio_health}
+          </span>
+        </div>
+
+        {typeof data.total_balance === 'number' && (
+          <div className="flex items-baseline gap-2 mb-2.5">
+            <span className="text-2xl font-black font-mono tracking-tight tabular-nums">
+              ${data.total_balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+            </span>
+            <span className="text-xs text-neutral-400">Combined Assets</span>
+          </div>
+        )}
+
+        <button
+          type="button"
+          onClick={() => setActiveScreen('cards')}
+          className={`w-full py-1.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+            isDark
+              ? 'bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700'
+              : 'bg-neutral-100 hover:bg-neutral-200 text-neutral-800 border border-neutral-300'
+          }`}
+        >
+          <CreditCard className="w-3.5 h-3.5 text-violet-400" />
+          <span>View Cards & Debt Strategy &rarr;</span>
+        </button>
+      </div>
+    );
+  }
+
+  // 5. Standalone Safe-to-Spend Card
+  if (data.safe_to_spend) {
+    const sts = data.safe_to_spend;
+    const isGood = sts.dailySafeToSpend > 0;
+    return (
+      <div
+        className={`mt-3 p-3.5 rounded-2xl border text-left shadow-xs transition-all ${
+          isDark
+            ? 'bg-neutral-900/60 border-neutral-800 text-neutral-100'
+            : 'bg-white border-neutral-200 text-neutral-900'
+        }`}
+      >
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <div className="flex items-center gap-1.5">
+            <ShieldCheck className="w-4 h-4 text-emerald-400" />
+            <span className="text-[10px] font-black uppercase tracking-wider text-neutral-400">
+              Safe-to-Spend Snapshot
+            </span>
+          </div>
+          <span
+            className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide border ${
+              isGood
+                ? isDark ? 'bg-emerald-950/40 text-emerald-400 border-emerald-500/30' : 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                : isDark ? 'bg-rose-950/40 text-rose-400 border-rose-500/30' : 'bg-rose-100 text-rose-800 border-rose-300'
+            }`}
+          >
+            {sts.statusLabel || (isGood ? 'Guilt-Free' : 'Deficit')}
+          </span>
+        </div>
+
+        <div className="flex items-baseline gap-2 mb-2.5">
+          <span className={`text-2xl font-black font-mono tracking-tight tabular-nums ${isGood ? 'text-emerald-400' : 'text-rose-400'}`}>
+            ${sts.dailySafeToSpend.toFixed(2)}
+          </span>
+          <span className="text-xs text-neutral-400">/ day ({sts.daysLeft} days remaining)</span>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setActiveScreen('budget')}
+          className={`w-full py-1.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+            isDark
+              ? 'bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700'
+              : 'bg-neutral-100 hover:bg-neutral-200 text-neutral-800 border border-neutral-300'
+          }`}
+        >
+          <BarChart2 className="w-3.5 h-3.5 text-violet-400" />
+          <span>Audit Daily Allowance &rarr;</span>
+        </button>
+      </div>
+    );
+  }
+
+  return null;
+}
 
 export default function App() {
   const [storageReady, setStorageReady] = useState(false);
@@ -719,36 +1113,64 @@ export default function App() {
     // Conversational Expense Logging Check (e.g. "Spent $14 on lunch at Subway")
     const localExpense = parseExpenseText(userText);
 
-    // Try posting to server's 4th route (/api/log_expense) first
+    // Try posting to server's orchestrator route (/api/chat) first
     try {
-      const serverRes = await axios.post('/api/log_expense', {
+      const serverRes = await axios.post('/api/chat', {
         message: userText,
         userContext: getUserContext()
-      }, { signal: abortController.signal, timeout: 6000 });
+      }, { signal: abortController.signal, timeout: 8000 });
 
-      if (serverRes.data?.logged_expense || serverRes.data?.transaction) {
-        const exp = serverRes.data.logged_expense || serverRes.data.transaction;
-        const newTx: TransactionItem = {
-          id: exp.id || `tx-${Date.now()}`,
-          title: exp.merchant || exp.title || 'Expense',
-          amount: Number(exp.amount) || 0,
-          category: exp.category || 'Dining',
-          date: exp.date || 'Today',
-          type: 'expense',
-          source: exp.source || 'AI Log',
-        };
-        setTransactions(prev => [newTx, ...prev]);
-        if (typeof serverRes.data.total_balance === 'number') {
-          setLiquidCash(serverRes.data.total_balance);
-        } else {
-          setLiquidCash(prev => Math.max(0, prev - newTx.amount));
+      if (serverRes.data?.ai_reply) {
+        if (serverRes.data?.logged_expense || serverRes.data?.transaction) {
+          const exp = serverRes.data.logged_expense || serverRes.data.transaction;
+          const newTx: TransactionItem = {
+            id: exp.id || `tx-${Date.now()}`,
+            title: exp.merchant || exp.title || 'Expense',
+            amount: Number(exp.amount) || 0,
+            category: exp.category || 'Dining',
+            date: exp.date || 'Today',
+            type: 'expense',
+            source: exp.source || 'AI Log',
+          };
+          setTransactions(prev => [newTx, ...prev]);
+          if (typeof serverRes.data.total_balance === 'number') {
+            setLiquidCash(serverRes.data.total_balance);
+          } else {
+            setLiquidCash(prev => Math.max(0, prev - newTx.amount));
+          }
+          showToast(`Auto-logged $${newTx.amount.toFixed(2)} at ${newTx.title}!`);
         }
-        showToast(`Auto-logged $${newTx.amount.toFixed(2)} at ${newTx.title} under ${newTx.category}!`);
+
+        const structuredData: ChatMessageData = {
+          intent: serverRes.data.intent,
+          total_balance: serverRes.data.total_balance,
+          budget_status: serverRes.data.budget_status,
+          category_breakdown: serverRes.data.category_breakdown,
+          upcoming_bills: serverRes.data.upcoming_bills,
+          portfolio_health: serverRes.data.portfolio_health,
+          logged_expense: serverRes.data.logged_expense || (serverRes.data.transaction ? {
+            amount: Number(serverRes.data.transaction.amount) || 0,
+            merchant: serverRes.data.transaction.merchant || serverRes.data.transaction.title || 'Expense',
+            category: serverRes.data.transaction.category || 'General',
+            date: serverRes.data.transaction.date || 'Today',
+          } : undefined),
+          safe_to_spend: serverRes.data.safe_to_spend,
+        };
+
+        const hasStructured = Boolean(
+          structuredData.logged_expense ||
+          (structuredData.category_breakdown && structuredData.category_breakdown.length > 0) ||
+          (structuredData.upcoming_bills && structuredData.upcoming_bills.length > 0) ||
+          structuredData.portfolio_health ||
+          structuredData.safe_to_spend
+        );
+
         setMessages(prev => [...prev, {
           id: `ai-${Date.now()}`,
-          text: serverRes.data.ai_reply || `Logged $${newTx.amount.toFixed(2)} at ${newTx.title} under ${newTx.category} automatically. Added to your transactions!`,
+          text: serverRes.data.ai_reply,
           sender: 'ai',
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          data: hasStructured ? structuredData : undefined,
         }]);
         setIsLoadingChat(false);
         chatAbortControllerRef.current = null;
@@ -775,7 +1197,17 @@ export default function App() {
         id: `ai-${Date.now()}`,
         text: `Logged $${newTx.amount.toFixed(2)} at ${newTx.title} under ${newTx.category} automatically. Added to your transactions!`,
         sender: 'ai',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        data: {
+          intent: 'log_expense',
+          logged_expense: {
+            amount: newTx.amount,
+            merchant: newTx.title,
+            category: newTx.category,
+            date: newTx.date,
+          },
+          total_balance: Math.max(0, liquidCash - newTx.amount),
+        },
       }]);
       setIsLoadingChat(false);
       chatAbortControllerRef.current = null;
@@ -2867,6 +3299,13 @@ User Message: "${userText}"`;
                     </button>
 
                     <div className="whitespace-pre-line">{m.text}</div>
+                    {m.data && (
+                      <ChatDataWidgetWeb
+                        data={m.data}
+                        isDark={isDark}
+                        setActiveScreen={setActiveScreen}
+                      />
+                    )}
                   </div>
                 </div>
               ))}
