@@ -2855,8 +2855,8 @@ function FinAgentApp() {
         </Pressable>
       </View>
 
-      <View style={[styles.rowBetween, { marginBottom: 14 }]}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+      <View style={[styles.rowBetween, { marginBottom: 16 }]}>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           {[
             { step: 1 as const, label: 'Identity' },
             { step: 2 as const, label: 'Cash Flow' },
@@ -2865,38 +2865,20 @@ function FinAgentApp() {
             const active = onboardStep === s.step;
             const completed = onboardStep > s.step;
             return (
-              <Pressable
+              <View
                 key={s.step}
-                onPress={() => {
-                  if (completed) setOnboardStep(s.step);
+                style={{
+                  backgroundColor: active ? palette.accent : completed ? palette.green : palette.elevated,
+                  marginRight: 6,
+                  paddingHorizontal: 10,
+                  paddingVertical: 5,
+                  borderRadius: 14,
                 }}
-                disabled={!completed}
-                style={[
-                  styles.onboardStepChip,
-                  {
-                    backgroundColor: active
-                      ? palette.accent
-                      : completed
-                        ? (isDark ? '#064e3b50' : '#d1fae5')
-                        : palette.elevated,
-                    borderColor: active
-                      ? palette.accent
-                      : completed
-                        ? palette.green
-                        : palette.border,
-                  },
-                ]}
               >
-                <Text
-                  style={{
-                    color: active ? '#ffffff' : completed ? palette.green : palette.muted,
-                    fontSize: 11,
-                    fontWeight: active || completed ? '700' : '600',
-                  }}
-                >
+                <Text style={{ color: active || completed ? '#ffffff' : palette.muted, fontSize: 11, fontWeight: '700' }}>
                   {completed ? '✓ ' : ''}{s.step}. {s.label}
                 </Text>
-              </Pressable>
+              </View>
             );
           })}
         </View>
@@ -2904,33 +2886,23 @@ function FinAgentApp() {
       </View>
 
       {onboardStep === 1 ? (
-        <Panel palette={palette} style={styles.onboardSimpleCard}>
-          <View style={{ gap: 4, marginBottom: 4 }}>
-            <Text style={[styles.eyebrow, { color: palette.accent }]}>WELCOME TO FINAGENT</Text>
-            <Text style={[styles.pageTitle, { color: palette.text, fontSize: 22 }]}>
-              Let's customize your advisor
-            </Text>
-            <Text style={[styles.caption, { color: palette.muted, lineHeight: 18 }]}>
-              Your private personal financial strategist. We start fresh with zero preset accounts or hardcoded data.
-            </Text>
-          </View>
-
-          <View style={{ marginTop: 8 }}>
-            <Field
-              label="What should FinAgent call you?"
-              value={onboardName}
-              onChangeText={setOnboardName}
-              palette={palette}
-              placeholder="Enter your name"
-              autoCapitalize="words"
-            />
-          </View>
-
+        <Panel palette={palette}>
+          <SectionTitle
+            title="Welcome to FinAgent"
+            subtitle="Your private AI personal financial strategist. We start fresh with zero preset accounts or hardcoded data."
+            palette={palette}
+          />
+          <Field
+            label="What should FinAgent call you?"
+            value={onboardName}
+            onChangeText={setOnboardName}
+            palette={palette}
+            placeholder="Enter your name"
+          />
           <View style={styles.topGap}>
             <AppButton
               label="Continue to Baseline"
               icon="arrow-forward-outline"
-              disabled={!onboardName.trim()}
               onPress={() => setOnboardStep(2)}
               palette={palette}
             />
@@ -2939,17 +2911,12 @@ function FinAgentApp() {
       ) : null}
 
       {onboardStep === 2 ? (
-        <Panel palette={palette} style={styles.onboardSimpleCard}>
-          <View style={{ gap: 4, marginBottom: 4 }}>
-            <Text style={[styles.eyebrow, { color: palette.accent }]}>CASH FLOW BASELINE</Text>
-            <Text style={[styles.pageTitle, { color: palette.text, fontSize: 22 }]}>
-              Establish your baseline
-            </Text>
-            <Text style={[styles.caption, { color: palette.muted, lineHeight: 18 }]}>
-              FinAgent calculates your real-time net worth and debt payoff timelines from your take-home income and liquid cash.
-            </Text>
-          </View>
-
+        <Panel palette={palette}>
+          <SectionTitle
+            title="Establish your baseline"
+            subtitle="FinAgent calculates your real-time net worth and debt payoff timelines from your take-home income and liquid cash."
+            palette={palette}
+          />
           <Field
             label="Monthly take-home income ($)"
             value={onboardIncome}
@@ -2958,7 +2925,6 @@ function FinAgentApp() {
             placeholder="0.00"
             keyboardType="decimal-pad"
           />
-
           <Field
             label="Liquid cash & checking reserve ($)"
             value={onboardCash}
@@ -2967,7 +2933,6 @@ function FinAgentApp() {
             placeholder="0.00"
             keyboardType="decimal-pad"
           />
-
           <View style={[styles.rowBetween, styles.topGap]}>
             <AppButton
               label="Back"
@@ -2988,17 +2953,12 @@ function FinAgentApp() {
 
       {onboardStep === 3 ? (
         <>
-          <Panel palette={palette} style={styles.onboardSimpleCard}>
-            <View style={{ gap: 4, marginBottom: 4 }}>
-              <Text style={[styles.eyebrow, { color: palette.accent }]}>CONNECTED CARDS</Text>
-              <Text style={[styles.pageTitle, { color: palette.text, fontSize: 22 }]}>
-                Add your credit cards
-              </Text>
-              <Text style={[styles.caption, { color: palette.muted, lineHeight: 18 }]}>
-                Add active cards to monitor APR, balances, and debt payoff strategy. You can also skip this step.
-              </Text>
-            </View>
-
+          <Panel palette={palette}>
+            <SectionTitle
+              title="Add your credit cards"
+              subtitle="Add active cards to monitor APR, balances, and debt payoff strategy. You can also skip this step."
+              palette={palette}
+            />
             <Field
               label="Card name"
               value={onboardCardName}
@@ -3006,7 +2966,6 @@ function FinAgentApp() {
               palette={palette}
               placeholder="e.g. Chase Freedom, Apple Card"
             />
-
             <Text style={[styles.fieldLabel, { color: palette.muted }]}>Network</Text>
             <ChoiceChips
               values={['visa', 'mastercard', 'amex', 'discover'] as const}
@@ -3014,7 +2973,6 @@ function FinAgentApp() {
               onSelect={setOnboardCardNetwork}
               palette={palette}
             />
-
             <View style={styles.formRow}>
               <View style={styles.flex}>
                 <Field
@@ -3037,7 +2995,6 @@ function FinAgentApp() {
                 />
               </View>
             </View>
-
             <View style={styles.formRow}>
               <View style={styles.flex}>
                 <Field
@@ -3061,7 +3018,6 @@ function FinAgentApp() {
                 />
               </View>
             </View>
-
             <View style={styles.topGap}>
               <AppButton
                 label="Add Card"
@@ -3124,12 +3080,9 @@ function FinAgentApp() {
         </>
       ) : null}
 
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 24 }}>
-        <Ionicons name="lock-closed-outline" size={13} color={palette.muted} />
-        <Text style={[styles.caption, { color: palette.muted }]}>
-          FinAgent stores all financial data safely and locally on your device.
-        </Text>
-      </View>
+      <Text style={[styles.caption, styles.centerText, styles.topGap, { color: palette.muted, marginTop: 24 }]}>
+        FinAgent stores all financial data safely and locally on your device.
+      </Text>
     </ScrollView>
   );
 
@@ -4391,18 +4344,6 @@ const styles = StyleSheet.create({
     color: '#34d399',
     fontSize: 10,
     fontWeight: '700',
-  },
-  onboardStepChip: {
-    paddingHorizontal: 11,
-    paddingVertical: 5,
-    borderRadius: 14,
-    borderWidth: 1,
-  },
-  onboardSimpleCard: {
-    borderRadius: 20,
-    borderWidth: 1,
-    padding: 18,
-    gap: 12,
   },
 });
 
