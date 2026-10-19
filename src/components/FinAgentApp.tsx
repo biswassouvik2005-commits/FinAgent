@@ -1,4 +1,6 @@
+import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import axios from 'axios';
 import * as ImagePicker from 'expo-image-picker';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -26,8 +28,6 @@ import {
   type ScrollView as ScrollViewRef,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import axios from 'axios';
 import api from '../lib/api';
 import { resetApiUrlToDefault, resolveDefaultApiUrl, setCustomApiUrl } from '../lib/apiSettings';
 import { NetWorthChart } from './NetWorthChart';
@@ -4071,6 +4071,12 @@ function FinAgentApp() {
 }
 
 const styles = StyleSheet.create({
+  modalHandleArea: {
+  paddingVertical: 16,
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: '100%',
+},
   safeArea: { flex: 1 },
   app: { flex: 1 },
   loadingScreen: { flex: 1, alignItems: 'center', justifyContent: 'center' },
@@ -4274,10 +4280,9 @@ const styles = StyleSheet.create({
   toast: { position: 'absolute', bottom: 76, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 15, paddingHorizontal: 14, paddingVertical: 11, elevation: 8 },
   toastText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   modalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(9, 9, 11, 0.78)' },
-  modalKeyboard: { maxHeight: '92%', width: '100%' },
-  modalSheet: { maxHeight: '92%', borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, paddingTop: 4, paddingHorizontal: 18, paddingBottom: 26, elevation: 24 },
-  modalHandleArea: { width: '100%', alignItems: 'center', justifyContent: 'center', paddingTop: 6, paddingBottom: 14 },
-  modalHandle: { width: 44, height: 5, borderRadius: 3 },
+  modalKeyboard: { maxHeight: '92%' },
+  modalSheet: { maxHeight: '92%', borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, paddingTop: 10, paddingHorizontal: 18, paddingBottom: 26, elevation: 24 },
+  modalHandle: { alignSelf: 'center', width: 38, height: 4, borderRadius: 4, backgroundColor: '#71717a', marginBottom: 16 },
   modalTitle: { fontSize: 20, fontWeight: '900', marginBottom: 14 },
   backButton: { width: 36, height: 36, borderRadius: 12, borderWidth: 1, alignItems: 'center', justifyContent: 'center', marginRight: 8 },
   screenAnimatedContainer: { flex: 1 },
