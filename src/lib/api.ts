@@ -1,8 +1,7 @@
 import axios from 'axios';
 
-const baseURL = process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, '');
-
-const api = axios.create({ baseURL, timeout: 20_000 });
+const envUrl = process.env.EXPO_PUBLIC_API_URL?.trim().replace(/\/+$/, '');
+const api = axios.create({ baseURL: envUrl, timeout: 20_000 });
 
 export function getApiErrorMessage(error: unknown, feature: 'chat' | 'receipt') {
   if (!axios.isAxiosError(error)) {

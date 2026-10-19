@@ -1,11 +1,17 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Animated,
+  Easing,
+  Keyboard,
   KeyboardAvoidingView,
+  LayoutAnimation,
   Modal,
+  PanResponder,
   Platform,
   Pressable,
   ScrollView,
@@ -13,41 +19,92 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  UIManager,
   View,
   type KeyboardTypeOptions,
   type ScrollView as ScrollViewRef,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import api, { getApiErrorMessage } from '../lib/api';
-import {
-  allocateBudget,
-  calculateFinancialSummary,
-  cardPayoffOrder,
-  type Bill as UpcomingBill,
-  type CreditCard as CreditCardItem,
-  type Transaction as TransactionItem,
-} from '../lib/finance';
-import {
-  clearFinancialData,
-  defaultFinancialData,
-  loadFinancialData,
-  saveFinancialData,
-  type FinancialData,
-} from '../lib/storage';
+import axios from 'axios';
+import api from '../lib/api';
+import { resetApiUrlToDefault, resolveDefaultApiUrl, setCustomApiUrl } from '../lib/apiSettings';
+import { NetWorthChart } from './NetWorthChart';
 import { PieChart, type CategoryItem } from './PieChart';
 
-type Screen = 'home' | 'cards' | 'agent' | 'budget' | 'bills' | 'receipts' | 'settings';
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+type Screen = 'home' | 'cards' | 'agent' | 'budget' | 'bills' | 'receipts';
+type CardNetwork = 'visa' | 'mastercard' | 'amex' | 'discover';
 type TransactionType = 'income' | 'expense';
-type ModalType = 'card' | 'transaction' | 'bill' | 'payment' | null;
+type ModalType = 'card' | 'transaction' | 'bill' | 'payment' | 'compose' | 'receipt' | null;
 type IconName = keyof typeof Ionicons.glyphMap;
-type CardNetwork = CreditCardItem['network'];
+
+interface CreditCardItem {
+  id: string;
+  cardName: string;
+  network: CardNetwork;
+  last4: string;
+  balance: number;
+  creditLimit: number;
+  apr: number;
+  dueDate: string;
+  minPayment: number;
+  colorTheme?: string;
+}
+
+interface TransactionItem {
+  id: string;
+  title: string;
+  category: string;
+  date: string;
+  amount: number;
+  type: TransactionType;
+  source: string;
+}
+
+interface UpcomingBill {
+  id: string;
+  bill_name: string;
+  due_date: string;
+  amount: number;
+  paid: boolean;
+  category: string;
+}
+
+export interface ChatMessageData {
+  intent?: 'expense' | 'bills' | 'investments' | 'log_expense' | string;
+  total_balance?: number;
+  budget_status?: string;
+  category_breakdown?: Array<{ category: string; amount: number }>;
+  upcoming_bills?: Array<{ bill_name: string; due_date: string; amount: number }>;
+  portfolio_health?: string;
+  logged_expense?: {
+    amount: number;
+    merchant: string;
+    category: string;
+    date?: string;
+    id?: string | number;
+  };
+  safe_to_spend?: {
+    dailySafeToSpend: number;
+    daysLeft: number;
+    status: string;
+    statusLabel?: string;
+    monthlyBudget?: number;
+    spentSoFar?: number;
+    upcomingBills?: number;
+  };
+}
 
 interface ChatMessage {
   id: string;
   text: string;
   sender: 'ai' | 'user';
   timestamp: string;
+  data?: ChatMessageData;
 }
 
 interface ScannedReceipt {
@@ -57,14 +114,11 @@ interface ScannedReceipt {
   date: string;
 }
 
-interface Confirmation {
-  title: string;
-  message: string;
-  confirmLabel: string;
-  onConfirm: () => void;
-}
+const defaultCards: CreditCardItem[] = [];
+const defaultTransactions: TransactionItem[] = [];
+const defaultBills: UpcomingBill[] = [];
 
-const categories = ['Groceries', 'Dining', 'Housing', 'Utilities', 'Transportation', 'Entertainment', 'Health', 'Income', 'Other'];
+const categories = ['Groceries', 'Dining', 'Housing', 'Utilities', 'Transportation', 'Entertainment', 'Health', 'Income'];
 const categoryColors = ['#60a5fa', '#c084fc', '#fb923c', '#34d399', '#fbbf24', '#f472b6', '#22d3ee', '#a3e635'];
 const cardColors: Record<CardNetwork, string> = {
   visa: '#272b63',
@@ -72,8 +126,30 @@ const cardColors: Record<CardNetwork, string> = {
   amex: '#654b17',
   discover: '#155e55',
 };
+const storageKeys = ['fin_theme', 'fin_onboarded', 'fin_cards', 'fin_transactions', 'fin_bills', 'fin_monthly_income', 'fin_liquid_cash', 'fin_user_name'] as const;
+
 const formatCurrency = (value: number, decimals = 2) =>
   `$${value.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}`;
+
+const parseArray = <T,>(value: string | null, fallback: T[], key: string): T[] => {
+  if (!value) return fallback;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!Array.isArray(parsed)) throw new Error(`Stored value for ${key} is not an array`);
+    return parsed as T[];
+  } catch (error) {
+    console.error(`Failed to parse ${key} from AsyncStorage`, error);
+    return fallback;
+  }
+};
+
+const parseNumber = (value: string | null, fallback: number, key: string) => {
+  if (value === null) return fallback;
+  const parsed = Number(value);
+  if (Number.isFinite(parsed)) return parsed;
+  console.error(`Invalid numeric value for ${key} in AsyncStorage`);
+  return fallback;
+};
 
 interface Palette {
   background: string;
@@ -148,7 +224,12 @@ function AppButton({
       style={({ pressed }) => [
         styles.button,
         compact && styles.buttonCompact,
-        { backgroundColor, borderColor: palette.border, opacity: disabled ? 0.45 : pressed ? 0.78 : 1 },
+        {
+          backgroundColor,
+          borderColor: palette.border,
+          opacity: disabled ? 0.45 : pressed ? 0.8 : 1,
+          transform: [{ scale: pressed && !disabled ? 0.97 : 1 }],
+        },
         variant === 'secondary' && styles.buttonBorder,
       ]}
     >
@@ -195,6 +276,7 @@ function Field({
   placeholder,
   keyboardType = 'default',
   maxLength,
+  autoCapitalize,
 }: {
   label: string;
   value: string;
@@ -203,6 +285,7 @@ function Field({
   placeholder?: string;
   keyboardType?: KeyboardTypeOptions;
   maxLength?: number;
+  autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
 }) {
   return (
     <View style={styles.fieldWrap}>
@@ -214,6 +297,7 @@ function Field({
         placeholderTextColor={palette.muted}
         keyboardType={keyboardType}
         maxLength={maxLength}
+        autoCapitalize={autoCapitalize}
         style={[styles.field, { backgroundColor: palette.input, borderColor: palette.border, color: palette.text }]}
       />
     </View>
@@ -249,17 +333,7 @@ function ChoiceChips<T extends string>({
   );
 }
 
-function TransactionRow({
-  item,
-  palette,
-  onEdit,
-  onRemove,
-}: {
-  item: TransactionItem;
-  palette: Palette;
-  onEdit?: () => void;
-  onRemove?: () => void;
-}) {
+function TransactionRow({ item, palette }: { item: TransactionItem; palette: Palette }) {
   const income = item.type === 'income';
   return (
     <View style={[styles.transactionRow, { borderBottomColor: palette.border }]}>
@@ -273,30 +347,500 @@ function TransactionRow({
       <Text style={[styles.transactionAmount, { color: income ? palette.green : palette.text }]}>
         {income ? '+' : '-'}{formatCurrency(item.amount)}
       </Text>
-      {onEdit ? <Pressable accessibilityLabel={`Edit ${item.title}`} onPress={onEdit} hitSlop={8}><Ionicons name="create-outline" size={18} color={palette.accent} /></Pressable> : null}
-      {onRemove ? <Pressable accessibilityLabel={`Delete ${item.title}`} onPress={onRemove} hitSlop={8}><Ionicons name="trash-outline" size={18} color={palette.red} /></Pressable> : null}
     </View>
   );
 }
 
+function ChatDataWidget({
+  data,
+  palette,
+  isDark,
+  navigateToScreen,
+}: {
+  data: ChatMessageData;
+  palette: Palette;
+  isDark: boolean;
+  navigateToScreen: (screen: Screen) => void;
+}) {
+  if (!data) return null;
+
+  // 1. Auto-Logged Expense Card
+  if (data.logged_expense) {
+    const exp = data.logged_expense;
+    return (
+      <View style={[styles.chatWidgetCard, { backgroundColor: isDark ? '#064e3b25' : '#ecfdf5', borderColor: isDark ? '#05966950' : '#a7f3d0' }]}>
+        <View style={styles.chatWidgetHeader}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Ionicons name="checkmark-circle" size={17} color="#10b981" />
+            <Text style={[styles.chatWidgetHeaderTitle, { color: isDark ? '#34d399' : '#047857' }]}>
+              TRANSACTION AUTO-LOGGED
+            </Text>
+          </View>
+          <View style={[styles.chatWidgetStatusBadge, { backgroundColor: isDark ? '#064e3b60' : '#d1fae5', borderColor: '#10b981' }]}>
+            <Text style={[styles.chatWidgetStatusBadgeText, { color: isDark ? '#6ee7b7' : '#065f46' }]}>Live Saved</Text>
+          </View>
+        </View>
+
+        <View style={styles.chatWidgetHeroRow}>
+          <Text style={[styles.chatWidgetHeroAmount, { color: palette.red }]}>
+            -{formatCurrency(exp.amount)}
+          </Text>
+          <Text style={[styles.caption, { color: palette.muted }]}>
+            Deducted from Checking
+          </Text>
+        </View>
+
+        <View style={styles.chatWidgetDetailsRow}>
+          <View style={[styles.chatWidgetDetailPill, { backgroundColor: palette.elevated, borderColor: palette.border }]}>
+            <Ionicons name="storefront-outline" size={13} color={palette.muted} />
+            <Text numberOfLines={1} style={[styles.caption, { color: palette.text, fontWeight: '700' }]}>{exp.merchant}</Text>
+          </View>
+          <View style={[styles.chatWidgetDetailPill, { backgroundColor: palette.elevated, borderColor: palette.border }]}>
+            <Ionicons name="pricetag-outline" size={13} color={palette.accent} />
+            <Text numberOfLines={1} style={[styles.caption, { color: palette.accent, fontWeight: '700' }]}>{exp.category}</Text>
+          </View>
+          <View style={[styles.chatWidgetDetailPill, { backgroundColor: palette.elevated, borderColor: palette.border }]}>
+            <Ionicons name="calendar-outline" size={13} color={palette.muted} />
+            <Text numberOfLines={1} style={[styles.caption, { color: palette.muted }]}>{exp.date || 'Today'}</Text>
+          </View>
+        </View>
+
+        {typeof data.total_balance === 'number' && (
+          <View style={[styles.chatWidgetBalanceRow, { borderTopColor: isDark ? '#05966940' : '#a7f3d0' }]}>
+            <Text style={[styles.caption, { color: palette.muted }]}>New Checking Reserve:</Text>
+            <Text style={[styles.bodyStrong, { color: palette.green }]}>{formatCurrency(data.total_balance)}</Text>
+          </View>
+        )}
+
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => navigateToScreen('budget')}
+          style={({ pressed }) => [
+            styles.chatWidgetActionBtn,
+            { backgroundColor: isDark ? '#064e3b60' : '#d1fae5', opacity: pressed ? 0.75 : 1 },
+          ]}
+        >
+          <Ionicons name="receipt-outline" size={14} color={isDark ? '#6ee7b7' : '#047857'} />
+          <Text style={[styles.chatWidgetActionBtnText, { color: isDark ? '#6ee7b7' : '#047857' }]}>
+            View in Ledger & Activity
+          </Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  // 2. Budget & Category Breakdown Card
+  if (data.category_breakdown && data.category_breakdown.length > 0) {
+    const totalSpentInBreakdown = data.category_breakdown.reduce((s, c) => s + (Number(c.amount) || 0), 0);
+    const statusColor = data.budget_status === 'Over Budget' ? palette.red : (data.budget_status === 'Nearing Limit' ? '#f59e0b' : palette.green);
+
+    return (
+      <View style={[styles.chatWidgetCard, { backgroundColor: isDark ? '#161622' : '#f8fafc', borderColor: palette.border }]}>
+        <View style={styles.chatWidgetHeader}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Ionicons name="pie-chart" size={16} color={palette.accent} />
+            <Text style={[styles.chatWidgetHeaderTitle, { color: palette.text }]}>
+              EXPENSE ANALYST BREAKDOWN
+            </Text>
+          </View>
+          {data.budget_status ? (
+            <View style={[styles.chatWidgetStatusBadge, { backgroundColor: `${statusColor}22`, borderColor: statusColor }]}>
+              <Text style={[styles.chatWidgetStatusBadgeText, { color: statusColor }]}>
+                {data.budget_status}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+
+        <View style={{ gap: 8, marginVertical: 4 }}>
+          {data.category_breakdown.map((item, idx) => {
+            const pct = totalSpentInBreakdown > 0 ? (item.amount / totalSpentInBreakdown) * 100 : 0;
+            const barColor = categoryColors[idx % categoryColors.length];
+            return (
+              <View key={`${item.category}-${idx}`} style={{ gap: 3 }}>
+                <View style={styles.rowBetween}>
+                  <Text style={[styles.caption, { color: palette.text, fontWeight: '700' }]}>{item.category}</Text>
+                  <Text style={[styles.caption, { color: palette.muted, fontWeight: '800' }]}>
+                    {formatCurrency(item.amount)} ({pct.toFixed(0)}%)
+                  </Text>
+                </View>
+                <View style={[styles.progressTrack, { backgroundColor: isDark ? '#272733' : '#e2e8f0', height: 5 }]}>
+                  <View style={[styles.progressFill, { width: `${Math.min(100, pct)}%`, backgroundColor: barColor }]} />
+                </View>
+              </View>
+            );
+          })}
+        </View>
+
+        {data.safe_to_spend ? (
+          <View style={[styles.chatWidgetMiniCallout, { backgroundColor: palette.elevated, borderColor: palette.border }]}>
+            <Ionicons name="shield-checkmark" size={14} color={palette.green} />
+            <Text style={[styles.caption, { color: palette.muted, flex: 1 }]}>
+              Daily Safe-to-Spend: <Text style={{ color: palette.green, fontWeight: '800' }}>{formatCurrency(data.safe_to_spend.dailySafeToSpend)}/day</Text> ({data.safe_to_spend.daysLeft}d left)
+            </Text>
+          </View>
+        ) : null}
+
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => navigateToScreen('budget')}
+          style={({ pressed }) => [
+            styles.chatWidgetActionBtn,
+            { backgroundColor: palette.elevated, borderColor: palette.border, borderWidth: 1, opacity: pressed ? 0.75 : 1 },
+          ]}
+        >
+          <Ionicons name="bar-chart-outline" size={14} color={palette.accent} />
+          <Text style={[styles.chatWidgetActionBtnText, { color: palette.accent }]}>
+            Open 50/30/20 Targets & Ledger
+          </Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  // 3. Upcoming Bills & Subscriptions Card
+  if (data.upcoming_bills && data.upcoming_bills.length > 0) {
+    const totalBills = data.upcoming_bills.reduce((s, b) => s + (Number(b.amount) || 0), 0);
+    return (
+      <View style={[styles.chatWidgetCard, { backgroundColor: isDark ? '#161622' : '#f8fafc', borderColor: palette.border }]}>
+        <View style={styles.chatWidgetHeader}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Ionicons name="calendar" size={16} color="#f59e0b" />
+            <Text style={[styles.chatWidgetHeaderTitle, { color: palette.text }]}>
+              UPCOMING BILLS & SUBSCRIPTIONS
+            </Text>
+          </View>
+          <View style={[styles.chatWidgetStatusBadge, { backgroundColor: '#f59e0b25', borderColor: '#f59e0b' }]}>
+            <Text style={[styles.chatWidgetStatusBadgeText, { color: '#fbbf24' }]}>
+              {data.upcoming_bills.length} Due Soon
+            </Text>
+          </View>
+        </View>
+
+        <View style={{ gap: 6, marginVertical: 4 }}>
+          {data.upcoming_bills.map((bill, idx) => (
+            <View key={`${bill.bill_name}-${idx}`} style={[styles.chatWidgetBillItem, { backgroundColor: palette.elevated, borderColor: palette.border }]}>
+              <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+                <Text numberOfLines={1} style={[styles.bodyStrong, { color: palette.text, fontSize: 13 }]}>{bill.bill_name}</Text>
+                <Text style={[styles.caption, { color: palette.muted, fontSize: 11 }]}>Due {bill.due_date}</Text>
+              </View>
+              <Text style={[styles.bodyStrong, { color: '#f59e0b', fontSize: 14 }]}>
+                {formatCurrency(bill.amount)}
+              </Text>
+            </View>
+          ))}
+        </View>
+
+        <View style={styles.rowBetween}>
+          <Text style={[styles.caption, { color: palette.muted }]}>Total Upcoming Due:</Text>
+          <Text style={[styles.bodyStrong, { color: palette.red, fontSize: 14 }]}>{formatCurrency(totalBills)}</Text>
+        </View>
+
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => navigateToScreen('bills')}
+          style={({ pressed }) => [
+            styles.chatWidgetActionBtn,
+            { backgroundColor: palette.elevated, borderColor: palette.border, borderWidth: 1, opacity: pressed ? 0.75 : 1 },
+          ]}
+        >
+          <Ionicons name="calendar-outline" size={14} color="#f59e0b" />
+          <Text style={[styles.chatWidgetActionBtnText, { color: '#f59e0b' }]}>
+            Manage & Schedule Bills
+          </Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  // 4. Portfolio Health & Investment Card
+  if (data.portfolio_health) {
+    const isHealthy = data.portfolio_health.toLowerCase().includes('healthy') || data.portfolio_health.toLowerCase().includes('good');
+    return (
+      <View style={[styles.chatWidgetCard, { backgroundColor: isDark ? '#161622' : '#f8fafc', borderColor: palette.border }]}>
+        <View style={styles.chatWidgetHeader}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Ionicons name="trending-up" size={16} color={palette.accent} />
+            <Text style={[styles.chatWidgetHeaderTitle, { color: palette.text }]}>
+              PORTFOLIO HEALTH
+            </Text>
+          </View>
+          <View style={[styles.chatWidgetStatusBadge, { backgroundColor: isHealthy ? '#10b98125' : '#f59e0b25', borderColor: isHealthy ? palette.green : '#f59e0b' }]}>
+            <Text style={[styles.chatWidgetStatusBadgeText, { color: isHealthy ? palette.green : '#fbbf24' }]}>
+              {data.portfolio_health}
+            </Text>
+          </View>
+        </View>
+
+        {typeof data.total_balance === 'number' && (
+          <View style={styles.chatWidgetHeroRow}>
+            <Text style={[styles.chatWidgetHeroAmount, { color: palette.text }]}>
+              {formatCurrency(data.total_balance)}
+            </Text>
+            <Text style={[styles.caption, { color: palette.muted }]}>
+              Combined Liquid Assets
+            </Text>
+          </View>
+        )}
+
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => navigateToScreen('cards')}
+          style={({ pressed }) => [
+            styles.chatWidgetActionBtn,
+            { backgroundColor: palette.elevated, borderColor: palette.border, borderWidth: 1, opacity: pressed ? 0.75 : 1 },
+          ]}
+        >
+          <Ionicons name="card-outline" size={14} color={palette.accent} />
+          <Text style={[styles.chatWidgetActionBtnText, { color: palette.accent }]}>
+            View Cards & Strategy
+          </Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  // 5. Standalone Safe-to-Spend Card
+  if (data.safe_to_spend) {
+    const sts = data.safe_to_spend;
+    const isGood = sts.dailySafeToSpend > 0;
+    return (
+      <View style={[styles.chatWidgetCard, { backgroundColor: isDark ? '#161622' : '#f8fafc', borderColor: palette.border }]}>
+        <View style={styles.chatWidgetHeader}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Ionicons name="shield-checkmark" size={16} color={isGood ? palette.green : palette.red} />
+            <Text style={[styles.chatWidgetHeaderTitle, { color: palette.text }]}>
+              SAFE-TO-SPEND SNAPSHOT
+            </Text>
+          </View>
+          <View style={[styles.chatWidgetStatusBadge, { backgroundColor: isGood ? '#10b98125' : '#ef444425', borderColor: isGood ? palette.green : palette.red }]}>
+            <Text style={[styles.chatWidgetStatusBadgeText, { color: isGood ? palette.green : palette.red }]}>
+              {sts.statusLabel || (isGood ? 'Guilt-Free' : 'Deficit')}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.chatWidgetHeroRow}>
+          <Text style={[styles.chatWidgetHeroAmount, { color: isGood ? palette.green : palette.red }]}>
+            {formatCurrency(sts.dailySafeToSpend)}
+          </Text>
+          <Text style={[styles.caption, { color: palette.muted }]}>
+            / day ({sts.daysLeft} days remaining)
+          </Text>
+        </View>
+
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => navigateToScreen('budget')}
+          style={({ pressed }) => [
+            styles.chatWidgetActionBtn,
+            { backgroundColor: palette.elevated, borderColor: palette.border, borderWidth: 1, opacity: pressed ? 0.75 : 1 },
+          ]}
+        >
+          <Ionicons name="analytics-outline" size={14} color={palette.accent} />
+          <Text style={[styles.chatWidgetActionBtnText, { color: palette.accent }]}>
+            Review Monthly Budget
+          </Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  return null;
+}
+
+// Conversational Expense Parser
+function parseExpenseFromNaturalLanguage(text: string) {
+  if (!text || typeof text !== 'string') return null;
+  const clean = text.trim();
+  const hasExpenseIntent =
+    /(spent|paid|bought|cost|charged)\s*(\$|\d)/i.test(clean) ||
+    /\$\s*\d+.*(on|at|for)/i.test(clean) ||
+    /(on lunch|on dinner|for coffee|at subway|at starbucks|at walmart|for groceries)/i.test(clean);
+
+  if (!hasExpenseIntent) return null;
+
+  let amount = 0;
+  const explicitDollar = clean.match(/\$\s*(\d+(?:\.\d{1,2})?)/);
+  const spentPattern = clean.match(/(?:spent|paid|bought|cost|charged)\s*(?:\$)?\s*(\d+(?:\.\d{1,2})?)/i);
+  const genericNumber = clean.match(/(?:^|\s)(\d+(?:\.\d{1,2})?)(?:\s*(?:dollars?|bucks?|usd))?/i);
+  if (explicitDollar) {
+    amount = parseFloat(explicitDollar[1]);
+  } else if (spentPattern) {
+    amount = parseFloat(spentPattern[1]);
+  } else if (genericNumber) {
+    amount = parseFloat(genericNumber[1]);
+  }
+
+  if (!amount || amount <= 0) return null;
+
+  let merchant = '';
+  const atMatch = clean.match(/(?:at|from|to|with)\s+([A-Za-z0-9\s'&]+?)(?:\s+(?:for|on|yesterday|today|with|using|in|\.|$)|$)/i);
+  if (atMatch && atMatch[1]) {
+    merchant = atMatch[1].trim();
+  } else {
+    const commonMerchants = ['subway', 'starbucks', 'walmart', 'target', 'amazon', 'uber', 'lyft', 'shell', 'mcdonalds', 'whole foods', "trader joe's"];
+    const found = commonMerchants.find(m => clean.toLowerCase().includes(m));
+    merchant = found ? (found.charAt(0).toUpperCase() + found.slice(1)) : 'Expense';
+  }
+
+  const lower = clean.toLowerCase();
+  let category = 'General';
+  if (/groceries|grocery|supermarket|apples|milk|produce/i.test(lower)) {
+    category = 'Groceries';
+  } else if (/lunch|dinner|breakfast|meal|food|subway|starbucks|mcdonalds|burger|sandwich|pizza|coffee|cafe|restaurant|dining|snack|drink/i.test(lower)) {
+    category = 'Dining';
+  } else if (/gas|fuel|shell|chevron|exxon|uber|lyft|taxi|subway fare|train|bus|transport|parking|toll/i.test(lower)) {
+    category = 'Transportation';
+  } else if (/movie|cinema|netflix|spotify|game|entertainment|concert|ticket/i.test(lower)) {
+    category = 'Entertainment';
+  } else if (/clothes|shoes|amazon|target|shopping|mall|electronics|store|retail/i.test(lower)) {
+    category = 'Shopping';
+  } else if (/bill|electric|power|water|internet|utility|utilities|wifi|phone|rent/i.test(lower)) {
+    category = 'Utilities';
+  } else if (/gym|pharmacy|medicine|doctor|health|dentist/i.test(lower)) {
+    category = 'Healthcare';
+  }
+
+  return { amount, merchant, category };
+}
+
+interface QuickPromptItem {
+  id: string;
+  label: string;
+  prompt: string;
+  action?: 'receipt' | 'prompt';
+}
+
+const quickPrompts: QuickPromptItem[] = [
+  { id: 'budget', label: '📊 Am I on budget?', prompt: 'Am I on budget?' },
+  { id: 'receipt', label: '🧾 Scan a receipt', prompt: 'Scan a receipt', action: 'receipt' },
+  { id: 'bills', label: '📅 Bills due soon', prompt: 'Which bills are due soon?' },
+  { id: 'cut_spending', label: '💡 Where can I cut spending?', prompt: 'Where can I cut spending?' },
+];
+
 function FinAgentApp() {
   const [storageStatus, setStorageStatus] = useState<'loading' | 'ready' | 'failed'>('loading');
-  const [storageError, setStorageError] = useState('');
-  const [storageWarnings, setStorageWarnings] = useState<string[]>([]);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [screen, setScreen] = useState<Screen>('home');
-  const [displayName, setDisplayName] = useState(defaultFinancialData.profile.displayName);
-  const [monthlyIncome, setMonthlyIncome] = useState(defaultFinancialData.profile.monthlyIncome);
-  const [monthlyExpenses, setMonthlyExpenses] = useState(defaultFinancialData.profile.monthlyExpenses);
-  const [liquidCash, setLiquidCash] = useState(defaultFinancialData.profile.liquidCash);
-  const [cards, setCards] = useState<CreditCardItem[]>(defaultFinancialData.cards);
-  const [transactions, setTransactions] = useState<TransactionItem[]>(defaultFinancialData.transactions);
-  const [bills, setBills] = useState<UpcomingBill[]>(defaultFinancialData.bills);
+  const [screenHistory, setScreenHistory] = useState<Screen[]>(['home']);
+  const screenHistoryRef = useRef(screenHistory);
+  screenHistoryRef.current = screenHistory;
+
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  const screenFadeAnim = useRef(new Animated.Value(1)).current;
+  const screenSlideAnim = useRef(new Animated.Value(0)).current;
+
+  const navigateToScreen = (nextScreen: Screen) => {
+    if (nextScreen === screen) return;
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setScreenHistory(previous => [...previous, nextScreen]);
+    setScreen(nextScreen);
+  };
+
+  const goBack = () => {
+    if (screenHistoryRef.current.length <= 1) return;
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setScreenHistory(previous => {
+      const updated = [...previous];
+      updated.pop();
+      const target = updated[updated.length - 1] ?? 'home';
+      setScreen(target);
+      return updated;
+    });
+  };
+
+  const stopAgent = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setIsLoadingChat(false);
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setMessages(previous => [
+      ...previous,
+      {
+        id: `stop-${Date.now()}`,
+        text: '⏹ FinAgent response stopped.',
+        sender: 'ai',
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      },
+    ]);
+  };
+
+  useEffect(() => {
+    screenFadeAnim.setValue(0.35);
+    screenSlideAnim.setValue(8);
+    Animated.parallel([
+      Animated.timing(screenFadeAnim, {
+        toValue: 1,
+        duration: 160,
+        easing: Easing.bezier(0.25, 0.1, 0.25, 1),
+        useNativeDriver: true,
+      }),
+      Animated.spring(screenSlideAnim, {
+        toValue: 0,
+        friction: 11,
+        tension: 130,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [screen]);
+
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_evt, gestureState) => {
+          return (
+            screenHistoryRef.current.length > 1 &&
+            gestureState.dx > 16 &&
+            Math.abs(gestureState.dx) > Math.abs(gestureState.dy) * 1.2
+          );
+        },
+        onPanResponderRelease: (_evt, gestureState) => {
+          if (gestureState.dx > 40 || (gestureState.dx > 20 && gestureState.vx > 0.25)) {
+            goBack();
+          }
+        },
+      }),
+    []
+  );
+
+  const [isOnboarded, setIsOnboarded] = useState(false);
+  const [onboardStep, setOnboardStep] = useState<1 | 2 | 3>(1);
+  const [onboardName, setOnboardName] = useState('');
+  const [onboardIncome, setOnboardIncome] = useState('');
+  const [onboardCash, setOnboardCash] = useState('');
+  const [onboardCards, setOnboardCards] = useState<CreditCardItem[]>([]);
+  const [onboardCardName, setOnboardCardName] = useState('');
+  const [onboardCardNetwork, setOnboardCardNetwork] = useState<CardNetwork>('visa');
+  const [onboardCardBalance, setOnboardCardBalance] = useState('');
+  const [onboardCardLimit, setOnboardCardLimit] = useState('');
+  const [onboardCardApr, setOnboardCardApr] = useState('');
+  const [onboardCardLast4, setOnboardCardLast4] = useState('');
+  const [onboardCardDueDate, setOnboardCardDueDate] = useState('');
+  const [serverUrl, setServerUrl] = useState(api.defaults.baseURL || resolveDefaultApiUrl());
+
+  const updateServerUrl = (val: string) => setServerUrl(val);
+
+  const saveServerUrl = async () => {
+    try {
+      await setCustomApiUrl(serverUrl);
+      showToast('Backend server address saved');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not save the backend server address.');
+    }
+  };
+
+  const [userName, setUserName] = useState('');
+  const [monthlyIncome, setMonthlyIncome] = useState(0);
+  const [liquidCash, setLiquidCash] = useState(0);
+  const [cards, setCards] = useState<CreditCardItem[]>([]);
+  const [transactions, setTransactions] = useState<TransactionItem[]>([]);
+  const [bills, setBills] = useState<UpcomingBill[]>([]);
   const [modal, setModal] = useState<ModalType>(null);
-  const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const [editingCardId, setEditingCardId] = useState<string | null>(null);
-  const [editingTransactionId, setEditingTransactionId] = useState<string | null>(null);
-  const [editingBillId, setEditingBillId] = useState<string | null>(null);
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
   const [cardName, setCardName] = useState('');
   const [cardNetwork, setCardNetwork] = useState<CardNetwork>('visa');
@@ -313,15 +857,15 @@ function FinAgentApp() {
   const [billName, setBillName] = useState('');
   const [billAmount, setBillAmount] = useState('');
   const [billDueDate, setBillDueDate] = useState('');
-  const [profileNameDraft, setProfileNameDraft] = useState('');
-  const [incomeDraft, setIncomeDraft] = useState('');
-  const [expensesDraft, setExpensesDraft] = useState('');
-  const [cashDraft, setCashDraft] = useState('');
-  const [saveRevision, setSaveRevision] = useState(0);
   const [paymentAmount, setPaymentAmount] = useState('');
-  const [debtStrategy, setDebtStrategy] = useState<'Avalanche' | 'Snowball'>(defaultFinancialData.debtStrategy);
+  const [debtStrategy, setDebtStrategy] = useState<'Avalanche' | 'Snowball'>('Avalanche');
   const [txSearch, setTxSearch] = useState('');
   const [txFilter, setTxFilter] = useState('All');
+  const [receiptMerchant, setReceiptMerchant] = useState('');
+  const [receiptDate, setReceiptDate] = useState('');
+  const [receiptTotal, setReceiptTotal] = useState('');
+  const [receiptCategory, setReceiptCategory] = useState('Dining');
+  const [receiptSource, setReceiptSource] = useState('Primary Checking');
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 'm-init',
@@ -332,59 +876,222 @@ function FinAgentApp() {
   ]);
   const [chatInput, setChatInput] = useState('');
   const [isLoadingChat, setIsLoadingChat] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const speechRecognitionRef = useRef<any>(null);
+
+  const toggleVoice = () => {
+    if (isListening) {
+      if (speechRecognitionRef.current) {
+        try { speechRecognitionRef.current.stop(); } catch {}
+      }
+      setIsListening(false);
+      return;
+    }
+
+    if (Platform.OS === 'web') {
+      const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (!SpeechRec) {
+        showToast('Speech recognition is not supported in this browser. You can type directly.');
+        return;
+      }
+
+      try {
+        const recognition = new SpeechRec();
+        speechRecognitionRef.current = recognition;
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.lang = 'en-US';
+
+        recognition.onstart = () => {
+          setIsListening(true);
+          showToast('Listening... Speak your expense (e.g. "Spent $14 on lunch at Subway")');
+        };
+
+        recognition.onresult = (event: any) => {
+          const transcript = event.results?.[0]?.[0]?.transcript;
+          if (transcript) {
+            setChatInput(transcript);
+            void sendMessage(transcript);
+          }
+        };
+
+        recognition.onerror = (event: any) => {
+          console.warn('Speech recognition error:', event.error);
+          setIsListening(false);
+          if (event.error === 'not-allowed') {
+            showToast('Microphone access denied. Please grant microphone permission.');
+          }
+        };
+
+        recognition.onend = () => {
+          setIsListening(false);
+        };
+
+        recognition.start();
+      } catch (err) {
+        console.warn('Speech recognition start failed:', err);
+        setIsListening(false);
+      }
+    } else {
+      showToast('Dictate or type your expense statement directly.');
+    }
+  };
+
   const [isScanning, setIsScanning] = useState(false);
   const [scannedReceipt, setScannedReceipt] = useState<ScannedReceipt | null>(null);
   const [toast, setToast] = useState('');
-  const [toastIsError, setToastIsError] = useState(false);
+  const toastAnim = useRef(new Animated.Value(0)).current;
   const [apiError, setApiError] = useState('');
+  const insets = useSafeAreaInsets();
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const chatScroll = useRef<ScrollViewRef>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isDark = theme === 'dark';
   const palette = useMemo(() => paletteFor(isDark), [isDark]);
 
-  const financialContext = useMemo(() => ({
-    cards,
-    transactions,
-    bills,
-    monthlyIncome,
-    monthlyExpenses,
-    totalBalance: liquidCash,
-  }), [cards, transactions, bills, monthlyIncome, monthlyExpenses, liquidCash]);
-  const summary = useMemo(() => calculateFinancialSummary(financialContext), [financialContext]);
-  const totalCardDebt = summary.cardDebt;
-  const totalCreditLimit = summary.creditLimit;
-  const utilization = summary.utilizationPercent;
-  const netWorth = summary.netWorth;
-  const budgetTargets = allocateBudget(monthlyIncome);
-  const sortedCards = cardPayoffOrder(cards, debtStrategy.toLowerCase() as 'avalanche' | 'snowball');
+  const totalCardDebt = cards.reduce((sum, card) => sum + (card.balance || 0), 0);
+  const totalCreditLimit = cards.reduce((sum, card) => sum + (card.creditLimit || 0), 0);
+  const utilization = totalCreditLimit > 0 ? (totalCardDebt / totalCreditLimit) * 100 : 0;
+  const netWorth = liquidCash - totalCardDebt;
+  const sortedCards = [...cards].sort((a, b) =>
+    debtStrategy === 'Avalanche' ? b.apr - a.apr : a.balance - b.balance
+  );
+
+  const safeToSpendData = useMemo(() => {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth();
+    const totalDaysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+    const currentDay = now.getDate();
+    const daysLeft = Math.max(1, totalDaysInMonth - currentDay + 1);
+
+    const monthlyBudget = monthlyIncome > 0 ? monthlyIncome : (liquidCash > 0 ? liquidCash : 0);
+
+    const spentSoFar = transactions
+      .filter(t => t.type === 'expense')
+      .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+
+    const upcomingBills = bills
+      .filter(b => !b.paid)
+      .reduce((sum, b) => sum + (Number(b.amount) || 0), 0);
+
+    const remainingPool = monthlyBudget - spentSoFar - upcomingBills;
+    const dailyAmount = monthlyBudget > 0 ? remainingPool / daysLeft : 0;
+    const dailyBaseline = monthlyBudget > 0 ? monthlyBudget / totalDaysInMonth : 50;
+
+    let status: 'green' | 'amber' | 'red';
+    let statusLabel: string;
+    let statusDetail: string;
+
+    if (monthlyBudget === 0) {
+      status = 'amber';
+      statusLabel = 'Budget Not Set';
+      statusDetail = 'Set your monthly income or budget to activate real-time safe-to-spend tracking.';
+    } else if (dailyAmount <= 0) {
+      status = 'red';
+      statusLabel = 'Spending Deficit';
+      statusDetail = `Past spending and unpaid bills exceed your monthly budget by ${formatCurrency(Math.abs(remainingPool))}. Pause non-essential purchases.`;
+    } else if (dailyAmount < Math.min(25, dailyBaseline * 0.35)) {
+      status = 'amber';
+      statusLabel = 'Pacing Tight';
+      statusDetail = `Daily allowance is low. Cap discretionary spending at ${formatCurrency(dailyAmount)} today to ensure remaining bills stay covered.`;
+    } else {
+      status = 'green';
+      statusLabel = 'Guilt-Free Spending';
+      statusDetail = `You have ${formatCurrency(dailyAmount)} guilt-free to spend today while remaining 100% on track for all upcoming bills.`;
+    }
+
+    return {
+      dailyAmount,
+      monthlyBudget,
+      spentSoFar,
+      upcomingBills,
+      remainingPool,
+      daysLeft,
+      currentDay,
+      totalDaysInMonth,
+      status,
+      statusLabel,
+      statusDetail,
+    };
+  }, [monthlyIncome, liquidCash, transactions, bills]);
+
+  const safeToSpendColors = useMemo(() => {
+    if (safeToSpendData.status === 'green') {
+      return {
+        badgeBg: isDark ? '#064e3b50' : '#d1fae5',
+        badgeBorder: isDark ? '#05966960' : '#a7f3d0',
+        badgeText: isDark ? '#34d399' : '#047857',
+        heroAmount: isDark ? '#34d399' : '#059669',
+        dot: '#10b981',
+        cardBorder: isDark ? '#05966940' : '#a7f3d0',
+        bannerBg: isDark ? '#064e3b25' : '#ecfdf5',
+        bannerBorder: isDark ? '#05966940' : '#bbf7d0',
+        bannerText: isDark ? '#a7f3d0' : '#065f46',
+      };
+    }
+    if (safeToSpendData.status === 'amber') {
+      return {
+        badgeBg: isDark ? '#78350f50' : '#fef3c7',
+        badgeBorder: isDark ? '#d9770660' : '#fde68a',
+        badgeText: isDark ? '#fbbf24' : '#b45309',
+        heroAmount: isDark ? '#fbbf24' : '#d97706',
+        dot: '#f59e0b',
+        cardBorder: isDark ? '#d9770640' : '#fde68a',
+        bannerBg: isDark ? '#78350f25' : '#fffbeb',
+        bannerBorder: isDark ? '#d9770640' : '#fed7aa',
+        bannerText: isDark ? '#fde68a' : '#92400e',
+      };
+    }
+    return {
+      badgeBg: isDark ? '#7f1d1d50' : '#fee2e2',
+      badgeBorder: isDark ? '#dc262660' : '#fecaca',
+      badgeText: isDark ? '#f87171' : '#b91c1c',
+      heroAmount: isDark ? '#f87171' : '#dc2626',
+      dot: '#ef4444',
+      cardBorder: isDark ? '#dc262640' : '#fecaca',
+      bannerBg: isDark ? '#7f1d1d25' : '#fef2f2',
+      bannerBorder: isDark ? '#dc262640' : '#fca5a5',
+      bannerText: isDark ? '#fca5a5' : '#991b1b',
+    };
+  }, [safeToSpendData.status, isDark]);
 
   useEffect(() => {
     let mounted = true;
     const load = async () => {
       try {
-        const loaded = await loadFinancialData();
+        const entries = await AsyncStorage.multiGet([...storageKeys]);
         if (!mounted) return;
-        setStorageWarnings(loaded.warnings);
-        setTheme(loaded.data.theme);
-        setDebtStrategy(loaded.data.debtStrategy);
-        setDisplayName(loaded.data.profile.displayName);
-        setMonthlyIncome(loaded.data.profile.monthlyIncome);
-        setMonthlyExpenses(loaded.data.profile.monthlyExpenses);
-        setLiquidCash(loaded.data.profile.liquidCash);
-        setProfileNameDraft(loaded.data.profile.displayName);
-        setIncomeDraft(String(loaded.data.profile.monthlyIncome));
-        setExpensesDraft(String(loaded.data.profile.monthlyExpenses));
-        setCashDraft(String(loaded.data.profile.liquidCash));
-        setCards(loaded.data.cards);
-        setTransactions(loaded.data.transactions);
-        setBills(loaded.data.bills);
+        const stored = Object.fromEntries(entries);
+        if (stored.fin_theme === 'dark' || stored.fin_theme === 'light') setTheme(stored.fin_theme);
+
+        const onboarded = stored.fin_onboarded === 'true';
+        setIsOnboarded(onboarded);
+
+        if (onboarded) {
+          if (stored.fin_user_name) setUserName(stored.fin_user_name);
+          setCards(parseArray(stored.fin_cards ?? null, [], 'fin_cards'));
+          setTransactions(parseArray(stored.fin_transactions ?? null, [], 'fin_transactions'));
+          setBills(parseArray(stored.fin_bills ?? null, [], 'fin_bills'));
+          setMonthlyIncome(parseNumber(stored.fin_monthly_income ?? null, 0, 'fin_monthly_income'));
+          setLiquidCash(parseNumber(stored.fin_liquid_cash ?? null, 0, 'fin_liquid_cash'));
+        } else {
+          setUserName('');
+          setCards([]);
+          setTransactions([]);
+          setBills([]);
+          setMonthlyIncome(0);
+          setLiquidCash(0);
+        }
+        const customUrl = await AsyncStorage.getItem('fin_custom_api_url');
+        if (customUrl) {
+          setServerUrl(customUrl);
+          api.defaults.baseURL = customUrl;
+        }
         setStorageStatus('ready');
       } catch (error) {
         console.error('Failed to load app data from AsyncStorage', error);
-        if (mounted) {
-          setStorageError(error instanceof Error ? error.message : 'Saved information could not be loaded.');
-          setStorageStatus('failed');
-        }
+        if (mounted) setStorageStatus('failed');
       }
     };
     void load();
@@ -395,112 +1102,190 @@ function FinAgentApp() {
   }, []);
 
   useEffect(() => {
-    if (storageStatus !== 'ready') return;
-    const data: FinancialData = {
-      version: 2,
-      theme,
-      debtStrategy,
-      profile: { displayName, monthlyIncome, monthlyExpenses, liquidCash },
-      cards,
-      transactions,
-      bills,
-    };
-    void saveFinancialData(data).then(() => {
-      setStorageError('');
-    }).catch(error => {
+    if (storageStatus !== 'ready' || !isOnboarded) return;
+    void AsyncStorage.multiSet([
+      ['fin_onboarded', 'true'],
+      ['fin_theme', theme],
+      ['fin_user_name', userName],
+      ['fin_cards', JSON.stringify(cards)],
+      ['fin_transactions', JSON.stringify(transactions)],
+      ['fin_bills', JSON.stringify(bills)],
+      ['fin_monthly_income', String(monthlyIncome)],
+      ['fin_liquid_cash', String(liquidCash)],
+    ]).catch(error => {
       console.error('Failed to save app data to AsyncStorage', error);
-      setStorageError('Your changes could not be saved. Check device storage and retry.');
+      setStorageStatus('failed');
     });
-  }, [storageStatus, theme, debtStrategy, displayName, monthlyIncome, monthlyExpenses, liquidCash, cards, transactions, bills, saveRevision]);
+  }, [storageStatus, isOnboarded, theme, userName, cards, transactions, bills, monthlyIncome, liquidCash]);
+
+  const handleAddOnboardCard = () => {
+    if (!onboardCardName.trim()) return;
+
+    const bal = parseFloat(onboardCardBalance) || 0;
+    const lim = parseFloat(onboardCardLimit) || 1000;
+    const apr = parseFloat(onboardCardApr) || 21.99;
+
+    const newCard: CreditCardItem = {
+      id: `c-mob-onboard-${Date.now()}`,
+      cardName: onboardCardName.trim(),
+      network: onboardCardNetwork,
+      last4: onboardCardLast4.trim() || '0000',
+      balance: bal,
+      creditLimit: lim,
+      apr,
+      dueDate: onboardCardDueDate.trim() || 'End of month',
+      minPayment: Math.round(Math.max(15, bal * 0.025)),
+      colorTheme: cardColors[onboardCardNetwork],
+    };
+
+    setOnboardCards(prev => [...prev, newCard]);
+    setOnboardCardName('');
+    setOnboardCardBalance('');
+    setOnboardCardLimit('');
+    setOnboardCardApr('');
+    setOnboardCardLast4('');
+    setOnboardCardDueDate('');
+    showToast(`Added ${newCard.cardName}`);
+  };
+
+  const handleRemoveOnboardCard = (id: string) => {
+    setOnboardCards(prev => prev.filter(c => c.id !== id));
+  };
+
+  const handleCompleteOnboarding = async () => {
+    const finalName = onboardName.trim();
+    if (!finalName) {
+      setOnboardStep(1);
+      return;
+    }
+
+    const finalIncome = parseFloat(onboardIncome) || 0;
+    const finalCash = parseFloat(onboardCash) || 0;
+
+    setUserName(finalName);
+    setMonthlyIncome(finalIncome);
+    setLiquidCash(finalCash);
+    setCards(onboardCards);
+    setIsOnboarded(true);
+
+    try {
+      await AsyncStorage.multiSet([
+        ['fin_onboarded', 'true'],
+        ['fin_user_name', finalName],
+        ['fin_monthly_income', String(finalIncome)],
+        ['fin_liquid_cash', String(finalCash)],
+        ['fin_cards', JSON.stringify(onboardCards)],
+        ['fin_transactions', JSON.stringify(transactions)],
+        ['fin_bills', JSON.stringify(bills)],
+      ]);
+    } catch (err) {
+      console.error('Failed to save onboarding baseline', err);
+    }
+
+    setMessages([
+      {
+        id: `welcome-${Date.now()}`,
+        sender: 'ai',
+        timestamp: 'Just now',
+        text: `Welcome, ${finalName}! Your account is active with ${onboardCards.length} credit card${onboardCards.length === 1 ? '' : 's'} and $${finalIncome.toLocaleString()} monthly income. How can I help optimize your money today?`,
+      },
+    ]);
+
+    showToast(`Welcome to FinAgent, ${finalName}!`);
+  };
+
+  const handleResetData = () => {
+    Alert.alert(
+      'Reset All Data?',
+      'This will clear all entered finances, credit cards, income, and transactions and restart onboarding.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset & Re-onboard',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await AsyncStorage.multiRemove([
+                'fin_onboarded',
+                'fin_user_name',
+                'fin_cards',
+                'fin_transactions',
+                'fin_bills',
+                'fin_monthly_income',
+                'fin_liquid_cash',
+              ]);
+            } catch (err) {
+              console.error('Failed to clear storage:', err);
+            }
+
+            setUserName('');
+            setMonthlyIncome(0);
+            setLiquidCash(0);
+            setCards([]);
+            setTransactions([]);
+            setBills([]);
+            setOnboardName('');
+            setOnboardIncome('');
+            setOnboardCash('');
+            setOnboardCards([]);
+            setOnboardStep(1);
+            setIsOnboarded(false);
+            showToast('All data cleared. Welcome to onboarding!');
+          },
+        },
+      ]
+    );
+  };
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showSub = Keyboard.addListener(showEvent, () => {
+      setIsKeyboardVisible(true);
+      if (screen === 'agent') {
+        setTimeout(() => {
+          chatScroll.current?.scrollToEnd({ animated: true });
+        }, 80);
+      }
+    });
+
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setIsKeyboardVisible(false);
+    });
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, [screen]);
 
   useEffect(() => {
     if (screen === 'agent') {
-      requestAnimationFrame(() => chatScroll.current?.scrollToEnd({ animated: true }));
+      const timer = setTimeout(() => {
+        chatScroll.current?.scrollToEnd({ animated: false });
+      }, 80);
+      return () => clearTimeout(timer);
     }
   }, [messages, isLoadingChat, screen]);
 
-  const showToast = (message: string, isError = false) => {
+  const showToast = (message: string) => {
     setToast(message);
-    setToastIsError(isError);
+    toastAnim.setValue(0);
+    Animated.spring(toastAnim, {
+      toValue: 1,
+      friction: 7,
+      tension: 100,
+      useNativeDriver: true,
+    }).start();
     if (toastTimer.current) clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(''), 2800);
-  };
-
-  const applyLoadedData = (data: FinancialData) => {
-    setTheme(data.theme);
-    setDebtStrategy(data.debtStrategy);
-    setDisplayName(data.profile.displayName);
-    setMonthlyIncome(data.profile.monthlyIncome);
-    setMonthlyExpenses(data.profile.monthlyExpenses);
-    setLiquidCash(data.profile.liquidCash);
-    setCards(data.cards);
-    setTransactions(data.transactions);
-    setBills(data.bills);
-    setProfileNameDraft(data.profile.displayName);
-    setIncomeDraft(String(data.profile.monthlyIncome));
-    setExpensesDraft(String(data.profile.monthlyExpenses));
-    setCashDraft(String(data.profile.liquidCash));
-  };
-
-  const retryStorageLoad = async () => {
-    setStorageStatus('loading');
-    try {
-      const loaded = await loadFinancialData();
-      setStorageWarnings(loaded.warnings);
-      applyLoadedData(loaded.data);
-      setStorageError('');
-      setStorageStatus('ready');
-    } catch (error) {
-      console.error('Failed to reload app data from AsyncStorage', error);
-      setStorageError(error instanceof Error ? error.message : 'Saved information could not be loaded.');
-      setStorageStatus('failed');
-    }
-  };
-
-  const resetStoredData = () => {
-    setConfirmation({
-      title: 'Delete all saved information?',
-      message: 'This permanently removes your profile, cards, transactions, bills, and preferences from this device.',
-      confirmLabel: 'Delete all',
-      onConfirm: () => {
-        void (async () => {
-          try {
-            await clearFinancialData();
-            applyLoadedData(defaultFinancialData);
-            setStorageWarnings([]);
-            setStorageError('');
-            setStorageStatus('ready');
-            showToast('Saved information cleared');
-          } catch (error) {
-            console.error('Failed to clear saved app data', error);
-            setStorageError('Saved information could not be cleared. Try again.');
-          }
-        })();
-      },
-    });
-  };
-
-  const saveProfile = () => {
-    const parsedIncome = Number(incomeDraft);
-    const parsedExpenses = Number(expensesDraft);
-    const parsedCash = Number(cashDraft);
-    if (
-      ![parsedIncome, parsedExpenses, parsedCash].every(Number.isFinite)
-      || parsedIncome < 0
-      || parsedExpenses < 0
-      || parsedCash < -1_000_000_000
-      || parsedIncome > 1_000_000_000
-      || parsedExpenses > 1_000_000_000
-      || parsedCash > 1_000_000_000
-    ) {
-      showToast('Income and monthly expenses must be between zero and 1,000,000,000. Cash must be between -1,000,000,000 and 1,000,000,000.', true);
-      return;
-    }
-    setDisplayName(profileNameDraft.trim());
-    setMonthlyIncome(parsedIncome);
-    setMonthlyExpenses(parsedExpenses);
-    setLiquidCash(parsedCash);
-    showToast('Profile updated');
+    toastTimer.current = setTimeout(() => {
+      Animated.timing(toastAnim, {
+        toValue: 0,
+        duration: 220,
+        useNativeDriver: true,
+      }).start(() => setToast(''));
+    }, 2800);
   };
 
   const openNewCard = () => {
@@ -527,87 +1312,17 @@ function FinAgentApp() {
     setModal('card');
   };
 
-  const updateTransactionImpact = (transaction: TransactionItem, direction: 1 | -1) => {
-    if (transaction.type === 'income') {
-      setLiquidCash(previous => previous + direction * transaction.amount);
-      return;
-    }
-    const card = cards.find(item => item.cardName === transaction.source);
-    if (card) {
-      setCards(previous => previous.map(item => item.id === card.id
-        ? { ...item, balance: Math.max(0, item.balance + direction * transaction.amount) }
-        : item));
-    } else if (transaction.source === 'Primary Checking') {
-      setLiquidCash(previous => previous - direction * transaction.amount);
-    }
-  };
-
-  const openNewTransaction = () => {
-    setEditingTransactionId(null);
-    setTxTitle('');
-    setTxAmount('');
-    setTxType('expense');
-    setTxCategory('Groceries');
-    setTxSource('Primary Checking');
-    setModal('transaction');
-  };
-
-  const openEditTransaction = (transaction: TransactionItem) => {
-    setEditingTransactionId(transaction.id);
-    setTxTitle(transaction.title);
-    setTxAmount(String(transaction.amount));
-    setTxType(transaction.type);
-    setTxCategory(transaction.category);
-    setTxSource(transaction.source);
-    setModal('transaction');
-  };
-
-  const removeTransaction = (transaction: TransactionItem) => {
-    setConfirmation({
-      title: 'Delete transaction?',
-      message: `Delete ${transaction.title} and adjust its account balance?`,
-      confirmLabel: 'Delete',
-      onConfirm: () => {
-        updateTransactionImpact(transaction, -1);
-        setTransactions(previous => previous.filter(item => item.id !== transaction.id));
-        showToast('Transaction deleted');
-      },
-    });
-  };
-
   const saveCard = () => {
     if (!cardName.trim()) {
-      showToast('Enter a name for this card before saving.', true);
+      Alert.alert('Card name required', 'Enter a name for this card before saving.');
       return;
     }
-    const balance = Number(cardBalance);
-    const limit = Number(cardLimit);
-    const apr = Number(cardApr);
-    const last4 = cardLast4.trim() || (editingCardId ? cards.find(card => card.id === editingCardId)?.last4 : '');
-    if (
-      !cardBalance.trim()
-      || !cardLimit.trim()
-      || !cardApr.trim()
-      || !last4
-      || !/^\d{4}$/.test(last4)
-      || ![balance, limit, apr].every(Number.isFinite)
-      || balance < 0
-      || balance > 1_000_000_000
-      || limit <= 0
-      || limit > 1_000_000_000
-      || apr < 0
-      || apr > 100
-    ) {
-      showToast('Enter the last four digits, a balance up to 1,000,000,000, a credit limit between 0 and 1,000,000,000, and an APR from 0 to 100.', true);
-      return;
-    }
-    if (cards.some(card => card.id !== editingCardId && card.cardName.toLowerCase() === cardName.trim().toLowerCase())) {
-      showToast('Choose a unique card name so transactions can be assigned to the right card.', true);
-      return;
-    }
+    const balance = Number.parseFloat(cardBalance) || 0;
+    const limit = Number.parseFloat(cardLimit) || 0;
+    const apr = Number.parseFloat(cardApr) || 0;
     if (editingCardId) {
       setCards(previous => previous.map(card => card.id === editingCardId
-        ? { ...card, cardName: cardName.trim(), network: cardNetwork, last4, balance, creditLimit: limit, apr, dueDate: cardDueDate.trim(), minPayment: balance === 0 ? 0 : Math.min(balance, Math.max(25, balance * 0.025)) }
+        ? { ...card, cardName: cardName.trim(), network: cardNetwork, last4: cardLast4.trim() || card.last4, balance, creditLimit: limit, apr, dueDate: cardDueDate.trim() || card.dueDate }
         : card));
       showToast('Card updated');
     } else {
@@ -615,12 +1330,12 @@ function FinAgentApp() {
         id: `c-${Date.now()}`,
         cardName: cardName.trim(),
         network: cardNetwork,
-        last4,
+        last4: cardLast4.trim() || '0000',
         balance,
         creditLimit: limit,
         apr,
-        dueDate: cardDueDate.trim(),
-        minPayment: balance === 0 ? 0 : Math.min(balance, Math.max(25, balance * 0.025)),
+        dueDate: cardDueDate.trim() || 'End of month',
+        minPayment: Math.round(Math.max(15, balance * 0.025)),
       }]);
       showToast(`Added ${cardName.trim()}`);
     }
@@ -630,158 +1345,236 @@ function FinAgentApp() {
   const saveTransaction = () => {
     const title = txTitle.trim();
     const amount = Number.parseFloat(txAmount);
-    if (!title || !Number.isFinite(amount) || amount <= 0 || amount > 1_000_000_000) {
-      showToast('Enter a payee and an amount greater than zero and no greater than 1,000,000,000.', true);
+    if (!title || !Number.isFinite(amount) || amount <= 0) {
+      Alert.alert('Check transaction details', 'Enter a payee and an amount greater than zero.');
       return;
     }
     const transaction: TransactionItem = {
-      id: editingTransactionId ?? `tx-${Date.now()}`,
+      id: `tx-${Date.now()}`,
       title,
       category: txCategory,
-      date: editingTransactionId
-        ? transactions.find(item => item.id === editingTransactionId)?.date ?? 'Today'
-        : 'Today',
+      date: 'Today',
       amount,
       type: txType,
       source: txSource,
     };
-    if (editingTransactionId) {
-      const previousTransaction = transactions.find(item => item.id === editingTransactionId);
-      if (!previousTransaction) {
-        showToast('This transaction could not be found. Close the form and try again.', true);
-        return;
-      }
-      updateTransactionImpact(previousTransaction, -1);
-      updateTransactionImpact(transaction, 1);
-      setTransactions(previous => previous.map(item => item.id === editingTransactionId ? transaction : item));
+    setTransactions(previous => [transaction, ...previous]);
+    if (txType === 'income') {
+      setLiquidCash(previous => previous + amount);
+    } else if (cards.some(card => card.cardName === txSource)) {
+      setCards(previous => previous.map(card => card.cardName === txSource ? { ...card, balance: card.balance + amount } : card));
     } else {
-      setTransactions(previous => [transaction, ...previous]);
-      updateTransactionImpact(transaction, 1);
+      setLiquidCash(previous => Math.max(0, previous - amount));
     }
     setTxTitle('');
     setTxAmount('');
     setModal(null);
-    showToast(editingTransactionId ? 'Transaction updated' : `Logged ${txType}: ${formatCurrency(amount)}`);
-  };
-
-  const openEditBill = (bill: UpcomingBill) => {
-    setEditingBillId(bill.id);
-    setBillName(bill.bill_name);
-    setBillAmount(String(bill.amount));
-    setBillDueDate(bill.due_date);
-    setModal('bill');
-  };
-
-  const openNewBill = () => {
-    setEditingBillId(null);
-    setBillName('');
-    setBillAmount('');
-    setBillDueDate('');
-    setModal('bill');
+    showToast(`Logged ${txType}: ${formatCurrency(amount)}`);
   };
 
   const saveBill = () => {
     const amount = Number.parseFloat(billAmount);
-    if (!billName.trim() || !Number.isFinite(amount) || amount <= 0 || amount > 1_000_000_000) {
-      showToast('Enter a bill name and an amount greater than zero and no greater than 1,000,000,000.', true);
+    if (!billName.trim() || !Number.isFinite(amount) || amount <= 0) {
+      Alert.alert('Check bill details', 'Enter a bill name and an amount greater than zero.');
       return;
     }
-    const bill: UpcomingBill = {
-      id: editingBillId ?? `b-${Date.now()}`,
+    setBills(previous => [...previous, {
+      id: `b-${Date.now()}`,
       bill_name: billName.trim(),
       amount,
       due_date: billDueDate.trim() || 'Date not set',
-      paid: editingBillId ? bills.find(item => item.id === editingBillId)?.paid ?? false : false,
+      paid: false,
       category: 'Recurring',
-    };
-    setBills(previous => editingBillId
-      ? previous.map(item => item.id === editingBillId ? bill : item)
-      : [...previous, bill]);
+    }]);
     setBillName('');
     setBillAmount('');
     setBillDueDate('');
     setModal(null);
-    setEditingBillId(null);
-    showToast(editingBillId ? 'Bill updated' : 'Bill added');
-  };
-
-  const removeBill = (bill: UpcomingBill) => {
-    setConfirmation({
-      title: 'Delete bill?',
-      message: `Remove ${bill.bill_name} from your bill list?`,
-      confirmLabel: 'Delete',
-      onConfirm: () => {
-        setBills(previous => previous.filter(item => item.id !== bill.id));
-        showToast('Bill deleted');
-      },
-    });
+    showToast('Bill added');
   };
 
   const savePayment = () => {
     const amount = Number.parseFloat(paymentAmount);
     const card = cards.find(item => item.id === activeCardId);
-    if (!card || !Number.isFinite(amount) || amount <= 0 || amount > card.balance || amount > liquidCash) {
-      showToast('Enter an amount greater than zero and no greater than the card balance or available cash.', true);
+    if (!card || !Number.isFinite(amount) || amount <= 0) {
+      Alert.alert('Check payment amount', 'Enter an amount greater than zero.');
       return;
     }
     setCards(previous => previous.map(item => item.id === card.id
       ? { ...item, balance: Math.max(0, item.balance - amount) }
       : item));
-    setLiquidCash(previous => previous - amount);
+    setLiquidCash(previous => Math.max(0, previous - amount));
     setModal(null);
     setPaymentAmount('');
     showToast(`Payment applied to ${card.cardName}`);
   };
 
   const removeCard = (card: CreditCardItem) => {
-    setConfirmation({
-      title: 'Remove card?',
-      message: `Remove ${card.cardName} from your wallet?`,
-      confirmLabel: 'Remove',
-      onConfirm: () => {
-        setCards(previous => previous.filter(item => item.id !== card.id));
-        showToast('Card removed');
+    Alert.alert('Remove card?', `Remove ${card.cardName} from your wallet?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: () => {
+          setCards(previous => previous.filter(item => item.id !== card.id));
+          showToast('Card removed');
+        },
       },
-    });
+    ]);
   };
 
   const sendMessage = async (prompt?: string) => {
     const text = (prompt ?? chatInput).trim();
     if (!text || isLoadingChat) return;
     const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setMessages(previous => [...previous, { id: `u-${Date.now()}`, text, sender: 'user', timestamp }]);
     setChatInput('');
     setIsLoadingChat(true);
     setApiError('');
 
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
     try {
-      if (Platform.OS !== 'web' && !api.defaults.baseURL) {
-        throw new Error('Set EXPO_PUBLIC_API_URL to your API server address to use AI and receipt scanning.');
+      if (!api.defaults.baseURL) {
+        api.defaults.baseURL = resolveDefaultApiUrl();
       }
-      const response = await api.post('/api/chat', {
-        message: text,
-        userContext: { cards, totalBalance: liquidCash, monthlyIncome, monthlyExpenses, bills, transactions },
-      });
+      const response = await api.post(
+        '/api/chat',
+        {
+          message: text,
+          userContext: {
+            cards: cards.map(({ id, cardName, network, last4, balance, creditLimit, apr, dueDate, minPayment }) => ({
+              id, cardName, network, last4, balance, creditLimit, apr, dueDate, minPayment,
+            })),
+            totalBalance: liquidCash,
+            monthlyIncome,
+            bills: bills.map(({ id, bill_name, due_date, amount, paid, category }) => ({
+              id, bill_name, due_date, amount, paid, category,
+            })),
+            transactions: transactions.map(({ id, title, category, date, amount, type, source }) => ({
+              id, title, category, date, amount, type, source,
+            })),
+          },
+        },
+        {
+          signal: abortController.signal,
+        }
+      );
       const reply = response.data?.ai_reply;
       if (typeof reply !== 'string' || !reply.trim()) throw new Error('The AI service returned an empty response.');
+
+      if (response.data?.logged_expense || response.data?.transaction) {
+        const exp = response.data.logged_expense || response.data.transaction;
+        const newTx: TransactionItem = {
+          id: exp.id || `tx-${Date.now()}`,
+          title: exp.merchant || exp.title || 'Expense',
+          amount: Number(exp.amount) || 0,
+          category: exp.category || 'General',
+          date: exp.date || 'Today',
+          type: 'expense',
+          source: exp.source || 'AI Log',
+        };
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        setTransactions(previous => [newTx, ...previous]);
+        if (typeof response.data.total_balance === 'number') {
+          setLiquidCash(response.data.total_balance);
+        } else {
+          setLiquidCash(prev => Math.max(0, prev - newTx.amount));
+        }
+        showToast(`Auto-logged $${newTx.amount.toFixed(2)} at ${newTx.title}!`);
+      }
+
+      const structuredData: ChatMessageData = {
+        intent: response.data?.intent,
+        total_balance: response.data?.total_balance,
+        budget_status: response.data?.budget_status,
+        category_breakdown: response.data?.category_breakdown,
+        upcoming_bills: response.data?.upcoming_bills,
+        portfolio_health: response.data?.portfolio_health,
+        logged_expense: response.data?.logged_expense || (response.data?.transaction ? {
+          amount: Number(response.data.transaction.amount) || 0,
+          merchant: response.data.transaction.merchant || response.data.transaction.title || 'Expense',
+          category: response.data.transaction.category || 'General',
+          date: response.data.transaction.date || 'Today',
+        } : undefined),
+        safe_to_spend: response.data?.safe_to_spend,
+      };
+
+      const hasStructuredContent = Boolean(
+        structuredData.logged_expense ||
+        (structuredData.category_breakdown && structuredData.category_breakdown.length > 0) ||
+        (structuredData.upcoming_bills && structuredData.upcoming_bills.length > 0) ||
+        structuredData.portfolio_health ||
+        structuredData.safe_to_spend
+      );
+
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       setMessages(previous => [...previous, {
         id: `ai-${Date.now()}`,
         text: reply,
         sender: 'ai',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        data: hasStructuredContent ? structuredData : undefined,
       }]);
-    } catch (error) {
-      const message = getApiErrorMessage(error, 'chat');
-      console.warn('AI chat request failed:', message);
+    } catch (error: any) {
+      if (abortController.signal.aborted || error?.name === 'CanceledError' || axios.isCancel(error)) {
+        return;
+      }
+      console.error('AI chat request failed', error);
+
+      // Local fallback expense parsing if network fails or server unreachable
+      const localExp = parseExpenseFromNaturalLanguage(text);
+      if (localExp && localExp.amount > 0) {
+        const newTx: TransactionItem = {
+          id: `tx-${Date.now()}`,
+          title: localExp.merchant,
+          amount: localExp.amount,
+          category: localExp.category,
+          date: 'Today',
+          type: 'expense',
+          source: 'AI Log',
+        };
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        setTransactions(previous => [newTx, ...previous]);
+        setLiquidCash(prev => Math.max(0, prev - newTx.amount));
+        showToast(`Auto-logged $${newTx.amount.toFixed(2)} at ${newTx.title}!`);
+        setMessages(previous => [...previous, {
+          id: `ai-${Date.now()}`,
+          text: `Logged $${newTx.amount.toFixed(2)} at ${newTx.title} under ${newTx.category} automatically. Added to your transactions!`,
+          sender: 'ai',
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          data: {
+            intent: 'log_expense',
+            logged_expense: {
+              amount: newTx.amount,
+              merchant: newTx.title,
+              category: newTx.category,
+              date: newTx.date,
+            },
+            total_balance: Math.max(0, liquidCash - newTx.amount),
+          },
+        }]);
+        return;
+      }
+
+      const isNetworkErr = error?.code === 'ERR_NETWORK' || error?.message?.includes('Network Error') || error?.message?.includes('Failed to fetch');
+      const targetBase = api.defaults.baseURL || resolveDefaultApiUrl();
+      const message = isNetworkErr
+        ? `Cannot reach backend at ${targetBase}. Please make sure your server is running ("npm run dev" or "npm start").`
+        : error instanceof Error ? error.message : 'Unable to connect to the AI service.';
       setApiError(message);
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       setMessages(previous => [...previous, {
         id: `ai-${Date.now()}`,
-        text: `I could not reach the AI service. ${message}`,
+        text: `I could not reach the AI service: ${message}`,
         sender: 'ai',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       }]);
     } finally {
       setIsLoadingChat(false);
+      abortControllerRef.current = null;
     }
   };
 
@@ -798,11 +1591,11 @@ function FinAgentApp() {
   const processReceipt = async (fromCamera: boolean) => {
     try {
       setIsScanning(true);
-      setScreen('receipts');
+      navigateToScreen('receipts');
       if (fromCamera) {
         const permission = await ImagePicker.requestCameraPermissionsAsync();
         if (!permission.granted) {
-          showToast('Allow camera access to scan a receipt, or choose a photo from your library.', true);
+          Alert.alert('Camera permission needed', 'Allow camera access to scan a receipt, or choose a photo from your library.');
           return;
         }
       }
@@ -812,8 +1605,8 @@ function FinAgentApp() {
       if (result.canceled) return;
       const asset = result.assets[0];
       if (!asset?.base64) throw new Error('The selected image could not be read. Please select another image.');
-      if (Platform.OS !== 'web' && !api.defaults.baseURL) {
-        throw new Error('Set EXPO_PUBLIC_API_URL to your API server address to use AI and receipt scanning.');
+      if (!api.defaults.baseURL) {
+        api.defaults.baseURL = resolveDefaultApiUrl();
       }
 
       const response = await api.post('/api/receipt', {
@@ -825,58 +1618,163 @@ function FinAgentApp() {
       if (!Number.isFinite(total) || total <= 0 || typeof data?.merchant !== 'string') {
         throw new Error('The receipt could not be read. Try a clearer photo.');
       }
+      const merchant = String(data.merchant).trim();
+      const category = typeof data.category === 'string' && data.category.trim() ? data.category.trim() : 'Dining';
+      const date = typeof data.date === 'string' && data.date.trim() ? data.date.trim() : new Date().toISOString().split('T')[0];
+
       setScannedReceipt({
-        merchant: data.merchant,
+        merchant,
         total,
-        category: typeof data.category === 'string' ? data.category : 'Other',
-        date: typeof data.date === 'string' ? data.date : 'Today',
+        category,
+        date,
       });
-      showToast(`Receipt scanned: ${data.merchant}`);
+
+      // Pre-fill editable fields
+      setReceiptMerchant(merchant);
+      setReceiptTotal(total.toFixed(2));
+      setReceiptCategory(category);
+      setReceiptDate(date);
+      setReceiptSource(cards.length > 0 ? cards[0].cardName : 'Primary Checking');
+
+      // Slide up bottom modal confirmation sheet
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setModal('receipt');
+      showToast(`Receipt scanned: ${merchant}`);
     } catch (error) {
-      const message = getApiErrorMessage(error, 'receipt');
-      console.warn('Receipt scan failed:', message);
-      showToast(message, true);
+      const isNetworkErr = (error as any)?.code === 'ERR_NETWORK' || (error as any)?.message?.includes('Network Error');
+      const targetBase = api.defaults.baseURL || resolveDefaultApiUrl();
+      const message = isNetworkErr
+        ? `Cannot reach backend at ${targetBase}. Please make sure your server is running ("npm run dev" or "npm start").`
+        : error instanceof Error ? error.message : 'Unable to scan this receipt.';
+      console.error('Receipt scan failed', error);
+      Alert.alert('Receipt scan failed', message);
     } finally {
       setIsScanning(false);
     }
   };
 
   const chooseReceiptSource = () => {
-    if (Platform.OS === 'web') {
-      void processReceipt(false);
-      return;
-    }
     Alert.alert('Scan a receipt', 'Choose where to get the receipt image.', [
       { text: 'Take photo', onPress: () => void processReceipt(true) },
       { text: 'Photo library', onPress: () => void processReceipt(false) },
+      {
+        text: 'Demo Receipt ($14 Subway)',
+        onPress: () => {
+          const sample = {
+            merchant: 'Subway',
+            date: new Date().toISOString().split('T')[0],
+            total: 14.0,
+            category: 'Dining',
+          };
+          setScannedReceipt(sample);
+          setReceiptMerchant(sample.merchant);
+          setReceiptTotal(sample.total.toFixed(2));
+          setReceiptCategory(sample.category);
+          setReceiptDate(sample.date);
+          setReceiptSource(cards.length > 0 ? cards[0].cardName : 'Primary Checking');
+          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+          setModal('receipt');
+        },
+      },
       { text: 'Cancel', style: 'cancel' },
     ]);
   };
 
-  const confirmReceipt = (cardName: string) => {
-    if (!scannedReceipt) return;
-    const amount = scannedReceipt.total;
-    const transaction: TransactionItem = {
+  const confirmAndAddReceiptExpense = () => {
+    const rawAmt = receiptTotal.replace(/[^0-9.]/g, '');
+    const amount = parseFloat(rawAmt);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      Alert.alert('Invalid total', 'Please enter a valid expense total greater than 0.');
+      return;
+    }
+
+    const merchant = receiptMerchant.trim() || 'Receipt Expense';
+    const category = receiptCategory.trim() || 'General';
+    const date = receiptDate.trim() || 'Today';
+    const source = receiptSource || (cards.length > 0 ? cards[0].cardName : 'Primary Checking');
+
+    const newTx: TransactionItem = {
       id: `tx-${Date.now()}`,
-      title: scannedReceipt.merchant,
-      category: scannedReceipt.category,
-      date: scannedReceipt.date,
+      title: merchant,
+      category,
+      date,
       amount,
       type: 'expense',
-      source: cardName,
+      source,
     };
-    setTransactions(previous => [transaction, ...previous]);
-    updateTransactionImpact(transaction, 1);
+
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setTransactions(previous => [newTx, ...previous]);
+
+    const targetCard = cards.find(card => card.cardName === source);
+    if (targetCard) {
+      setCards(previous =>
+        previous.map(card =>
+          card.id === targetCard.id ? { ...card, balance: card.balance + amount } : card
+        )
+      );
+    } else {
+      setLiquidCash(previous => Math.max(0, previous - amount));
+    }
+
     setScannedReceipt(null);
-    setScreen('home');
-    showToast(`Receipt added to ${cardName}`);
+    setModal(null);
+    navigateToScreen('home');
+    showToast(`Added $${amount.toFixed(2)} at ${merchant} to expenses!`);
   };
 
   const openTransactionModal = () => {
-    openNewTransaction();
+    setTxType('expense');
+    setTxCategory('Groceries');
+    setTxSource('Primary Checking');
+    setModal('transaction');
   };
 
-  const expenseByCategory: CategoryItem[] = summary.categorySpending;
+  const expenseByCategory: CategoryItem[] = useMemo(() => {
+    const totals = new Map<string, number>();
+    transactions.filter(item => item.type === 'expense').forEach(item => {
+      totals.set(item.category, (totals.get(item.category) ?? 0) + item.amount);
+    });
+    return [...totals.entries()].map(([category, amount]) => ({ category, amount }));
+  }, [transactions]);
+
+  const budgetBreakdown = useMemo(() => {
+    const NEEDS_CATEGORIES = new Set(['housing', 'rent', 'utilities', 'groceries', 'healthcare', 'bills', 'transport', 'transportation', 'insurance']);
+    const SAVINGS_CATEGORIES = new Set(['savings', 'investment', 'debt', 'credit card payment']);
+
+    let needsSpent = 0;
+    let wantsSpent = 0;
+    let savingsSpent = 0;
+
+    transactions
+      .filter(t => t.type === 'expense')
+      .forEach(t => {
+        const cat = (t.category || '').toLowerCase().trim();
+        if (NEEDS_CATEGORIES.has(cat)) {
+          needsSpent += t.amount;
+        } else if (SAVINGS_CATEGORIES.has(cat)) {
+          savingsSpent += t.amount;
+        } else {
+          wantsSpent += t.amount;
+        }
+      });
+
+    const needsTarget = monthlyIncome * 0.5;
+    const wantsTarget = monthlyIncome * 0.3;
+    const savingsTarget = monthlyIncome * 0.2;
+
+    return {
+      needsSpent,
+      wantsSpent,
+      savingsSpent,
+      needsTarget,
+      wantsTarget,
+      savingsTarget,
+      needsPct: needsTarget > 0 ? Math.min(100, (needsSpent / needsTarget) * 100) : 0,
+      wantsPct: wantsTarget > 0 ? Math.min(100, (wantsSpent / wantsTarget) * 100) : 0,
+      savingsPct: savingsTarget > 0 ? Math.min(100, (savingsSpent / savingsTarget) * 100) : 0,
+    };
+  }, [transactions, monthlyIncome]);
 
   const filteredTransactions = transactions.filter(item => {
     const query = txSearch.trim().toLowerCase();
@@ -885,17 +1783,9 @@ function FinAgentApp() {
     return matchesSearch && matchesCategory;
   });
 
-  const renderTransactionList = (list: TransactionItem[], canEdit = false) => (
+  const renderTransactionList = (list: TransactionItem[]) => (
     <View>
-      {list.length ? list.map(item => (
-        <TransactionRow
-          key={item.id}
-          item={item}
-          palette={palette}
-          onEdit={canEdit ? () => openEditTransaction(item) : undefined}
-          onRemove={canEdit ? () => removeTransaction(item) : undefined}
-        />
-      ))
+      {list.length ? list.map(item => <TransactionRow key={item.id} item={item} palette={palette} />)
         : <Text style={[styles.emptyText, { color: palette.muted }]}>No transactions match these filters.</Text>}
     </View>
   );
@@ -948,69 +1838,368 @@ function FinAgentApp() {
     <>
       <View style={styles.welcomeBlock}>
         <Text style={[styles.eyebrow, { color: palette.muted }]}>PERSONAL FINANCE OVERVIEW</Text>
-        <Text style={[styles.pageTitle, { color: palette.text }]}>Welcome back{displayName ? `, ${displayName}` : ''}</Text>
+        <Text style={[styles.pageTitle, { color: palette.text }]}>Welcome{userName ? `, ${userName}` : ''}</Text>
       </View>
-      <Panel palette={palette}>
-        <View style={styles.rowBetween}>
-          <Text style={[styles.eyebrow, { color: palette.muted }]}>TOTAL NET WORTH</Text>
-          <Ionicons name="trending-up" size={20} color={palette.green} />
+
+      {/* Daily Safe-to-Spend Hero Metric Card */}
+      <Panel
+        palette={palette}
+        style={[
+          styles.safeToSpendCard,
+          {
+            borderColor: safeToSpendColors.cardBorder,
+            backgroundColor: isDark ? '#101015' : '#ffffff',
+          },
+        ]}
+      >
+        <View style={styles.safeToSpendHeader}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Ionicons name="shield-checkmark" size={17} color={safeToSpendColors.dot} />
+            <Text style={[styles.eyebrow, { color: palette.muted, marginBottom: 0 }]}>
+              DAILY SAFE-TO-SPEND
+            </Text>
+          </View>
+          <View
+            style={[
+              styles.safeToSpendBadge,
+              {
+                backgroundColor: safeToSpendColors.badgeBg,
+                borderColor: safeToSpendColors.badgeBorder,
+                borderWidth: 1,
+              },
+            ]}
+          >
+            <View style={[styles.safeToSpendDot, { backgroundColor: safeToSpendColors.dot }]} />
+            <Text style={[styles.safeToSpendBadgeText, { color: safeToSpendColors.badgeText }]}>
+              {safeToSpendData.statusLabel}
+            </Text>
+          </View>
         </View>
-        <Text style={[styles.netWorth, { color: palette.text }]}>{formatCurrency(netWorth)}</Text>
-        <View style={styles.metricRow}>
-          <View style={styles.metric}>
-            <Text style={[styles.caption, { color: palette.muted }]}>Liquid cash</Text>
-            <Text style={[styles.metricValue, { color: palette.green }]}>{formatCurrency(liquidCash, 0)}</Text>
+
+        {/* Hero Number */}
+        <View style={styles.safeToSpendHeroRow}>
+          <Text style={[styles.safeToSpendHeroAmount, { color: safeToSpendColors.heroAmount }]}>
+            {safeToSpendData.dailyAmount < 0 ? '-' : ''}
+            {formatCurrency(Math.abs(safeToSpendData.dailyAmount))}
+          </Text>
+          <View style={{ marginBottom: 4 }}>
+            <Text style={[styles.safeToSpendHeroUnit, { color: palette.muted }]}>/ day</Text>
+            <Text style={[styles.caption, { color: palette.muted, fontSize: 11 }]}>
+              {safeToSpendData.daysLeft} days left this month
+            </Text>
           </View>
-          <View style={styles.metric}>
-            <Text style={[styles.caption, { color: palette.muted }]}>Card debt</Text>
-            <Text style={[styles.metricValue, { color: palette.red }]}>{formatCurrency(totalCardDebt, 0)}</Text>
+        </View>
+
+        {/* Status Message */}
+        <View
+          style={[
+            styles.safeToSpendDetailBanner,
+            {
+              backgroundColor: safeToSpendColors.bannerBg,
+              borderColor: safeToSpendColors.bannerBorder,
+            },
+          ]}
+        >
+          <Text style={[styles.safeToSpendDetailText, { color: safeToSpendColors.bannerText }]}>
+            {safeToSpendData.statusDetail}
+          </Text>
+        </View>
+
+        {/* Formula Breakdown Chips */}
+        <View style={styles.safeToSpendBreakdownGrid}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => navigateToScreen('budget')}
+            style={({ pressed }) => [
+              styles.safeToSpendBreakdownChip,
+              {
+                backgroundColor: palette.elevated,
+                borderColor: palette.border,
+                opacity: pressed ? 0.75 : 1,
+              },
+            ]}
+          >
+            <Text style={[styles.safeToSpendBreakdownLabel, { color: palette.muted }]}>Budget</Text>
+            <Text style={[styles.safeToSpendBreakdownValue, { color: palette.text }]}>
+              {formatCurrency(safeToSpendData.monthlyBudget, 0)}
+            </Text>
+          </Pressable>
+
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => navigateToScreen('budget')}
+            style={({ pressed }) => [
+              styles.safeToSpendBreakdownChip,
+              {
+                backgroundColor: palette.elevated,
+                borderColor: palette.border,
+                opacity: pressed ? 0.75 : 1,
+              },
+            ]}
+          >
+            <Text style={[styles.safeToSpendBreakdownLabel, { color: palette.muted }]}>Spent</Text>
+            <Text style={[styles.safeToSpendBreakdownValue, { color: palette.red }]}>
+              -{formatCurrency(safeToSpendData.spentSoFar, 0)}
+            </Text>
+          </Pressable>
+
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => navigateToScreen('bills')}
+            style={({ pressed }) => [
+              styles.safeToSpendBreakdownChip,
+              {
+                backgroundColor: palette.elevated,
+                borderColor: palette.border,
+                opacity: pressed ? 0.75 : 1,
+              },
+            ]}
+          >
+            <Text style={[styles.safeToSpendBreakdownLabel, { color: palette.muted }]}>Bills Due</Text>
+            <Text style={[styles.safeToSpendBreakdownValue, { color: '#f59e0b' }]}>
+              -{formatCurrency(safeToSpendData.upcomingBills, 0)}
+            </Text>
+          </Pressable>
+
+          <View
+            style={[
+              styles.safeToSpendBreakdownChip,
+              {
+                backgroundColor: palette.elevated,
+                borderColor: palette.border,
+              },
+            ]}
+          >
+            <Text style={[styles.safeToSpendBreakdownLabel, { color: palette.muted }]}>Days Left</Text>
+            <Text style={[styles.safeToSpendBreakdownValue, { color: palette.green }]}>
+              {safeToSpendData.daysLeft}d
+            </Text>
           </View>
+        </View>
+
+        {/* Traceable Formula */}
+        <View style={[styles.safeToSpendFormulaRow, { borderTopColor: palette.border }]}>
+          <Text style={[styles.safeToSpendFormulaText, { color: palette.muted }]} numberOfLines={1}>
+            Formula: (${formatCurrency(safeToSpendData.monthlyBudget, 0)} - ${formatCurrency(safeToSpendData.spentSoFar, 0)} - ${formatCurrency(safeToSpendData.upcomingBills, 0)}) ÷ {safeToSpendData.daysLeft}d
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => navigateToScreen('budget')}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={[styles.caption, { color: palette.accent, fontWeight: '700' }]}>
+              Audit &rarr;
+            </Text>
+          </Pressable>
         </View>
       </Panel>
 
-      <View style={styles.quickActions}>
-        <AppButton label="Add transaction" icon="add" onPress={openTransactionModal} palette={palette} />
-        <AppButton label="Add card" icon="card-outline" onPress={openNewCard} palette={palette} variant="secondary" />
-        <AppButton label="Scan receipt" icon="camera-outline" onPress={chooseReceiptSource} palette={palette} variant="secondary" />
+      {/* Hero Net Worth Card */}
+      <Panel palette={palette} style={styles.heroPanel}>
+        <View style={styles.rowBetween}>
+          <Text style={[styles.eyebrow, { color: palette.muted }]}>TOTAL NET WORTH</Text>
+          <Ionicons name="trending-up" size={18} color={palette.green} />
+        </View>
+        <Text style={[styles.netWorth, { color: palette.text }]}>{formatCurrency(netWorth)}</Text>
+        <View style={styles.heroStatRow}>
+          <View style={[styles.statChip, { backgroundColor: palette.elevated, borderColor: palette.border }]}>
+            <Text style={[styles.caption, { color: palette.muted }]}>Cash</Text>
+            <Text style={[styles.statChipValue, { color: palette.green }]}>{formatCurrency(liquidCash, 0)}</Text>
+          </View>
+          <View style={[styles.statChip, { backgroundColor: palette.elevated, borderColor: palette.border }]}>
+            <Text style={[styles.caption, { color: palette.muted }]}>Debt</Text>
+            <Text style={[styles.statChipValue, { color: palette.red }]}>{formatCurrency(totalCardDebt, 0)}</Text>
+          </View>
+        </View>
+        <NetWorthChart currentValue={netWorth} isDark={isDark} />
+      </Panel>
+
+      {/* Modern Quick Action Pills */}
+      <View style={styles.quickActionsRow}>
+        <Pressable
+          accessibilityRole="button"
+          onPress={openTransactionModal}
+          style={({ pressed }) => [
+            styles.quickActionPill,
+            {
+              backgroundColor: palette.accent,
+              transform: [{ scale: pressed ? 0.94 : 1 }],
+            },
+          ]}
+        >
+          <Ionicons name="add" size={16} color="#ffffff" />
+          <Text style={[styles.quickActionText, { color: '#ffffff' }]}>Expense</Text>
+        </Pressable>
+
+        <Pressable
+          accessibilityRole="button"
+          onPress={openNewCard}
+          style={({ pressed }) => [
+            styles.quickActionPill,
+            {
+              backgroundColor: palette.surface,
+              borderColor: palette.border,
+              borderWidth: 1,
+              transform: [{ scale: pressed ? 0.94 : 1 }],
+            },
+          ]}
+        >
+          <Ionicons name="card-outline" size={16} color={palette.accent} />
+          <Text style={[styles.quickActionText, { color: palette.text }]}>Card</Text>
+        </Pressable>
+
+        <Pressable
+          accessibilityRole="button"
+          onPress={chooseReceiptSource}
+          style={({ pressed }) => [
+            styles.quickActionPill,
+            {
+              backgroundColor: palette.surface,
+              borderColor: palette.border,
+              borderWidth: 1,
+              transform: [{ scale: pressed ? 0.94 : 1 }],
+            },
+          ]}
+        >
+          <Ionicons name="camera-outline" size={16} color={palette.green} />
+          <Text style={[styles.quickActionText, { color: palette.text }]}>Receipt</Text>
+        </Pressable>
+
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => navigateToScreen('agent')}
+          style={({ pressed }) => [
+            styles.quickActionPill,
+            {
+              backgroundColor: palette.surface,
+              borderColor: palette.border,
+              borderWidth: 1,
+              transform: [{ scale: pressed ? 0.94 : 1 }],
+            },
+          ]}
+        >
+          <Ionicons name="sparkles-outline" size={16} color={palette.accent} />
+          <Text style={[styles.quickActionText, { color: palette.text }]}>Ask AI</Text>
+        </Pressable>
       </View>
 
+      {/* Cards Section */}
       <View style={styles.section}>
         <View style={styles.rowBetween}>
           <SectionTitle title="Your cards" subtitle={`${cards.length} connected`} palette={palette} />
-          <Pressable onPress={() => setScreen('cards')}><Text style={[styles.link, { color: palette.accent }]}>Manage</Text></Pressable>
+          <Pressable onPress={() => navigateToScreen('cards')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Text style={[styles.link, { color: palette.accent }]}>Manage</Text>
+          </Pressable>
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.cardCarousel}>
           {cards.map(card => renderCard(card))}
-          {!cards.length ? <Text style={[styles.emptyText, { color: palette.muted }]}>Add a card to track balances and payoff progress.</Text> : null}
+          {!cards.length ? (
+            <Pressable
+              onPress={openNewCard}
+              style={[styles.emptyCardPrompt, { backgroundColor: palette.surface, borderColor: palette.border }]}
+            >
+              <Ionicons name="card-outline" size={24} color={palette.accent} />
+              <Text style={[styles.bodyStrong, { color: palette.text, marginTop: 6 }]}>Add your first card</Text>
+              <Text style={[styles.caption, { color: palette.muted, textAlign: 'center', marginTop: 2 }]}>Track limits & payoff progress</Text>
+            </Pressable>
+          ) : null}
         </ScrollView>
       </View>
 
+      {/* 50 / 30 / 20 Budget Section */}
       <Panel palette={palette}>
-        <SectionTitle title="50 / 30 / 20 budget" subtitle={`Based on ${formatCurrency(monthlyIncome, 0)} monthly income`} palette={palette} />
-        {[
-          { label: 'Needs · 50%', percentage: 50, amount: budgetTargets.needs, color: '#60a5fa' },
-          { label: 'Wants · 30%', percentage: 30, amount: budgetTargets.wants, color: '#c084fc' },
-          { label: 'Savings & debt · 20%', percentage: 20, amount: budgetTargets.savingsAndDebt, color: '#34d399' },
-        ].map(item => (
-          <View key={item.label} style={styles.budgetMeter}>
-            <View style={styles.rowBetween}>
-              <Text style={[styles.bodyStrong, { color: palette.text }]}>{item.label}</Text>
-              <Text style={[styles.caption, { color: palette.muted }]}>{formatCurrency(item.amount, 0)}</Text>
-            </View>
-            <View style={[styles.progressTrack, { backgroundColor: palette.elevated }]}>
-              <View style={[styles.progressFill, { width: `${item.percentage}%`, backgroundColor: item.color }]} />
-            </View>
+        <View style={styles.rowBetween}>
+          <SectionTitle
+            title="50 / 30 / 20 budget"
+            subtitle={monthlyIncome > 0 ? `Based on ${formatCurrency(monthlyIncome, 0)} monthly income` : 'Track spending targets & pacing'}
+            palette={palette}
+          />
+          {monthlyIncome > 0 ? (
+            <Pressable onPress={() => navigateToScreen('budget')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Text style={[styles.link, { color: palette.accent }]}>Adjust</Text>
+            </Pressable>
+          ) : null}
+        </View>
+
+        {monthlyIncome === 0 ? (
+          <View style={styles.emptyBudgetContainer}>
+            <Text style={[styles.caption, { color: palette.muted, textAlign: 'center', marginBottom: 10 }]}>
+              Set your monthly take-home income in the Budget tab to activate live Needs, Wants, and Savings tracking.
+            </Text>
+            <AppButton
+              label="Set Monthly Income"
+              icon="pie-chart-outline"
+              onPress={() => navigateToScreen('budget')}
+              palette={palette}
+              compact
+            />
           </View>
-        ))}
-        <AppButton label="Open budget & activity" icon="pie-chart-outline" onPress={() => setScreen('budget')} palette={palette} variant="quiet" compact />
+        ) : (
+          <>
+            {[
+              {
+                label: 'Needs (50%)',
+                spent: budgetBreakdown.needsSpent,
+                target: budgetBreakdown.needsTarget,
+                pct: budgetBreakdown.needsPct,
+                color: '#60a5fa',
+              },
+              {
+                label: 'Wants (30%)',
+                spent: budgetBreakdown.wantsSpent,
+                target: budgetBreakdown.wantsTarget,
+                pct: budgetBreakdown.wantsPct,
+                color: '#c084fc',
+              },
+              {
+                label: 'Savings & debt (20%)',
+                spent: budgetBreakdown.savingsSpent,
+                target: budgetBreakdown.savingsTarget,
+                pct: budgetBreakdown.savingsPct,
+                color: '#34d399',
+              },
+            ].map(item => (
+              <View key={item.label} style={styles.budgetMeter}>
+                <View style={styles.rowBetween}>
+                  <Text style={[styles.bodyStrong, { color: palette.text }]}>{item.label}</Text>
+                  <Text style={[styles.caption, { color: palette.muted }]}>
+                    {formatCurrency(item.spent, 0)} / {formatCurrency(item.target, 0)} ({item.pct.toFixed(0)}%)
+                  </Text>
+                </View>
+                <View style={[styles.progressTrack, { backgroundColor: palette.elevated }]}>
+                  <View
+                    style={[
+                      styles.progressFill,
+                      {
+                        width: `${item.pct}%`,
+                        backgroundColor: item.pct > 100 ? '#f59e0b' : item.color,
+                      },
+                    ]}
+                  />
+                </View>
+              </View>
+            ))}
+            <AppButton
+              label="Open budget & activity"
+              icon="pie-chart-outline"
+              onPress={() => navigateToScreen('budget')}
+              palette={palette}
+              variant="quiet"
+              compact
+            />
+          </>
+        )}
       </Panel>
 
+      {/* Recent Activity Section */}
       <Panel palette={palette}>
         <View style={styles.rowBetween}>
           <SectionTitle title="Recent activity" subtitle="Latest account entries" palette={palette} />
-          <Pressable onPress={() => setScreen('budget')}><Text style={[styles.link, { color: palette.accent }]}>See all</Text></Pressable>
+          <Pressable onPress={() => navigateToScreen('budget')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Text style={[styles.link, { color: palette.accent }]}>See all</Text>
+          </Pressable>
         </View>
-        {renderTransactionList(transactions.slice(0, 5), true)}
+        {renderTransactionList(transactions.slice(0, 5))}
       </Panel>
     </>
   );
@@ -1048,45 +2237,36 @@ function FinAgentApp() {
           <View style={styles.flex}>{renderCard(card, true)}</View>
         </View>
       ))}
-      {!cards.length ? <Panel palette={palette}><Text style={[styles.emptyText, { color: palette.muted }]}>No cards yet. Add one to start tracking debt.</Text></Panel> : null}
+      {!cards.length ? (
+        <Panel palette={palette} style={styles.centerPanel}>
+          <Ionicons name="card-outline" size={32} color={palette.accent} />
+          <Text style={[styles.bodyStrong, { color: palette.text, marginTop: 8 }]}>No cards connected</Text>
+          <Text style={[styles.caption, { color: palette.muted, textAlign: 'center', marginTop: 4, marginBottom: 12 }]}>Add your credit cards to optimize payoff order and minimize interest.</Text>
+          <AppButton label="Add your first card" icon="add" onPress={openNewCard} palette={palette} />
+        </Panel>
+      ) : null}
     </>
   );
 
   const renderAgent = () => (
-    <>
+    <View style={styles.agentInner}>
       <Panel palette={palette} style={styles.contextPanel}>
         <View style={[styles.liveDot, { backgroundColor: palette.green }]} />
         <View style={styles.flex}>
           <Text style={[styles.bodyStrong, { color: palette.text }]}>FinAgent live context</Text>
           <Text style={[styles.caption, { color: palette.muted }]}>{cards.length} cards · {formatCurrency(totalCardDebt, 0)} debt · {formatCurrency(liquidCash, 0)} cash</Text>
         </View>
-        <Pressable onPress={resetChat} accessibilityLabel="Reset conversation">
+        <Pressable onPress={resetChat} accessibilityLabel="Reset conversation" hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Ionicons name="refresh-outline" size={20} color={palette.muted} />
         </Pressable>
       </Panel>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
-        {[
-          'Which card should I pay first?',
-          'Audit my credit utilization',
-          'Can I afford a $400 flight?',
-          'Review my monthly budget',
-        ].map(question => (
-          <Pressable
-            key={question}
-            onPress={() => void sendMessage(question)}
-            disabled={isLoadingChat}
-            style={[styles.chip, { backgroundColor: palette.elevated, borderColor: palette.border, opacity: isLoadingChat ? 0.5 : 1 }]}
-          >
-            <Text style={[styles.chipText, { color: palette.text }]}>{question}</Text>
-          </Pressable>
-        ))}
-      </ScrollView>
       <Panel palette={palette} style={styles.chatPanel}>
         <ScrollView
           ref={chatScroll}
           style={styles.chatMessages}
           contentContainerStyle={styles.chatMessageContent}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
         >
           {messages.map(message => (
             <View key={message.id} style={[styles.messageRow, message.sender === 'user' && styles.messageRowUser]}>
@@ -1096,6 +2276,14 @@ function FinAgentApp() {
                 message.sender === 'user' && styles.userMessageBubble,
               ]}>
                 <Text style={[styles.messageText, { color: palette.text }]}>{message.text}</Text>
+                {message.data ? (
+                  <ChatDataWidget
+                    data={message.data}
+                    palette={palette}
+                    isDark={isDark}
+                    navigateToScreen={navigateToScreen}
+                  />
+                ) : null}
                 <View style={styles.messageFooter}>
                   <Text style={[styles.messageTime, { color: message.sender === 'user' ? '#e9ddff' : palette.muted }]}>{message.timestamp}</Text>
                   {message.sender === 'ai' ? (
@@ -1107,32 +2295,133 @@ function FinAgentApp() {
               </View>
             </View>
           ))}
-          {isLoadingChat ? <ActivityIndicator color={palette.accent} style={styles.loadingSpinner} /> : null}
+          {isLoadingChat ? (
+            <View style={styles.loadingRow}>
+              <ActivityIndicator color={palette.accent} size="small" />
+              <Text style={[styles.caption, { color: palette.muted, flex: 1 }]}>FinAgent is thinking…</Text>
+              <Pressable
+                onPress={stopAgent}
+                accessibilityLabel="Stop response"
+                style={[styles.stopChip, { borderColor: palette.red, backgroundColor: palette.elevated }]}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name="stop-circle" size={15} color={palette.red} />
+                <Text style={[styles.caption, { color: palette.red, fontWeight: '800' }]}>Stop</Text>
+              </Pressable>
+            </View>
+          ) : null}
         </ScrollView>
+
+        {/* Quick-Prompt Chips Above the Keyboard / Chat Input */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.quickPromptChipsRow}
+          style={styles.quickPromptChipsScroll}
+          keyboardShouldPersistTaps="handled"
+        >
+          {quickPrompts.map(item => (
+            <Pressable
+              key={item.id}
+              onPress={() => {
+                if (item.action === 'receipt') {
+                  chooseReceiptSource();
+                } else {
+                  void sendMessage(item.prompt);
+                }
+              }}
+              disabled={isLoadingChat}
+              accessibilityRole="button"
+              accessibilityLabel={item.label}
+              style={({ pressed }) => [
+                styles.quickPromptChip,
+                {
+                  backgroundColor: pressed ? palette.surface : palette.elevated,
+                  borderColor: palette.border,
+                  opacity: isLoadingChat ? 0.6 : 1,
+                },
+              ]}
+            >
+              <Text style={[styles.quickPromptChipText, { color: palette.text }]}>{item.label}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+
         <View style={[styles.chatComposer, { borderColor: palette.border, backgroundColor: palette.input }]}>
+          <Pressable
+            onPress={() => setModal('compose')}
+            accessibilityLabel="Pop up text box to write"
+            accessibilityHint="Opens an expanded text area to comfortably write longer questions"
+            style={[styles.composerIconButton, { backgroundColor: palette.elevated, borderColor: palette.border }]}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="expand-outline" size={17} color={palette.accent} />
+          </Pressable>
+          <Pressable
+            onPress={toggleVoice}
+            accessibilityLabel="Voice expense logging"
+            accessibilityHint="Speak an expense like Spent $14 on lunch at Subway"
+            style={[
+              styles.composerIconButton,
+              {
+                backgroundColor: isListening ? '#ef4444' : palette.elevated,
+                borderColor: isListening ? '#dc2626' : palette.border,
+              },
+            ]}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name={isListening ? 'mic' : 'mic-outline'} size={17} color={isListening ? '#fff' : palette.accent} />
+          </Pressable>
           <TextInput
             value={chatInput}
             onChangeText={setChatInput}
-            placeholder="Ask about debt, cash flow, or a goal..."
+            placeholder="Type or speak (e.g. 'Spent $14 on lunch at Subway')..."
             placeholderTextColor={palette.muted}
             multiline
             maxLength={2000}
             editable={!isLoadingChat}
+            onFocus={() => {
+              setTimeout(() => {
+                chatScroll.current?.scrollToEnd({ animated: true });
+              }, 100);
+            }}
             onSubmitEditing={() => void sendMessage()}
             style={[styles.chatInput, { color: palette.text }]}
           />
-          <Pressable
-            onPress={() => void sendMessage()}
-            disabled={!chatInput.trim() || isLoadingChat}
-            accessibilityLabel="Send message"
-            style={[styles.sendButton, { backgroundColor: palette.accent, opacity: !chatInput.trim() || isLoadingChat ? 0.5 : 1 }]}
-          >
-            <Ionicons name="send-outline" size={17} color="#fff" />
-          </Pressable>
+          {chatInput.length > 0 ? (
+            <Pressable
+              onPress={() => setChatInput('')}
+              accessibilityLabel="Clear text"
+              style={styles.clearButton}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="close-circle" size={18} color={palette.muted} />
+            </Pressable>
+          ) : null}
+          {isLoadingChat ? (
+            <Pressable
+              onPress={stopAgent}
+              accessibilityLabel="Stop FinAgent response"
+              style={[styles.sendButton, styles.stopButton]}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+            >
+              <Ionicons name="stop" size={16} color="#fff" />
+            </Pressable>
+          ) : (
+            <Pressable
+              onPress={() => void sendMessage()}
+              disabled={!chatInput.trim()}
+              accessibilityLabel="Send message"
+              style={[styles.sendButton, { backgroundColor: palette.accent, opacity: !chatInput.trim() ? 0.45 : 1 }]}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+            >
+              <Ionicons name="send-outline" size={17} color="#fff" />
+            </Pressable>
+          )}
         </View>
       </Panel>
-      {apiError ? <Text style={[styles.caption, { color: palette.red }]}>{apiError}</Text> : null}
-    </>
+      {apiError ? <Text style={[styles.caption, { color: palette.red, marginTop: 4 }]}>{apiError}</Text> : null}
+    </View>
   );
 
   const renderBudget = () => (
@@ -1142,12 +2431,53 @@ function FinAgentApp() {
         <Text style={[styles.caption, { color: palette.muted }]}>Review your cash flow and transaction ledger.</Text>
       </View>
       <Panel palette={palette}>
-        <SectionTitle title="Monthly profile" subtitle="Update your current figures." palette={palette} />
+        <SectionTitle title="Your profile & cash flow" subtitle="Update your profile, income, and cash reserves." palette={palette} />
+        <Field label="Your name" value={userName} onChangeText={setUserName} palette={palette} placeholder="Enter your name" />
+        <Field label="Monthly income" value={monthlyIncome ? String(monthlyIncome) : ''} onChangeText={value => setMonthlyIncome(Number.parseFloat(value) || 0)} palette={palette} placeholder="0.00" keyboardType="decimal-pad" />
+        <Field label="Liquid cash reserve" value={liquidCash ? String(liquidCash) : ''} onChangeText={value => setLiquidCash(Number.parseFloat(value) || 0)} palette={palette} placeholder="0.00" keyboardType="decimal-pad" />
         <View style={styles.rowBetween}>
           <Text style={[styles.bodyStrong, { color: palette.muted }]}>Estimated net worth</Text>
           <Text style={[styles.bodyStrong, { color: palette.green }]}>{formatCurrency(netWorth)}</Text>
         </View>
-        <AppButton label="Manage profile" icon="person-outline" onPress={() => setScreen('settings')} palette={palette} variant="quiet" compact />
+        <View style={{ paddingTop: 10, borderTopWidth: 1, borderTopColor: palette.border }}>
+          <Field
+            label="Backend Server Address"
+            value={serverUrl}
+            onChangeText={updateServerUrl}
+            palette={palette}
+            placeholder="http://localhost:3000"
+            autoCapitalize="none"
+          />
+          <View style={[styles.rowBetween, { marginTop: -4, marginBottom: 8 }]}>
+            <Text style={[styles.caption, { color: palette.muted }]}>Auto: {resolveDefaultApiUrl()}</Text>
+            <AppButton
+              label="Save URL"
+              variant="quiet"
+              compact
+              palette={palette}
+              onPress={saveServerUrl}
+            />
+            <AppButton
+              label="Reset URL"
+              variant="quiet"
+              compact
+              palette={palette}
+              onPress={async () => {
+                try {
+                  const def = await resetApiUrlToDefault();
+                  setServerUrl(def);
+                  showToast('Server URL reset to ' + def);
+                } catch (error) {
+                  showToast(error instanceof Error ? error.message : 'Could not reset the backend server address.');
+                }
+              }}
+            />
+          </View>
+        </View>
+        <View style={[styles.rowBetween, styles.topGap, { paddingTop: 12, borderTopWidth: 1, borderTopColor: palette.border }]}>
+          <Text style={[styles.caption, { color: palette.muted }]}>Start over with a clean slate</Text>
+          <AppButton label="Reset Data & Re-onboard" icon="trash-outline" variant="danger" onPress={handleResetData} palette={palette} compact />
+        </View>
       </Panel>
       <Panel palette={palette}>
         <SectionTitle title="Spending by category" subtitle="Based on your recorded expenses." palette={palette} />
@@ -1168,7 +2498,7 @@ function FinAgentApp() {
           style={[styles.field, styles.searchField, { backgroundColor: palette.input, borderColor: palette.border, color: palette.text }]}
         />
         <ChoiceChips values={['All', ...categories]} selected={txFilter} onSelect={setTxFilter} palette={palette} />
-        {renderTransactionList(filteredTransactions, true)}
+        {renderTransactionList(filteredTransactions)}
       </Panel>
     </>
   );
@@ -1180,7 +2510,7 @@ function FinAgentApp() {
           <Text style={[styles.pageTitle, { color: palette.text }]}>Upcoming bills</Text>
           <Text style={[styles.caption, { color: palette.muted }]}>Keep track of recurring payments and due dates.</Text>
         </View>
-        <AppButton label="Add bill" icon="add" onPress={openNewBill} palette={palette} compact />
+        <AppButton label="Add bill" icon="add" onPress={() => setModal('bill')} palette={palette} compact />
       </View>
       <Panel palette={palette}>
         {bills.length ? bills.map(bill => (
@@ -1198,10 +2528,15 @@ function FinAgentApp() {
               <Text style={[styles.caption, { color: palette.muted }]}>Due {bill.due_date} · {bill.category}</Text>
             </View>
             <Text style={[styles.bodyStrong, { color: palette.accent }]}>{formatCurrency(bill.amount)}</Text>
-            <Pressable accessibilityLabel={`Edit ${bill.bill_name}`} onPress={() => openEditBill(bill)} hitSlop={8}><Ionicons name="create-outline" size={18} color={palette.accent} /></Pressable>
-            <Pressable accessibilityLabel={`Delete ${bill.bill_name}`} onPress={() => removeBill(bill)} hitSlop={8}><Ionicons name="trash-outline" size={18} color={palette.red} /></Pressable>
           </View>
-        )) : <Text style={[styles.emptyText, { color: palette.muted }]}>No bills added yet.</Text>}
+        )) : (
+          <View style={styles.centerPanel}>
+            <Ionicons name="calendar-outline" size={28} color={palette.muted} />
+            <Text style={[styles.bodyStrong, { color: palette.text, marginTop: 8 }]}>No upcoming bills</Text>
+            <Text style={[styles.caption, { color: palette.muted, textAlign: 'center', marginTop: 4, marginBottom: 10 }]}>Track credit card dues, rent, and utility bill dates.</Text>
+            <AppButton label="Add a bill" icon="add" onPress={() => setModal('bill')} palette={palette} compact />
+          </View>
+        )}
       </Panel>
       <Panel palette={palette} style={styles.summaryPanel}>
         <Text style={[styles.caption, { color: palette.muted }]}>Unpaid upcoming bills</Text>
@@ -1226,73 +2561,288 @@ function FinAgentApp() {
       </Panel>
       {scannedReceipt ? (
         <Panel palette={palette}>
-          <Text style={[styles.eyebrow, { color: palette.accent }]}>RECEIPT READY</Text>
+          <Text style={[styles.eyebrow, { color: palette.accent }]}>RECEIPT OCR READY</Text>
           <View style={styles.rowBetween}>
             <View style={styles.flex}>
-              <Text style={[styles.sectionTitle, { color: palette.text }]}>{scannedReceipt.merchant}</Text>
-              <Text style={[styles.caption, { color: palette.muted }]}>{scannedReceipt.category} · {scannedReceipt.date}</Text>
+              <Text style={[styles.sectionTitle, { color: palette.text }]}>{receiptMerchant || scannedReceipt.merchant}</Text>
+              <Text style={[styles.caption, { color: palette.muted }]}>{receiptCategory || scannedReceipt.category} · {receiptDate || scannedReceipt.date}</Text>
             </View>
-            <Text style={[styles.sectionTitle, { color: palette.green }]}>{formatCurrency(scannedReceipt.total)}</Text>
+            <Text style={[styles.sectionTitle, { color: palette.green }]}>{formatCurrency(parseFloat(receiptTotal) || scannedReceipt.total)}</Text>
           </View>
-          <Text style={[styles.caption, styles.topGap, { color: palette.muted }]}>Choose a card to record the charge.</Text>
-          <AppButton label="Record from cash" icon="wallet-outline" onPress={() => confirmReceipt('Primary Checking')} palette={palette} variant="secondary" />
-          {cards.map(card => (
-            <AppButton key={card.id} label={`Charge ${card.cardName}`} icon="card-outline" onPress={() => confirmReceipt(card.cardName)} palette={palette} variant="secondary" />
-          ))}
-          <AppButton label="Discard receipt" onPress={() => setScannedReceipt(null)} palette={palette} variant="quiet" />
+          <View style={{ marginTop: 12, gap: 8 }}>
+            <AppButton
+              label="Review & Edit in Sheet"
+              icon="create-outline"
+              onPress={() => setModal('receipt')}
+              palette={palette}
+              variant="secondary"
+            />
+            <AppButton
+              label="Confirm & Add to Expenses"
+              icon="checkmark-circle-outline"
+              onPress={confirmAndAddReceiptExpense}
+              palette={palette}
+            />
+            <AppButton
+              label="Discard receipt"
+              onPress={() => setScannedReceipt(null)}
+              palette={palette}
+              variant="quiet"
+            />
+          </View>
         </Panel>
       ) : null}
     </>
   );
 
-  const renderSettings = () => (
-    <>
-      <View style={styles.welcomeBlock}>
-        <Text style={[styles.pageTitle, { color: palette.text }]}>Profile & settings</Text>
-        <Text style={[styles.caption, { color: palette.muted }]}>Manage the information used across your dashboard and finance calculations.</Text>
+  const renderOnboarding = () => (
+    <ScrollView
+      style={styles.mainScroll}
+      contentContainerStyle={[styles.pageContent, { paddingBottom: 40 }]}
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}
+    >
+      <View style={[styles.header, { backgroundColor: 'transparent', borderBottomColor: palette.border, marginBottom: 12 }]}>
+        <View style={styles.brandMark}><Text style={styles.brandMarkText}>F</Text></View>
+        <View style={styles.brandCopy}>
+          <Text style={[styles.brandName, { color: palette.text }]}>FinAgent</Text>
+          <Text style={[styles.brandTagline, { color: palette.muted }]}>Setup & Personalization</Text>
+        </View>
+        <Pressable onPress={() => setTheme(isDark ? 'light' : 'dark')} accessibilityLabel="Toggle theme" style={[styles.themeButton, { borderColor: palette.border }]}>
+          <Ionicons name={isDark ? 'sunny-outline' : 'moon-outline'} size={20} color={isDark ? '#fbbf24' : palette.accent} />
+        </Pressable>
       </View>
-      <Panel palette={palette}>
-        <SectionTitle title="Financial profile" subtitle="Amounts are stored only on this device." palette={palette} />
-        <Field label="Display name" value={profileNameDraft} onChangeText={setProfileNameDraft} palette={palette} placeholder="Your name" maxLength={100} />
-        <Field label="Monthly income" value={incomeDraft} onChangeText={setIncomeDraft} palette={palette} placeholder="0.00" keyboardType="decimal-pad" />
-        <Field label="Average monthly expenses" value={expensesDraft} onChangeText={setExpensesDraft} palette={palette} placeholder="0.00" keyboardType="decimal-pad" />
-        <Text style={[styles.caption, { color: palette.muted }]}>Used only to estimate cash runway. Recorded transactions do not have reliable monthly periods.</Text>
-        <Field label="Liquid cash" value={cashDraft} onChangeText={setCashDraft} palette={palette} placeholder="0.00" keyboardType="decimal-pad" />
-        <AppButton label="Save profile" icon="checkmark-outline" onPress={saveProfile} palette={palette} />
-      </Panel>
-      <Panel palette={palette}>
-        <SectionTitle title="Preferences" subtitle="These preferences are saved on this device." palette={palette} />
-        <Text style={[styles.fieldLabel, { color: palette.muted }]}>Payoff strategy</Text>
-        <ChoiceChips values={['Avalanche', 'Snowball'] as const} selected={debtStrategy} onSelect={setDebtStrategy} palette={palette} />
-        <Text style={[styles.caption, styles.topGap, { color: palette.muted }]}>Theme: {theme}. Use the sun/moon button in the header to switch modes.</Text>
-      </Panel>
-      <Panel palette={palette}>
-        <SectionTitle title="On-device storage" subtitle="Financial data and preferences use Expo AsyncStorage on this device." palette={palette} />
-        {storageStatus === 'failed' ? (
-          <>
-            <Text style={[styles.caption, { color: palette.red }]}>{storageError || 'Saved information could not be loaded.'}</Text>
-            <View style={styles.modalButtons}>
-              <AppButton label="Retry loading" icon="refresh-outline" onPress={() => void retryStorageLoad()} palette={palette} compact />
-              <AppButton label="Delete all saved data" icon="trash-outline" onPress={resetStoredData} palette={palette} variant="danger" compact />
+
+      <View style={[styles.rowBetween, { marginBottom: 16 }]}>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          {[
+            { step: 1 as const, label: 'Identity' },
+            { step: 2 as const, label: 'Cash Flow' },
+            { step: 3 as const, label: 'Cards' },
+          ].map(s => {
+            const active = onboardStep === s.step;
+            const completed = onboardStep > s.step;
+            return (
+              <View
+                key={s.step}
+                style={{
+                  backgroundColor: active ? palette.accent : completed ? palette.green : palette.elevated,
+                  marginRight: 6,
+                  paddingHorizontal: 10,
+                  paddingVertical: 5,
+                  borderRadius: 14,
+                }}
+              >
+                <Text style={{ color: active || completed ? '#ffffff' : palette.muted, fontSize: 11, fontWeight: '700' }}>
+                  {completed ? '✓ ' : ''}{s.step}. {s.label}
+                </Text>
+              </View>
+            );
+          })}
+        </View>
+        <Text style={[styles.caption, { color: palette.muted }]}>Step {onboardStep} of 3</Text>
+      </View>
+
+      {onboardStep === 1 ? (
+        <Panel palette={palette}>
+          <SectionTitle
+            title="Welcome to FinAgent"
+            subtitle="Your private AI personal financial strategist. We start fresh with zero preset accounts or hardcoded data."
+            palette={palette}
+          />
+          <Field
+            label="What should FinAgent call you?"
+            value={onboardName}
+            onChangeText={setOnboardName}
+            palette={palette}
+            placeholder="Enter your name"
+          />
+          <View style={styles.topGap}>
+            <AppButton
+              label="Continue to Baseline"
+              icon="arrow-forward-outline"
+              disabled={!onboardName.trim()}
+              onPress={() => setOnboardStep(2)}
+              palette={palette}
+            />
+          </View>
+        </Panel>
+      ) : null}
+
+      {onboardStep === 2 ? (
+        <Panel palette={palette}>
+          <SectionTitle
+            title="Establish your baseline"
+            subtitle="FinAgent calculates your real-time net worth and debt payoff timelines from your take-home income and liquid cash."
+            palette={palette}
+          />
+          <Field
+            label="Monthly take-home income ($)"
+            value={onboardIncome}
+            onChangeText={setOnboardIncome}
+            palette={palette}
+            placeholder="0.00"
+            keyboardType="decimal-pad"
+          />
+          <Field
+            label="Liquid cash & checking reserve ($)"
+            value={onboardCash}
+            onChangeText={setOnboardCash}
+            palette={palette}
+            placeholder="0.00"
+            keyboardType="decimal-pad"
+          />
+          <View style={[styles.rowBetween, styles.topGap]}>
+            <AppButton
+              label="Back"
+              icon="arrow-back-outline"
+              onPress={() => setOnboardStep(1)}
+              palette={palette}
+              variant="secondary"
+            />
+            <AppButton
+              label="Continue to Cards"
+              icon="arrow-forward-outline"
+              onPress={() => setOnboardStep(3)}
+              palette={palette}
+            />
+          </View>
+        </Panel>
+      ) : null}
+
+      {onboardStep === 3 ? (
+        <>
+          <Panel palette={palette}>
+            <SectionTitle
+              title="Add your credit cards"
+              subtitle="Add active cards to monitor APR, balances, and debt payoff strategy. You can also skip this step."
+              palette={palette}
+            />
+            <Field
+              label="Card name"
+              value={onboardCardName}
+              onChangeText={setOnboardCardName}
+              palette={palette}
+              placeholder="e.g. Chase Freedom, Apple Card"
+            />
+            <Text style={[styles.fieldLabel, { color: palette.muted }]}>Network</Text>
+            <ChoiceChips
+              values={['visa', 'mastercard', 'amex', 'discover'] as const}
+              selected={onboardCardNetwork}
+              onSelect={setOnboardCardNetwork}
+              palette={palette}
+            />
+            <View style={styles.formRow}>
+              <View style={styles.flex}>
+                <Field
+                  label="Balance ($)"
+                  value={onboardCardBalance}
+                  onChangeText={setOnboardCardBalance}
+                  palette={palette}
+                  placeholder="0.00"
+                  keyboardType="decimal-pad"
+                />
+              </View>
+              <View style={styles.flex}>
+                <Field
+                  label="Credit limit ($)"
+                  value={onboardCardLimit}
+                  onChangeText={setOnboardCardLimit}
+                  palette={palette}
+                  placeholder="1000.00"
+                  keyboardType="decimal-pad"
+                />
+              </View>
             </View>
-          </>
-        ) : (
-          <>
-            <Text style={[styles.caption, { color: palette.muted }]}>Changes are saved automatically after each update.</Text>
-            {storageError ? (
-              <>
-                <Text style={[styles.caption, { color: palette.red }]}>{storageError}</Text>
-                <AppButton label="Retry saving" icon="refresh-outline" onPress={() => setSaveRevision(value => value + 1)} palette={palette} />
-              </>
-            ) : null}
-            <AppButton label="Delete all saved data" icon="trash-outline" onPress={resetStoredData} palette={palette} variant="danger" />
-          </>
-        )}
-        {storageWarnings.map((warning, index) => (
-          <Text key={`${warning}-${index}`} style={[styles.caption, { color: palette.red }]}>{warning}</Text>
-        ))}
-      </Panel>
-    </>
+            <View style={styles.formRow}>
+              <View style={styles.flex}>
+                <Field
+                  label="APR (%)"
+                  value={onboardCardApr}
+                  onChangeText={setOnboardCardApr}
+                  palette={palette}
+                  placeholder="21.99"
+                  keyboardType="decimal-pad"
+                />
+              </View>
+              <View style={styles.flex}>
+                <Field
+                  label="Last 4 digits"
+                  value={onboardCardLast4}
+                  onChangeText={setOnboardCardLast4}
+                  palette={palette}
+                  placeholder="1234"
+                  keyboardType="number-pad"
+                  maxLength={4}
+                />
+              </View>
+            </View>
+            <View style={styles.topGap}>
+              <AppButton
+                label="Add Card"
+                icon="add-outline"
+                disabled={!onboardCardName.trim()}
+                onPress={handleAddOnboardCard}
+                palette={palette}
+                variant="secondary"
+              />
+            </View>
+          </Panel>
+
+          {onboardCards.length > 0 ? (
+            <Panel palette={palette}>
+              <SectionTitle
+                title={`Added cards (${onboardCards.length})`}
+                subtitle="Your connected cards for tracking and payoff prioritization."
+                palette={palette}
+              />
+              {onboardCards.map(c => (
+                <View key={c.id} style={[styles.transactionRow, { borderBottomColor: palette.border }]}>
+                  <View style={[styles.transactionIcon, { backgroundColor: c.colorTheme ?? cardColors[c.network] ?? palette.accent }]}>
+                    <Ionicons name="card-outline" size={18} color="#fff" />
+                  </View>
+                  <View style={styles.transactionInfo}>
+                    <Text style={[styles.bodyStrong, { color: palette.text }]}>{c.cardName}</Text>
+                    <Text style={[styles.caption, { color: palette.muted }]}>
+                      Bal: {formatCurrency(c.balance)} · Limit: {formatCurrency(c.creditLimit)} · {c.apr}% APR
+                    </Text>
+                  </View>
+                  <Pressable onPress={() => handleRemoveOnboardCard(c.id)} hitSlop={8} style={{ padding: 6 }}>
+                    <Ionicons name="trash-outline" size={18} color={palette.red} />
+                  </Pressable>
+                </View>
+              ))}
+            </Panel>
+          ) : (
+            <Panel palette={palette}>
+              <Text style={[styles.emptyText, { color: palette.muted }]}>
+                No cards added yet. You can add them here or later anytime from Cards screen.
+              </Text>
+            </Panel>
+          )}
+
+          <View style={[styles.rowBetween, styles.topGap]}>
+            <AppButton
+              label="Back"
+              icon="arrow-back-outline"
+              onPress={() => setOnboardStep(2)}
+              palette={palette}
+              variant="secondary"
+            />
+            <AppButton
+              label={onboardCards.length > 0 ? 'Finish & Launch' : 'Skip & Launch'}
+              icon="checkmark-outline"
+              onPress={handleCompleteOnboarding}
+              palette={palette}
+            />
+          </View>
+        </>
+      ) : null}
+
+      <Text style={[styles.caption, styles.centerText, styles.topGap, { color: palette.muted, marginTop: 24 }]}>
+        FinAgent stores all financial data safely and locally on your device.
+      </Text>
+    </ScrollView>
   );
 
   const renderScreen = () => {
@@ -1303,7 +2853,6 @@ function FinAgentApp() {
       case 'budget': return renderBudget();
       case 'bills': return renderBills();
       case 'receipts': return renderReceipts();
-      case 'settings': return renderSettings();
     }
   };
 
@@ -1315,12 +2864,12 @@ function FinAgentApp() {
           <Field label="Card name" value={cardName} onChangeText={setCardName} palette={palette} placeholder="e.g. Chase Sapphire" />
           <Text style={[styles.fieldLabel, { color: palette.muted }]}>Network</Text>
           <ChoiceChips values={['visa', 'mastercard', 'amex', 'discover'] as const} selected={cardNetwork} onSelect={setCardNetwork} palette={palette} />
-          <Field label="Last four digits" value={cardLast4} onChangeText={setCardLast4} palette={palette} placeholder="4821" keyboardType="number-pad" maxLength={4} />
-          <Field label="Current balance" value={cardBalance} onChangeText={setCardBalance} palette={palette} placeholder="1200.00" keyboardType="decimal-pad" />
-          <Field label="Credit limit" value={cardLimit} onChangeText={setCardLimit} palette={palette} placeholder="8000.00" keyboardType="decimal-pad" />
+          <Field label="Last four digits" value={cardLast4} onChangeText={setCardLast4} palette={palette} placeholder="1234" keyboardType="number-pad" maxLength={4} />
+          <Field label="Current balance" value={cardBalance} onChangeText={setCardBalance} palette={palette} placeholder="0.00" keyboardType="decimal-pad" />
+          <Field label="Credit limit" value={cardLimit} onChangeText={setCardLimit} palette={palette} placeholder="0.00" keyboardType="decimal-pad" />
           <View style={styles.formRow}>
-            <View style={styles.flex}><Field label="APR (%)" value={cardApr} onChangeText={setCardApr} palette={palette} keyboardType="decimal-pad" /></View>
-            <View style={styles.flex}><Field label="Due date" value={cardDueDate} onChangeText={setCardDueDate} palette={palette} placeholder="Nov 15" /></View>
+            <View style={styles.flex}><Field label="APR (%)" value={cardApr} onChangeText={setCardApr} palette={palette} placeholder="0.00" keyboardType="decimal-pad" /></View>
+            <View style={styles.flex}><Field label="Due date" value={cardDueDate} onChangeText={setCardDueDate} palette={palette} placeholder="e.g. 15th" /></View>
           </View>
           <View style={styles.modalButtons}>
             <AppButton label="Cancel" onPress={() => setModal(null)} palette={palette} variant="secondary" />
@@ -1332,17 +2881,17 @@ function FinAgentApp() {
     if (modal === 'transaction') {
       return (
         <>
-          <Text style={[styles.modalTitle, { color: palette.text }]}>{editingTransactionId ? 'Edit transaction' : 'Log transaction'}</Text>
+          <Text style={[styles.modalTitle, { color: palette.text }]}>Log transaction</Text>
           <ChoiceChips values={['expense', 'income'] as const} selected={txType} onSelect={setTxType} palette={palette} />
           <Field label="Merchant / payee" value={txTitle} onChangeText={setTxTitle} palette={palette} placeholder="e.g. Target, salary" />
-          <Field label="Amount" value={txAmount} onChangeText={setTxAmount} palette={palette} placeholder="45.00" keyboardType="decimal-pad" />
+          <Field label="Amount" value={txAmount} onChangeText={setTxAmount} palette={palette} placeholder="0.00" keyboardType="decimal-pad" />
           <Text style={[styles.fieldLabel, { color: palette.muted }]}>Category</Text>
           <ChoiceChips values={categories} selected={txCategory} onSelect={setTxCategory} palette={palette} />
           <Text style={[styles.fieldLabel, { color: palette.muted }]}>Account / card used</Text>
           <ChoiceChips values={['Primary Checking', ...cards.map(card => card.cardName)]} selected={txSource} onSelect={setTxSource} palette={palette} />
           <View style={styles.modalButtons}>
             <AppButton label="Cancel" onPress={() => setModal(null)} palette={palette} variant="secondary" />
-            <AppButton label={editingTransactionId ? 'Save changes' : 'Save transaction'} onPress={saveTransaction} palette={palette} />
+            <AppButton label="Save transaction" onPress={saveTransaction} palette={palette} />
           </View>
         </>
       );
@@ -1350,13 +2899,13 @@ function FinAgentApp() {
     if (modal === 'bill') {
       return (
         <>
-          <Text style={[styles.modalTitle, { color: palette.text }]}>{editingBillId ? 'Edit bill' : 'Add a bill'}</Text>
+          <Text style={[styles.modalTitle, { color: palette.text }]}>Add a bill</Text>
           <Field label="Bill name" value={billName} onChangeText={setBillName} palette={palette} placeholder="Internet, insurance…" />
-          <Field label="Amount" value={billAmount} onChangeText={setBillAmount} palette={palette} placeholder="80.00" keyboardType="decimal-pad" />
-          <Field label="Due date" value={billDueDate} onChangeText={setBillDueDate} palette={palette} placeholder="e.g. Nov 25" />
+          <Field label="Amount" value={billAmount} onChangeText={setBillAmount} palette={palette} placeholder="0.00" keyboardType="decimal-pad" />
+          <Field label="Due date" value={billDueDate} onChangeText={setBillDueDate} palette={palette} placeholder="e.g. 1st of month" />
           <View style={styles.modalButtons}>
             <AppButton label="Cancel" onPress={() => setModal(null)} palette={palette} variant="secondary" />
-            <AppButton label={editingBillId ? 'Save changes' : 'Save bill'} onPress={saveBill} palette={palette} />
+            <AppButton label="Save bill" onPress={saveBill} palette={palette} />
           </View>
         </>
       );
@@ -1367,11 +2916,213 @@ function FinAgentApp() {
         <>
           <Text style={[styles.modalTitle, { color: palette.text }]}>Pay down {card?.cardName}</Text>
           <Text style={[styles.caption, { color: palette.muted }]}>Current balance: {formatCurrency(card?.balance ?? 0)}</Text>
-          <Field label="Payment amount" value={paymentAmount} onChangeText={setPaymentAmount} palette={palette} placeholder="45.00" keyboardType="decimal-pad" />
+          <Field label="Payment amount" value={paymentAmount} onChangeText={setPaymentAmount} palette={palette} placeholder="0.00" keyboardType="decimal-pad" />
           <Text style={[styles.caption, { color: palette.muted }]}>The payment reduces card debt and available cash.</Text>
           <View style={styles.modalButtons}>
             <AppButton label="Cancel" onPress={() => setModal(null)} palette={palette} variant="secondary" />
             <AppButton label="Apply payment" onPress={savePayment} palette={palette} />
+          </View>
+        </>
+      );
+    }
+    if (modal === 'compose') {
+      return (
+        <>
+          <View style={styles.rowBetween}>
+            <Text style={[styles.modalTitle, { color: palette.text, marginBottom: 4 }]}>Write to FinAgent</Text>
+            <View style={[styles.liveDot, { backgroundColor: palette.green }]} />
+          </View>
+          <Text style={[styles.caption, { color: palette.muted, marginBottom: 10 }]}>
+            Type your financial questions, compare card APRs, or calculate payoff plans.
+          </Text>
+          <View style={styles.modalChipsContainer}>
+            {[
+              'Which card should I pay first?',
+              'Audit my credit utilization',
+              'How much should I allocate to savings?',
+              'Review my monthly budget',
+              'Avalanche debt payoff strategy',
+            ].map(q => (
+              <Pressable
+                key={q}
+                onPress={() => setChatInput(q)}
+                style={[styles.chip, { backgroundColor: palette.elevated, borderColor: palette.border, marginBottom: 6 }]}
+              >
+                <Text style={[styles.chipText, { color: palette.text }]}>{q}</Text>
+              </Pressable>
+            ))}
+          </View>
+          <TextInput
+            value={chatInput}
+            onChangeText={setChatInput}
+            placeholder="Type your message to FinAgent here..."
+            placeholderTextColor={palette.muted}
+            multiline
+            autoFocus
+            maxLength={2000}
+            textAlignVertical="top"
+            style={[
+              styles.field,
+              styles.modalTextArea,
+              { backgroundColor: palette.input, borderColor: palette.border, color: palette.text },
+            ]}
+          />
+          <View style={[styles.rowBetween, { marginTop: 4, marginBottom: 8 }]}>
+            <Text style={[styles.caption, { color: palette.muted }]}>
+              {chatInput.length} / 2000 characters
+            </Text>
+            {chatInput.length > 0 ? (
+              <Pressable onPress={() => setChatInput('')}>
+                <Text style={[styles.link, { color: palette.accent }]}>Clear</Text>
+              </Pressable>
+            ) : null}
+          </View>
+
+          {/* Quick-Prompt Chips inside Modal Compose */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.quickPromptChipsRow}
+            style={[styles.quickPromptChipsScroll, { marginTop: 2, marginBottom: 10 }]}
+            keyboardShouldPersistTaps="handled"
+          >
+            {quickPrompts.map(item => (
+              <Pressable
+                key={item.id}
+                onPress={() => {
+                  if (item.action === 'receipt') {
+                    setModal(null);
+                    chooseReceiptSource();
+                  } else {
+                    setChatInput(item.prompt);
+                  }
+                }}
+                disabled={isLoadingChat}
+                accessibilityRole="button"
+                accessibilityLabel={item.label}
+                style={({ pressed }) => [
+                  styles.quickPromptChip,
+                  {
+                    backgroundColor: pressed ? palette.surface : palette.elevated,
+                    borderColor: palette.border,
+                    opacity: isLoadingChat ? 0.6 : 1,
+                  },
+                ]}
+              >
+                <Text style={[styles.quickPromptChipText, { color: palette.text }]}>{item.label}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+
+          <View style={styles.modalButtons}>
+            <AppButton label="Cancel" onPress={() => setModal(null)} palette={palette} variant="secondary" />
+            {isLoadingChat ? (
+              <AppButton
+                label="Stop response"
+                icon="stop-circle"
+                onPress={() => {
+                  stopAgent();
+                  setModal(null);
+                }}
+                palette={palette}
+              />
+            ) : (
+              <AppButton
+                label="Send message"
+                icon="send-outline"
+                disabled={!chatInput.trim()}
+                onPress={() => {
+                  setModal(null);
+                  void sendMessage();
+                }}
+                palette={palette}
+              />
+            )}
+          </View>
+        </>
+      );
+    }
+    if (modal === 'receipt') {
+      return (
+        <>
+          <View style={styles.rowBetween}>
+            <View style={styles.flex}>
+              <Text style={[styles.eyebrow, { color: palette.accent }]}>RECEIPT OCR CONFIRMATION</Text>
+              <Text style={[styles.modalTitle, { color: palette.text, marginBottom: 2 }]}>Review & Confirm Receipt</Text>
+              <Text style={[styles.caption, { color: palette.muted }]}>
+                Pre-filled from OCR scan. Tap any field to edit before adding.
+              </Text>
+            </View>
+            <Pressable
+              onPress={() => setModal(null)}
+              accessibilityLabel="Close confirmation sheet"
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="close-circle-outline" size={24} color={palette.muted} />
+            </Pressable>
+          </View>
+
+          <Field
+            label="Merchant / Business"
+            value={receiptMerchant}
+            onChangeText={setReceiptMerchant}
+            palette={palette}
+            placeholder="e.g. Subway, Target"
+          />
+
+          <View style={styles.formRow}>
+            <View style={styles.flex}>
+              <Field
+                label="Total Amount ($)"
+                value={receiptTotal}
+                onChangeText={setReceiptTotal}
+                palette={palette}
+                placeholder="0.00"
+                keyboardType="decimal-pad"
+              />
+            </View>
+            <View style={styles.flex}>
+              <Field
+                label="Date"
+                value={receiptDate}
+                onChangeText={setReceiptDate}
+                palette={palette}
+                placeholder="YYYY-MM-DD"
+              />
+            </View>
+          </View>
+
+          <Field
+            label="Category"
+            value={receiptCategory}
+            onChangeText={setReceiptCategory}
+            palette={palette}
+            placeholder="e.g. Dining, Groceries"
+          />
+
+          <Text style={[styles.fieldLabel, { color: palette.muted, marginTop: 4 }]}>Quick Category</Text>
+          <ChoiceChips
+            values={['Dining', 'Groceries', 'Shopping', 'Transportation', 'Utilities', 'Entertainment', 'Health', 'Other'] as const}
+            selected={receiptCategory}
+            onSelect={setReceiptCategory}
+            palette={palette}
+          />
+
+          <Text style={[styles.fieldLabel, { color: palette.muted, marginTop: 8 }]}>Payment Account / Card</Text>
+          <ChoiceChips
+            values={['Primary Checking', ...cards.map(c => c.cardName)]}
+            selected={receiptSource}
+            onSelect={setReceiptSource}
+            palette={palette}
+          />
+
+          <View style={{ marginTop: 20, marginBottom: 8 }}>
+            <AppButton
+              label="Confirm & Add to Expenses"
+              icon="checkmark-circle-outline"
+              onPress={confirmAndAddReceiptExpense}
+              palette={palette}
+            />
           </View>
         </>
       );
@@ -1389,6 +3140,43 @@ function FinAgentApp() {
     );
   }
 
+  if (!isOnboarded) {
+    return (
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: palette.background }]} edges={['top', 'left', 'right', 'bottom']}>
+        <StatusBar style={isDark ? 'light' : 'dark'} />
+        <KeyboardAvoidingView
+          style={styles.flex}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          {renderOnboarding()}
+        </KeyboardAvoidingView>
+        {toast ? (
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.toast,
+              {
+                backgroundColor: palette.accent,
+                opacity: toastAnim,
+                transform: [
+                  {
+                    translateY: toastAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [16, 0],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
+            <Ionicons name="checkmark-circle" size={17} color="#fff" />
+            <Text style={styles.toastText}>{toast}</Text>
+          </Animated.View>
+        ) : null}
+      </SafeAreaView>
+    );
+  }
+
   const tabs: { id: Screen; label: string; icon: IconName }[] = [
     { id: 'home', label: 'Home', icon: 'home-outline' },
     { id: 'cards', label: 'Cards', icon: 'card-outline' },
@@ -1396,14 +3184,23 @@ function FinAgentApp() {
     { id: 'budget', label: 'Budget', icon: 'pie-chart-outline' },
     { id: 'bills', label: 'Bills', icon: 'calendar-outline' },
     { id: 'receipts', label: 'Scan', icon: 'camera-outline' },
-    { id: 'settings', label: 'Settings', icon: 'settings-outline' },
   ];
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: palette.background }]} edges={['top', 'left', 'right']}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
-      <KeyboardAvoidingView style={styles.app} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <View style={styles.app} {...panResponder.panHandlers}>
         <View style={[styles.header, { backgroundColor: palette.background, borderBottomColor: palette.border }]}>
+          {screenHistory.length > 1 ? (
+            <Pressable
+              onPress={goBack}
+              accessibilityLabel="Back to previous screen"
+              style={[styles.backButton, { backgroundColor: palette.elevated, borderColor: palette.border }]}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="chevron-back" size={20} color={palette.text} />
+            </Pressable>
+          ) : null}
           <View style={styles.brandMark}><Text style={styles.brandMarkText}>F</Text></View>
           <View style={styles.brandCopy}>
             <Text style={[styles.brandName, { color: palette.text }]}>FinAgent</Text>
@@ -1412,59 +3209,104 @@ function FinAgentApp() {
           <Pressable onPress={() => setTheme(isDark ? 'light' : 'dark')} accessibilityLabel="Toggle color theme" style={[styles.themeButton, { borderColor: palette.border }]}>
             <Ionicons name={isDark ? 'sunny-outline' : 'moon-outline'} size={20} color={isDark ? '#fbbf24' : palette.accent} />
           </Pressable>
+          <Pressable onPress={handleResetData} accessibilityLabel="Reset all data" style={[styles.themeButton, { borderColor: palette.border }]}>
+            <Ionicons name="refresh-outline" size={19} color={palette.red} />
+          </Pressable>
           <Pressable onPress={openTransactionModal} accessibilityLabel="Add transaction" style={[styles.headerAdd, { backgroundColor: palette.accent }]}>
             <Ionicons name="add" size={23} color="#fff" />
           </Pressable>
         </View>
 
-        {storageStatus === 'failed' || storageError || storageWarnings.length ? (
-          <View style={[styles.storageWarning, { backgroundColor: storageError || storageStatus === 'failed' ? '#7f1d1d' : '#854d0e' }]}>
+        {storageStatus === 'failed' ? (
+          <View style={[styles.storageWarning, { backgroundColor: '#7f1d1d' }]}>
             <Ionicons name="alert-circle-outline" size={17} color="#fff" />
-            <Text style={styles.storageWarningText}>
-              {storageError || (storageStatus === 'failed' ? 'Saved information could not be loaded.' : storageWarnings.join(' '))}
-            </Text>
-            {storageStatus === 'failed'
-              ? <Pressable onPress={() => void retryStorageLoad()} accessibilityLabel="Retry loading saved information"><Ionicons name="refresh-outline" size={19} color="#fff" /></Pressable>
-              : storageError
-                ? <Pressable onPress={() => setSaveRevision(value => value + 1)} accessibilityLabel="Retry saving"><Ionicons name="refresh-outline" size={19} color="#fff" /></Pressable>
-                : null}
+            <Text style={styles.storageWarningText}>Storage could not be loaded or saved. Changes may not persist.</Text>
           </View>
         ) : null}
 
-        <ScrollView
-          key={screen}
-          style={styles.mainScroll}
-          contentContainerStyle={styles.pageContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          {renderScreen()}
-        </ScrollView>
-
-        <View style={[styles.tabBar, { backgroundColor: palette.surface, borderTopColor: palette.border }]}>
-          {tabs.map(tab => {
-            const active = tab.id === screen;
-            return (
-              <Pressable
-                key={tab.id}
-                accessibilityRole="tab"
-                accessibilityState={{ selected: active }}
-                onPress={() => setScreen(tab.id)}
-                style={styles.tabItem}
+        <Animated.View style={[styles.screenAnimatedContainer, { opacity: screenFadeAnim, transform: [{ translateY: screenSlideAnim }] }]}>
+          {screen === 'agent' ? (
+            <KeyboardAvoidingView
+              style={styles.agentScreen}
+              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+              keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 64 : 0}
+            >
+              {renderAgent()}
+            </KeyboardAvoidingView>
+          ) : (
+            <KeyboardAvoidingView
+              style={styles.flex}
+              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+              keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 64 : 0}
+            >
+              <ScrollView
+                key={screen}
+                style={styles.mainScroll}
+                contentContainerStyle={styles.pageContent}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
               >
-                <Ionicons name={tab.icon} size={20} color={active ? palette.accent : palette.muted} />
-                <Text style={[styles.tabLabel, { color: active ? palette.accent : palette.muted }]}>{tab.label}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      </KeyboardAvoidingView>
+                {renderScreen()}
+              </ScrollView>
+            </KeyboardAvoidingView>
+          )}
+        </Animated.View>
+
+        {(!isKeyboardVisible || screen !== 'agent') ? (
+          <View style={[styles.tabBar, { backgroundColor: palette.surface, borderTopColor: palette.border }]}>
+            {tabs.map(tab => {
+              const active = tab.id === screen;
+              return (
+                <Pressable
+                  key={tab.id}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: active }}
+                  onPress={() => navigateToScreen(tab.id)}
+                  style={({ pressed }) => [
+                    styles.tabItem,
+                    {
+                      opacity: pressed ? 0.7 : 1,
+                      transform: [{ scale: pressed ? 0.93 : 1 }],
+                    },
+                  ]}
+                >
+                  <Ionicons name={tab.icon} size={20} color={active ? palette.accent : palette.muted} />
+                  <Text style={[styles.tabLabel, { color: active ? palette.accent : palette.muted }]}>{tab.label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : null}
+      </View>
 
       {toast ? (
-        <View pointerEvents="none" style={[styles.toast, { backgroundColor: toastIsError ? '#be123c' : palette.accent }]}>
-          <Ionicons name={toastIsError ? 'alert-circle' : 'checkmark-circle'} size={18} color="#fff" />
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.toast,
+            {
+              backgroundColor: palette.accent,
+              opacity: toastAnim,
+              transform: [
+                {
+                  translateY: toastAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [18, 0],
+                  }),
+                },
+                {
+                  scale: toastAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0.93, 1],
+                  }),
+                },
+              ],
+            },
+          ]}
+        >
+          <Ionicons name="checkmark-circle" size={18} color="#fff" />
           <Text style={styles.toastText}>{toast}</Text>
-        </View>
+        </Animated.View>
       ) : null}
 
       <Modal visible={modal !== null} transparent animationType="slide" onRequestClose={() => setModal(null)}>
@@ -1477,28 +3319,6 @@ function FinAgentApp() {
               </ScrollView>
             </View>
           </KeyboardAvoidingView>
-        </View>
-      </Modal>
-
-      <Modal visible={confirmation !== null} transparent animationType="fade" onRequestClose={() => setConfirmation(null)}>
-        <View style={styles.confirmationBackdrop}>
-          <View style={[styles.confirmationCard, { backgroundColor: palette.surface, borderColor: palette.border }]}>
-            <Text style={[styles.modalTitle, { color: palette.text }]}>{confirmation?.title}</Text>
-            <Text style={[styles.caption, { color: palette.muted }]}>{confirmation?.message}</Text>
-            <View style={styles.modalButtons}>
-              <AppButton label="Cancel" onPress={() => setConfirmation(null)} palette={palette} variant="secondary" />
-              <AppButton
-                label={confirmation?.confirmLabel ?? 'Confirm'}
-                onPress={() => {
-                  const action = confirmation?.onConfirm;
-                  setConfirmation(null);
-                  action?.();
-                }}
-                palette={palette}
-                variant="danger"
-              />
-            </View>
-          </View>
         </View>
       </Modal>
     </SafeAreaView>
@@ -1520,13 +3340,115 @@ const styles = StyleSheet.create({
   storageWarning: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 8 },
   storageWarningText: { color: '#fff', fontSize: 12, flex: 1 },
   mainScroll: { flex: 1 },
-  pageContent: { padding: 16, paddingBottom: 28, gap: 14, maxWidth: 760, width: '100%', alignSelf: 'center' },
+  pageContent: { padding: 16, paddingBottom: 32, gap: 16, maxWidth: 760, width: '100%', alignSelf: 'center' },
   welcomeBlock: { marginBottom: 2 },
   pageTitle: { fontSize: 24, fontWeight: '800', letterSpacing: -0.4 },
   eyebrow: { fontSize: 10, fontWeight: '800', letterSpacing: 1.1, marginBottom: 6 },
   eyebrowWhite: { color: '#ffffffbb', fontSize: 10, fontWeight: '800', letterSpacing: 0.8, marginBottom: 4 },
-  netWorth: { fontSize: 32, fontWeight: '900', letterSpacing: -0.7, marginTop: 5, marginBottom: 12 },
+  netWorth: { fontSize: 32, fontWeight: '900', letterSpacing: -0.7, marginTop: 5, marginBottom: 10 },
   panel: { borderRadius: 20, borderWidth: 1, padding: 16, gap: 12 },
+  safeToSpendCard: {
+    borderRadius: 22,
+    borderWidth: 1.5,
+    padding: 18,
+    gap: 12,
+  },
+  safeToSpendHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  safeToSpendBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 20,
+    gap: 5,
+  },
+  safeToSpendDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+  },
+  safeToSpendBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+  },
+  safeToSpendHeroRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 8,
+    marginTop: 2,
+  },
+  safeToSpendHeroAmount: {
+    fontSize: 36,
+    fontWeight: '900',
+    letterSpacing: -1,
+  },
+  safeToSpendHeroUnit: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  safeToSpendDetailBanner: {
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderWidth: 1,
+  },
+  safeToSpendDetailText: {
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '600',
+  },
+  safeToSpendBreakdownGrid: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  safeToSpendBreakdownChip: {
+    flex: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  safeToSpendBreakdownLabel: {
+    fontSize: 9.5,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+    marginBottom: 2,
+  },
+  safeToSpendBreakdownValue: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  safeToSpendFormulaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    marginTop: 2,
+  },
+  safeToSpendFormulaText: {
+    fontSize: 10,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    fontWeight: '600',
+    flex: 1,
+    marginRight: 6,
+  },
+  heroPanel: { padding: 18, gap: 12 },
+  heroStatRow: { flexDirection: 'row', gap: 10, marginBottom: 4 },
+  statChip: { flex: 1, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 12, borderWidth: 1, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  statChipValue: { fontSize: 14, fontWeight: '800' },
+  quickActionsRow: { flexDirection: 'row', gap: 8, justifyContent: 'space-between' },
+  quickActionPill: { flex: 1, minHeight: 40, borderRadius: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 6, paddingVertical: 8 },
+  quickActionText: { fontSize: 12, fontWeight: '800' },
+  emptyBudgetContainer: { alignItems: 'center', paddingVertical: 14, paddingHorizontal: 8 },
   metricRow: { flexDirection: 'row', gap: 12, marginBottom: 8 },
   metric: { flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 14, backgroundColor: '#8b5cf615' },
   metricValue: { fontSize: 17, fontWeight: '800', marginTop: 3 },
@@ -1568,9 +3490,12 @@ const styles = StyleSheet.create({
   orderText: { fontWeight: '900', fontSize: 13 },
   cardActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 5 },
   cardMetaRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 6, marginTop: 3 },
+  agentScreen: { flex: 1, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 10, maxWidth: 760, width: '100%', alignSelf: 'center' },
+  agentInner: { flex: 1, gap: 10 },
+  chipsContainer: { maxHeight: 42, flexGrow: 0 },
   contextPanel: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12 },
   liveDot: { width: 8, height: 8, borderRadius: 4 },
-  chatPanel: { flex: 1, minHeight: 410, padding: 10 },
+  chatPanel: { flex: 1, minHeight: 0, padding: 10 },
   chatMessages: { flex: 1 },
   chatMessageContent: { gap: 10, paddingBottom: 8 },
   messageRow: { alignItems: 'flex-start' },
@@ -1581,9 +3506,12 @@ const styles = StyleSheet.create({
   messageFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginTop: 6 },
   messageTime: { fontSize: 10 },
   loadingSpinner: { marginVertical: 10 },
-  chatComposer: { minHeight: 49, borderWidth: 1, borderRadius: 15, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, marginTop: 8, gap: 8 },
-  chatInput: { flex: 1, minHeight: 42, maxHeight: 110, fontSize: 14, paddingVertical: 10 },
-  sendButton: { width: 36, height: 36, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  loadingRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginVertical: 8, paddingHorizontal: 6 },
+  chatComposer: { minHeight: 52, borderWidth: 1, borderRadius: 16, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 4, gap: 8 },
+  composerIconButton: { width: 36, height: 36, borderRadius: 11, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  clearButton: { padding: 4 },
+  chatInput: { flex: 1, minHeight: 44, maxHeight: 120, fontSize: 14, paddingVertical: 8, paddingHorizontal: 4 },
+  sendButton: { width: 38, height: 38, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
   fieldWrap: { gap: 5, marginBottom: 10 },
   fieldLabel: { fontSize: 11, fontWeight: '700' },
   field: { minHeight: 44, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14 },
@@ -1599,15 +3527,119 @@ const styles = StyleSheet.create({
   tabItem: { minWidth: 46, flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3, paddingVertical: 6 },
   tabLabel: { fontSize: 9, fontWeight: '700' },
   toast: { position: 'absolute', bottom: 76, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 15, paddingHorizontal: 14, paddingVertical: 11, elevation: 8 },
-  confirmationBackdrop: { flex: 1, backgroundColor: '#0009', alignItems: 'center', justifyContent: 'center', padding: 20 },
-  confirmationCard: { width: '100%', maxWidth: 420, borderWidth: 1, borderRadius: 20, padding: 20, gap: 8 },
   toastText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   modalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: '#0009' },
   modalKeyboard: { maxHeight: '92%' },
   modalSheet: { maxHeight: '92%', borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, paddingTop: 10, paddingHorizontal: 18, paddingBottom: 26 },
   modalHandle: { alignSelf: 'center', width: 38, height: 4, borderRadius: 4, backgroundColor: '#71717a', marginBottom: 16 },
   modalTitle: { fontSize: 20, fontWeight: '900', marginBottom: 14 },
+  backButton: { width: 36, height: 36, borderRadius: 12, borderWidth: 1, alignItems: 'center', justifyContent: 'center', marginRight: 8 },
+  screenAnimatedContainer: { flex: 1 },
+  stopButton: { backgroundColor: '#ef4444' },
+  stopChip: { flexDirection: 'row', alignItems: 'center', gap: 5, borderWidth: 1, borderRadius: 10, paddingHorizontal: 9, paddingVertical: 4 },
   modalButtons: { flexDirection: 'row', gap: 9, marginTop: 12, marginBottom: 8 },
+  modalTextArea: { minHeight: 140, maxHeight: 220, paddingTop: 12, fontSize: 14 },
+  modalChipsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 },
+  emptyCardPrompt: { width: 200, minHeight: 170, borderRadius: 20, borderWidth: 1, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', padding: 16 },
+  centerPanel: { alignItems: 'center', justifyContent: 'center', paddingVertical: 24, paddingHorizontal: 16 },
+  quickPromptChipsScroll: { maxHeight: 42, flexGrow: 0, marginTop: 4, marginBottom: 8 },
+  quickPromptChipsRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 2, alignItems: 'center' },
+  quickPromptChip: { paddingVertical: 7, paddingHorizontal: 12, borderRadius: 16, borderWidth: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+  quickPromptChipText: { fontSize: 12, fontWeight: '700' },
+  chatWidgetCard: {
+    marginTop: 10,
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 12,
+    gap: 8,
+  },
+  chatWidgetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 6,
+  },
+  chatWidgetHeaderTitle: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  chatWidgetStatusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  chatWidgetStatusBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  chatWidgetHeroRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 8,
+    marginVertical: 2,
+  },
+  chatWidgetHeroAmount: {
+    fontSize: 22,
+    fontWeight: '900',
+    letterSpacing: -0.5,
+  },
+  chatWidgetDetailsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  chatWidgetDetailPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  chatWidgetBalanceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 6,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  chatWidgetBillItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 10,
+    borderWidth: 1,
+    gap: 8,
+  },
+  chatWidgetMiniCallout: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  chatWidgetActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    marginTop: 2,
+  },
+  chatWidgetActionBtnText: {
+    fontSize: 11.5,
+    fontWeight: '800',
+  },
 });
 
 export default FinAgentApp;
