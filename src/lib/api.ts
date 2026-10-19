@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const envUrl = "http://192.168.0.104:3000";
+const envUrl = "https://fin-agent-server-bioa.vercel.app/";
 const api = axios.create({ baseURL: envUrl, timeout: 20_000 });
 
 export function getApiErrorMessage(error: unknown, feature: 'chat' | 'receipt') {
