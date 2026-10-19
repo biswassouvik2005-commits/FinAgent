@@ -2855,36 +2855,12 @@ function FinAgentApp() {
         </Pressable>
       </View>
 
-      {/* Vibrant Segmented Progress Tracker */}
-      <View style={styles.onboardProgressContainer}>
-        <View style={styles.rowBetween}>
-          <Text style={[styles.eyebrow, { color: palette.accent, marginBottom: 0 }]}>
-            STEP {onboardStep} OF 3 • {onboardStep === 1 ? 'IDENTITY' : onboardStep === 2 ? 'CASH FLOW' : 'CARDS & DEBT'}
-          </Text>
-          <Text style={[styles.caption, { color: palette.green, fontWeight: '800' }]}>
-            {onboardStep === 1 ? '33%' : onboardStep === 2 ? '66%' : '100%'}
-          </Text>
-        </View>
-
-        {/* Continuous Glowing Progress Track */}
-        <View style={[styles.onboardProgressTrack, { backgroundColor: isDark ? '#1e1e2d' : '#e2e8f0' }]}>
-          <View
-            style={[
-              styles.onboardProgressFill,
-              {
-                width: onboardStep === 1 ? '33%' : onboardStep === 2 ? '66%' : '100%',
-                backgroundColor: onboardStep === 3 ? palette.green : palette.accent,
-              },
-            ]}
-          />
-        </View>
-
-        {/* Step Chips */}
-        <View style={styles.onboardStepRow}>
+      <View style={[styles.rowBetween, { marginBottom: 14 }]}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           {[
-            { step: 1 as const, label: 'Identity', icon: 'person' as const },
-            { step: 2 as const, label: 'Cash Flow', icon: 'wallet' as const },
-            { step: 3 as const, label: 'Cards', icon: 'card' as const },
+            { step: 1 as const, label: 'Identity' },
+            { step: 2 as const, label: 'Cash Flow' },
+            { step: 3 as const, label: 'Cards' },
           ].map(s => {
             const active = onboardStep === s.step;
             const completed = onboardStep > s.step;
@@ -2896,13 +2872,13 @@ function FinAgentApp() {
                 }}
                 disabled={!completed}
                 style={[
-                  styles.onboardStepPill,
+                  styles.onboardStepChip,
                   {
                     backgroundColor: active
-                      ? (isDark ? '#7c3aed28' : '#ede9fe')
+                      ? palette.accent
                       : completed
-                        ? (isDark ? '#10b98125' : '#d1fae5')
-                        : (isDark ? '#181824' : '#f1f5f9'),
+                        ? (isDark ? '#064e3b50' : '#d1fae5')
+                        : palette.elevated,
                     borderColor: active
                       ? palette.accent
                       : completed
@@ -2911,272 +2887,88 @@ function FinAgentApp() {
                   },
                 ]}
               >
-                <Ionicons
-                  name={completed ? 'checkmark-circle' : s.icon}
-                  size={13}
-                  color={active ? palette.accent : completed ? palette.green : palette.muted}
-                />
                 <Text
-                  style={[
-                    styles.onboardStepPillText,
-                    {
-                      color: active ? palette.accent : completed ? palette.green : palette.muted,
-                      fontWeight: active || completed ? '800' : '600',
-                    },
-                  ]}
+                  style={{
+                    color: active ? '#ffffff' : completed ? palette.green : palette.muted,
+                    fontSize: 11,
+                    fontWeight: active || completed ? '700' : '600',
+                  }}
                 >
-                  {s.label}
+                  {completed ? '✓ ' : ''}{s.step}. {s.label}
                 </Text>
               </Pressable>
             );
           })}
         </View>
+        <Text style={[styles.caption, { color: palette.muted }]}>Step {onboardStep} of 3</Text>
       </View>
 
-      {/* Step 1: Identity & Welcome */}
       {onboardStep === 1 ? (
-        <View
-          style={[
-            styles.onboardHeroCard,
-            {
-              backgroundColor: isDark ? '#11121c' : '#ffffff',
-              borderColor: isDark ? '#7c3aed60' : '#c4b5fd',
-            },
-          ]}
-        >
-          {/* Top Multi-tone Gradient Shimmer Bar */}
-          <View style={styles.onboardTopShimmerBar} />
-
-          {/* Hero Icon & Floating AI Tag */}
-          <View style={styles.onboardHeroHeaderRow}>
-            <View style={styles.onboardOrbContainer}>
-              <View style={[styles.onboardOrbOuterGlow, { backgroundColor: isDark ? '#7c3aed25' : '#ede9fe', borderColor: '#8b5cf680' }]}>
-                <View style={styles.onboardOrbInner}>
-                  <Ionicons name="sparkles" size={24} color="#ffffff" />
-                </View>
-              </View>
-            </View>
-            <View style={[styles.onboardBadgePill, { backgroundColor: isDark ? '#7c3aed20' : '#f5f3ff', borderColor: palette.accent }]}>
-              <View style={[styles.onboardPulseDot, { backgroundColor: palette.accent }]} />
-              <Text style={[styles.onboardBadgePillText, { color: palette.accent }]}>
-                AI WEALTH COPILOT
-              </Text>
-            </View>
-          </View>
-
-          {/* Title & Subtitle */}
-          <View style={{ marginTop: 14, marginBottom: 12 }}>
-            <Text style={[styles.onboardHeroTitle, { color: palette.text }]}>
-              Welcome to FinAgent
+        <Panel palette={palette} style={styles.onboardSimpleCard}>
+          <View style={{ gap: 4, marginBottom: 4 }}>
+            <Text style={[styles.eyebrow, { color: palette.accent }]}>WELCOME TO FINAGENT</Text>
+            <Text style={[styles.pageTitle, { color: palette.text, fontSize: 22 }]}>
+              Let's customize your advisor
             </Text>
-            <Text style={[styles.onboardHeroSubtitle, { color: palette.muted }]}>
-              Your autonomous personal financial strategist. We start fresh with zero preset balances or hardcoded mock data.
+            <Text style={[styles.caption, { color: palette.muted, lineHeight: 18 }]}>
+              Your private personal financial strategist. We start fresh with zero preset accounts or hardcoded data.
             </Text>
           </View>
 
-          {/* 3 Eye-Catching Value Props */}
-          <View style={styles.onboardPerksRow}>
-            <View style={[styles.onboardPerkCard, { backgroundColor: isDark ? '#161826' : '#f8fafc', borderColor: palette.border }]}>
-              <Ionicons name="shield-checkmark" size={16} color={palette.green} />
-              <Text style={[styles.onboardPerkTitle, { color: palette.text }]}>100% Private</Text>
-              <Text style={[styles.onboardPerkSub, { color: palette.muted }]}>Local device</Text>
-            </View>
-            <View style={[styles.onboardPerkCard, { backgroundColor: isDark ? '#161826' : '#f8fafc', borderColor: palette.border }]}>
-              <Ionicons name="flash" size={16} color="#f59e0b" />
-              <Text style={[styles.onboardPerkTitle, { color: palette.text }]}>Zero Friction</Text>
-              <Text style={[styles.onboardPerkSub, { color: palette.muted }]}>No bank logins</Text>
-            </View>
-            <View style={[styles.onboardPerkCard, { backgroundColor: isDark ? '#161826' : '#f8fafc', borderColor: palette.border }]}>
-              <Ionicons name="analytics" size={16} color={palette.accent} />
-              <Text style={[styles.onboardPerkTitle, { color: palette.text }]}>Neural Advice</Text>
-              <Text style={[styles.onboardPerkSub, { color: palette.muted }]}>50/30/20 Plan</Text>
-            </View>
+          <View style={{ marginTop: 8 }}>
+            <Field
+              label="What should FinAgent call you?"
+              value={onboardName}
+              onChangeText={setOnboardName}
+              palette={palette}
+              placeholder="Enter your name"
+              autoCapitalize="words"
+            />
           </View>
 
-          {/* Vibrant Interactive Input Field */}
-          <View style={{ marginTop: 16 }}>
-            <View style={styles.rowBetween}>
-              <Text style={[styles.eyebrow, { color: palette.accent, marginBottom: 8 }]}>
-                WHAT SHOULD FINAGENT CALL YOU?
-              </Text>
-              {onboardName.trim() ? (
-                <View style={styles.onboardInputReadyTag}>
-                  <Ionicons name="checkmark-circle" size={12} color={palette.green} />
-                  <Text style={[styles.onboardInputReadyText, { color: palette.green }]}>READY</Text>
-                </View>
-              ) : null}
-            </View>
-
-            <View
-              style={[
-                styles.onboardInputWrapper,
-                {
-                  backgroundColor: isDark ? '#0d0d14' : '#f8fafc',
-                  borderColor: onboardName.trim() ? palette.accent : palette.border,
-                },
-              ]}
-            >
-              <View style={[styles.onboardInputAvatar, { backgroundColor: isDark ? '#7c3aed25' : '#ede9fe' }]}>
-                <Ionicons name="person" size={18} color={palette.accent} />
-              </View>
-              <TextInput
-                value={onboardName}
-                onChangeText={setOnboardName}
-                placeholder="Enter your name (e.g. Alex, Jordan)"
-                placeholderTextColor={palette.muted}
-                autoCapitalize="words"
-                returnKeyType="done"
-                onSubmitEditing={() => {
-                  if (onboardName.trim()) setOnboardStep(2);
-                }}
-                style={[styles.onboardTextInput, { color: palette.text }]}
-              />
-              {onboardName.trim() ? (
-                <Pressable
-                  onPress={() => setOnboardName('')}
-                  hitSlop={8}
-                  style={{ padding: 6 }}
-                  accessibilityLabel="Clear name"
-                >
-                  <Ionicons name="close-circle" size={18} color={palette.muted} />
-                </Pressable>
-              ) : null}
-            </View>
+          <View style={styles.topGap}>
+            <AppButton
+              label="Continue to Baseline"
+              icon="arrow-forward-outline"
+              disabled={!onboardName.trim()}
+              onPress={() => setOnboardStep(2)}
+              palette={palette}
+            />
           </View>
-
-          {/* Dynamic Personalized Greeting / Quick Suggestions */}
-          {onboardName.trim() ? (
-            <View style={[styles.onboardGreetingBanner, { backgroundColor: isDark ? '#052e1635' : '#ecfdf5', borderColor: palette.green }]}>
-              <Ionicons name="sparkles" size={16} color={palette.green} />
-              <Text style={[styles.onboardGreetingText, { color: palette.text }]}>
-                Nice to meet you, <Text style={{ color: palette.green, fontWeight: '900' }}>{onboardName.trim()}</Text>! Let's dial in your baseline.
-              </Text>
-            </View>
-          ) : (
-            <View style={styles.onboardQuickPicksRow}>
-              <Text style={[styles.caption, { color: palette.muted, marginRight: 6 }]}>Quick pick:</Text>
-              {['Alex', 'Jordan', 'Sam', 'Taylor'].map(sampleName => (
-                <Pressable
-                  key={sampleName}
-                  onPress={() => setOnboardName(sampleName)}
-                  style={({ pressed }) => [
-                    styles.onboardQuickPickChip,
-                    {
-                      backgroundColor: isDark ? '#191928' : '#f1f5f9',
-                      borderColor: palette.border,
-                      opacity: pressed ? 0.7 : 1,
-                    },
-                  ]}
-                >
-                  <Text style={[styles.onboardQuickPickText, { color: palette.text }]}>{sampleName}</Text>
-                </Pressable>
-              ))}
-            </View>
-          )}
-
-          {/* Hero CTA Button */}
-          <Pressable
-            accessibilityRole="button"
-            disabled={!onboardName.trim()}
-            onPress={() => setOnboardStep(2)}
-            style={({ pressed }) => [
-              styles.onboardHeroCTA,
-              {
-                backgroundColor: onboardName.trim() ? palette.accent : (isDark ? '#4c1d9580' : '#c4b5fd'),
-                opacity: pressed && onboardName.trim() ? 0.88 : 1,
-                transform: [{ scale: pressed && onboardName.trim() ? 0.98 : 1 }],
-              },
-            ]}
-          >
-            <Text style={styles.onboardHeroCTAText}>Continue to Baseline</Text>
-            <View style={styles.onboardHeroCTAIconWrap}>
-              <Ionicons name="arrow-forward" size={18} color="#ffffff" />
-            </View>
-          </Pressable>
-        </View>
+        </Panel>
       ) : null}
 
-      {/* Step 2: Cash Flow Baseline */}
       {onboardStep === 2 ? (
-        <View
-          style={[
-            styles.onboardHeroCard,
-            {
-              backgroundColor: isDark ? '#11121c' : '#ffffff',
-              borderColor: isDark ? '#10b98160' : '#a7f3d0',
-            },
-          ]}
-        >
-          <View style={[styles.onboardTopShimmerBar, { backgroundColor: palette.green }]} />
-
-          <View style={styles.onboardHeroHeaderRow}>
-            <View style={styles.onboardOrbContainer}>
-              <View style={[styles.onboardOrbOuterGlow, { backgroundColor: isDark ? '#10b98125' : '#d1fae5', borderColor: '#34d39980' }]}>
-                <View style={[styles.onboardOrbInner, { backgroundColor: palette.green }]}>
-                  <Ionicons name="wallet" size={24} color="#ffffff" />
-                </View>
-              </View>
-            </View>
-            <View style={[styles.onboardBadgePill, { backgroundColor: isDark ? '#10b98120' : '#ecfdf5', borderColor: palette.green }]}>
-              <View style={[styles.onboardPulseDot, { backgroundColor: palette.green }]} />
-              <Text style={[styles.onboardBadgePillText, { color: palette.green }]}>
-                FINANCIAL BASELINE
-              </Text>
-            </View>
-          </View>
-
-          <View style={{ marginTop: 14, marginBottom: 12 }}>
-            <Text style={[styles.onboardHeroTitle, { color: palette.text }]}>
-              Establish Your Baseline
+        <Panel palette={palette} style={styles.onboardSimpleCard}>
+          <View style={{ gap: 4, marginBottom: 4 }}>
+            <Text style={[styles.eyebrow, { color: palette.accent }]}>CASH FLOW BASELINE</Text>
+            <Text style={[styles.pageTitle, { color: palette.text, fontSize: 22 }]}>
+              Establish your baseline
             </Text>
-            <Text style={[styles.onboardHeroSubtitle, { color: palette.muted }]}>
+            <Text style={[styles.caption, { color: palette.muted, lineHeight: 18 }]}>
               FinAgent calculates your real-time net worth and debt payoff timelines from your take-home income and liquid cash.
             </Text>
           </View>
 
-          <View style={{ gap: 12 }}>
-            <View style={[styles.onboardMetricInputCard, { backgroundColor: isDark ? '#161826' : '#f8fafc', borderColor: palette.border }]}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-                <View style={[styles.onboardMetricIconWrap, { backgroundColor: '#10b98120' }]}>
-                  <Ionicons name="cash-outline" size={18} color={palette.green} />
-                </View>
-                <View style={styles.flex}>
-                  <Text style={[styles.bodyStrong, { color: palette.text }]}>Monthly Take-Home Income</Text>
-                  <Text style={[styles.caption, { color: palette.muted }]}>After taxes & payroll deductions</Text>
-                </View>
-              </View>
-              <TextInput
-                value={onboardIncome}
-                onChangeText={setOnboardIncome}
-                placeholder="$0.00"
-                placeholderTextColor={palette.muted}
-                keyboardType="decimal-pad"
-                style={[styles.onboardCurrencyInput, { color: palette.text, backgroundColor: palette.input, borderColor: palette.border }]}
-              />
-            </View>
+          <Field
+            label="Monthly take-home income ($)"
+            value={onboardIncome}
+            onChangeText={setOnboardIncome}
+            palette={palette}
+            placeholder="0.00"
+            keyboardType="decimal-pad"
+          />
 
-            <View style={[styles.onboardMetricInputCard, { backgroundColor: isDark ? '#161826' : '#f8fafc', borderColor: palette.border }]}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-                <View style={[styles.onboardMetricIconWrap, { backgroundColor: '#3b82f620' }]}>
-                  <Ionicons name="business-outline" size={18} color="#3b82f6" />
-                </View>
-                <View style={styles.flex}>
-                  <Text style={[styles.bodyStrong, { color: palette.text }]}>Liquid Checking & Cash</Text>
-                  <Text style={[styles.caption, { color: palette.muted }]}>Starting cash reserve available today</Text>
-                </View>
-              </View>
-              <TextInput
-                value={onboardCash}
-                onChangeText={setOnboardCash}
-                placeholder="$0.00"
-                placeholderTextColor={palette.muted}
-                keyboardType="decimal-pad"
-                style={[styles.onboardCurrencyInput, { color: palette.text, backgroundColor: palette.input, borderColor: palette.border }]}
-              />
-            </View>
-          </View>
+          <Field
+            label="Liquid cash & checking reserve ($)"
+            value={onboardCash}
+            onChangeText={setOnboardCash}
+            palette={palette}
+            placeholder="0.00"
+            keyboardType="decimal-pad"
+          />
 
-          <View style={[styles.rowBetween, { marginTop: 20 }]}>
+          <View style={[styles.rowBetween, styles.topGap]}>
             <AppButton
               label="Back"
               icon="arrow-back-outline"
@@ -3191,65 +2983,20 @@ function FinAgentApp() {
               palette={palette}
             />
           </View>
-        </View>
+        </Panel>
       ) : null}
 
-      {/* Step 3: Cards */}
       {onboardStep === 3 ? (
         <>
-          <View
-            style={[
-              styles.onboardHeroCard,
-              {
-                backgroundColor: isDark ? '#11121c' : '#ffffff',
-                borderColor: isDark ? '#3b82f660' : '#bfdbfe',
-              },
-            ]}
-          >
-            <View style={[styles.onboardTopShimmerBar, { backgroundColor: '#3b82f6' }]} />
-
-            <View style={styles.onboardHeroHeaderRow}>
-              <View style={styles.onboardOrbContainer}>
-                <View style={[styles.onboardOrbOuterGlow, { backgroundColor: isDark ? '#3b82f625' : '#dbeafe', borderColor: '#60a5fa80' }]}>
-                  <View style={[styles.onboardOrbInner, { backgroundColor: '#3b82f6' }]}>
-                    <Ionicons name="card" size={24} color="#ffffff" />
-                  </View>
-                </View>
-              </View>
-              <View style={[styles.onboardBadgePill, { backgroundColor: isDark ? '#3b82f620' : '#eff6ff', borderColor: '#3b82f6' }]}>
-                <View style={[styles.onboardPulseDot, { backgroundColor: '#3b82f6' }]} />
-                <Text style={[styles.onboardBadgePillText, { color: '#3b82f6' }]}>
-                  CARDS & DEBT
-                </Text>
-              </View>
-            </View>
-
-            <View style={{ marginTop: 14, marginBottom: 12 }}>
-              <Text style={[styles.onboardHeroTitle, { color: palette.text }]}>
-                Add Your Credit Cards
+          <Panel palette={palette} style={styles.onboardSimpleCard}>
+            <View style={{ gap: 4, marginBottom: 4 }}>
+              <Text style={[styles.eyebrow, { color: palette.accent }]}>CONNECTED CARDS</Text>
+              <Text style={[styles.pageTitle, { color: palette.text, fontSize: 22 }]}>
+                Add your credit cards
               </Text>
-              <Text style={[styles.onboardHeroSubtitle, { color: palette.muted }]}>
-                Connect active credit lines to calculate utilization, APR, and smart payoff order. You can also skip this step.
+              <Text style={[styles.caption, { color: palette.muted, lineHeight: 18 }]}>
+                Add active cards to monitor APR, balances, and debt payoff strategy. You can also skip this step.
               </Text>
-            </View>
-
-            {/* Interactive Card Canvas Preview */}
-            <View style={[styles.onboardCardMockup, { backgroundColor: cardColors[onboardCardNetwork] || '#1f2937' }]}>
-              <View style={styles.rowBetween}>
-                <View style={styles.onboardCardChip} />
-                <Text style={styles.onboardCardNetworkTag}>{onboardCardNetwork.toUpperCase()}</Text>
-              </View>
-              <Text style={styles.onboardCardMockupNumber}>•••• •••• •••• {onboardCardLast4.trim() || '••••'}</Text>
-              <View style={styles.rowBetween}>
-                <View>
-                  <Text style={styles.onboardCardHolderLabel}>CARDHOLDER</Text>
-                  <Text numberOfLines={1} style={styles.onboardCardHolderName}>{onboardName.toUpperCase() || 'YOUR NAME'}</Text>
-                </View>
-                <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={styles.onboardCardHolderLabel}>BALANCE</Text>
-                  <Text style={styles.onboardCardHolderName}>${onboardCardBalance || '0.00'}</Text>
-                </View>
-              </View>
             </View>
 
             <Field
@@ -3257,8 +3004,9 @@ function FinAgentApp() {
               value={onboardCardName}
               onChangeText={setOnboardCardName}
               palette={palette}
-              placeholder="e.g. Chase Sapphire, Apple Card"
+              placeholder="e.g. Chase Freedom, Apple Card"
             />
+
             <Text style={[styles.fieldLabel, { color: palette.muted }]}>Network</Text>
             <ChoiceChips
               values={['visa', 'mastercard', 'amex', 'discover'] as const}
@@ -3266,6 +3014,7 @@ function FinAgentApp() {
               onSelect={setOnboardCardNetwork}
               palette={palette}
             />
+
             <View style={styles.formRow}>
               <View style={styles.flex}>
                 <Field
@@ -3288,6 +3037,7 @@ function FinAgentApp() {
                 />
               </View>
             </View>
+
             <View style={styles.formRow}>
               <View style={styles.flex}>
                 <Field
@@ -3322,7 +3072,7 @@ function FinAgentApp() {
                 variant="secondary"
               />
             </View>
-          </View>
+          </Panel>
 
           {onboardCards.length > 0 ? (
             <Panel palette={palette}>
@@ -3374,11 +3124,10 @@ function FinAgentApp() {
         </>
       ) : null}
 
-      {/* Trust Footer */}
-      <View style={[styles.onboardTrustFooter, { backgroundColor: isDark ? '#14141e' : '#f1f5f9', borderColor: palette.border }]}>
-        <Ionicons name="shield-checkmark" size={16} color={palette.green} />
-        <Text style={[styles.onboardTrustFooterText, { color: palette.muted }]}>
-          FinAgent Sandbox: All accounts & balances stay 100% private and encrypted on this device.
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 24 }}>
+        <Ionicons name="lock-closed-outline" size={13} color={palette.muted} />
+        <Text style={[styles.caption, { color: palette.muted }]}>
+          FinAgent stores all financial data safely and locally on your device.
         </Text>
       </View>
     </ScrollView>
@@ -4643,308 +4392,17 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
   },
-  onboardProgressContainer: {
-    gap: 8,
-    marginBottom: 16,
-  },
-  onboardProgressTrack: {
-    height: 5,
-    borderRadius: 3,
-    overflow: 'hidden',
-    width: '100%',
-  },
-  onboardProgressFill: {
-    height: '100%',
-    borderRadius: 3,
-  },
-  onboardStepRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 2,
-  },
-  onboardStepPill: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 5,
-    paddingVertical: 7,
-    paddingHorizontal: 8,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  onboardStepPillText: {
-    fontSize: 11.5,
-  },
-  onboardHeroCard: {
-    borderRadius: 24,
-    borderWidth: 1.5,
-    padding: 20,
-    overflow: 'hidden',
-    position: 'relative',
-    elevation: 6,
-    shadowColor: '#7c3aed',
-    shadowOpacity: 0.15,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 6 },
-  },
-  onboardTopShimmerBar: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 4,
-    backgroundColor: '#7c3aed',
-  },
-  onboardHeroHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 4,
-  },
-  onboardOrbContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  onboardOrbOuterGlow: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    borderWidth: 1.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  onboardOrbInner: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#7c3aed',
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 4,
-  },
-  onboardBadgePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 10,
+  onboardStepChip: {
+    paddingHorizontal: 11,
     paddingVertical: 5,
     borderRadius: 14,
     borderWidth: 1,
   },
-  onboardPulseDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-  },
-  onboardBadgePillText: {
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.6,
-  },
-  onboardHeroTitle: {
-    fontSize: 23,
-    fontWeight: '900',
-    letterSpacing: -0.5,
-    marginBottom: 6,
-  },
-  onboardHeroSubtitle: {
-    fontSize: 13,
-    lineHeight: 19,
-    fontWeight: '500',
-  },
-  onboardPerksRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginVertical: 4,
-  },
-  onboardPerkCard: {
-    flex: 1,
-    borderRadius: 14,
+  onboardSimpleCard: {
+    borderRadius: 20,
     borderWidth: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 3,
-  },
-  onboardPerkTitle: {
-    fontSize: 11,
-    fontWeight: '800',
-    marginTop: 2,
-    textAlign: 'center',
-  },
-  onboardPerkSub: {
-    fontSize: 9.5,
-    fontWeight: '500',
-    textAlign: 'center',
-  },
-  onboardInputReadyTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  onboardInputReadyText: {
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-  onboardInputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: 56,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    paddingHorizontal: 12,
-    gap: 10,
-    elevation: 2,
-  },
-  onboardInputAvatar: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  onboardTextInput: {
-    flex: 1,
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  onboardGreetingBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 14,
-    borderWidth: 1,
-    marginTop: 10,
-  },
-  onboardGreetingText: {
-    fontSize: 12,
-    fontWeight: '600',
-    flex: 1,
-  },
-  onboardQuickPicksRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginTop: 10,
-  },
-  onboardQuickPickChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 10,
-    borderWidth: 1,
-  },
-  onboardQuickPickText: {
-    fontSize: 11.5,
-    fontWeight: '700',
-  },
-  onboardHeroCTA: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    height: 52,
-    borderRadius: 16,
-    marginTop: 18,
-    elevation: 6,
-    shadowColor: '#7c3aed',
-    shadowOpacity: 0.5,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-  },
-  onboardHeroCTAText: {
-    color: '#ffffff',
-    fontSize: 15,
-    fontWeight: '800',
-    letterSpacing: -0.2,
-  },
-  onboardHeroCTAIconWrap: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: '#ffffff25',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  onboardMetricInputCard: {
-    borderRadius: 16,
-    borderWidth: 1,
-    padding: 14,
-    gap: 10,
-  },
-  onboardMetricIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  onboardCurrencyInput: {
-    height: 48,
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    fontSize: 18,
-    fontWeight: '800',
-  },
-  onboardCardMockup: {
-    borderRadius: 18,
-    padding: 16,
-    gap: 14,
-    marginBottom: 14,
-    elevation: 4,
-  },
-  onboardCardChip: {
-    width: 32,
-    height: 24,
-    borderRadius: 6,
-    backgroundColor: '#fbbf24',
-    borderWidth: 1,
-    borderColor: '#f59e0b',
-  },
-  onboardCardNetworkTag: {
-    color: '#ffffffcc',
-    fontSize: 12,
-    fontWeight: '900',
-    letterSpacing: 1,
-  },
-  onboardCardMockupNumber: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '800',
-    letterSpacing: 2,
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-  },
-  onboardCardHolderLabel: {
-    color: '#ffffff88',
-    fontSize: 9,
-    fontWeight: '800',
-    letterSpacing: 0.6,
-  },
-  onboardCardHolderName: {
-    color: '#ffffff',
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  onboardTrustFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    padding: 14,
-    borderRadius: 16,
-    borderWidth: 1,
-    marginTop: 20,
-  },
-  onboardTrustFooterText: {
-    fontSize: 11.5,
-    fontWeight: '600',
-    flex: 1,
-    lineHeight: 16,
+    padding: 18,
+    gap: 12,
   },
 });
 
