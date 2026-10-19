@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const envUrl = process.env.EXPO_PUBLIC_API_URL?.trim().replace(/\/+$/, '');
+const envUrl = "http://192.168.0.104:3000";
 const api = axios.create({ baseURL: envUrl, timeout: 20_000 });
 
 export function getApiErrorMessage(error: unknown, feature: 'chat' | 'receipt') {
