@@ -7,8 +7,8 @@ interface NetWorthChartProps {
 }
 
 export function NetWorthChart({ currentValue, isDark }: NetWorthChartProps) {
-  const textColor = isDark ? '#f4f4f5' : '#18181b';
-  const mutedColor = isDark ? '#a1a1aa' : '#71717a';
+  const textColor = isDark ? '#FAFAFA' : '#0F172A';
+  const mutedColor = isDark ? '#A1A1AA' : '#64748B';
 
   return (
     <View style={styles.container}>

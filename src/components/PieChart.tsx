@@ -13,7 +13,7 @@ interface PieChartProps {
   colors?: string[];
 }
 
-const defaultColors = ['#1DA1F2', '#17BF63', '#F45D22', '#794BC4', '#F59E0B', '#E1E8ED'];
+const defaultColors = ['#6366F1', '#0D9488', '#B89B5E', '#64748B', '#F59E0B', '#10B981'];
 const size = 130;
 const center = size / 2;
 const radius = 54;
@@ -53,7 +53,7 @@ export const PieChart: React.FC<PieChartProps> = ({ data, isDark, colors = defau
     <View style={styles.container}>
       <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
         {slices.map((slice, index) => (
-          <Path key={`${slice.category}-${index}`} d={slice.path} fill={slice.color} stroke={isDark ? '#111116' : '#ffffff'} strokeWidth={2} />
+          <Path key={`${slice.category}-${index}`} d={slice.path} fill={slice.color} stroke={isDark ? '#18181B' : '#FFFFFF'} strokeWidth={2} />
         ))}
       </Svg>
       <View style={styles.legend}>
@@ -61,10 +61,10 @@ export const PieChart: React.FC<PieChartProps> = ({ data, isDark, colors = defau
           <View key={slice.category} style={styles.legendRow}>
             <View style={styles.categoryName}>
               <View style={[styles.dot, { backgroundColor: slice.color }]} />
-              <Text numberOfLines={1} style={[styles.category, { color: isDark ? '#d4d4d8' : '#3f3f46' }]}>{slice.category}</Text>
+              <Text numberOfLines={1} style={[styles.category, { color: isDark ? '#A1A1AA' : '#64748B' }]}>{slice.category}</Text>
             </View>
-            <Text style={[styles.amount, { color: isDark ? '#f4f4f5' : '#18181b' }]}>{slice.amount.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })}</Text>
-            <Text style={[styles.percentage, { color: isDark ? '#a1a1aa' : '#71717a' }]}>{slice.percentage}%</Text>
+            <Text style={[styles.amount, { color: isDark ? '#FAFAFA' : '#0F172A' }]}>{slice.amount.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })}</Text>
+            <Text style={[styles.percentage, { color: isDark ? '#A1A1AA' : '#64748B' }]}>{slice.percentage}%</Text>
           </View>
         ))}
       </View>
