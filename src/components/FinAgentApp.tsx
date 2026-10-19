@@ -1171,6 +1171,144 @@ function FinAgentApp() {
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const chatScroll = useRef<ScrollViewRef>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Drag-to-cancel bottom sheet gesture & animation
+  const modalPanY = useRef(new Animated.Value(0)).current;
+  const modalScrollOffset = useRef(0);
+  const isClosingRef = useRef(false);
+  const previousModalRef = useRef<ModalType | null>(null);
+  const closeModalRef = useRef<() => void>(() => {});
+
+  const closeModal = () => {
+    if (isClosingRef.current) return;
+    isClosingRef.current = true;
+    Keyboard.dismiss();
+    Animated.timing(modalPanY, {
+      toValue: 650,
+      duration: 220,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start(() => {
+      setModal(null);
+      modalPanY.setValue(0);
+      modalScrollOffset.current = 0;
+      isClosingRef.current = false;
+      previousModalRef.current = null;
+    });
+  };
+  closeModalRef.current = closeModal;
+
+  useEffect(() => {
+    if (modal !== null) {
+      if (previousModalRef.current === null) {
+        isClosingRef.current = false;
+        modalPanY.setValue(350);
+        modalScrollOffset.current = 0;
+        Animated.spring(modalPanY, {
+          toValue: 0,
+          tension: 70,
+          friction: 11,
+          useNativeDriver: true,
+        }).start();
+      } else {
+        modalPanY.setValue(0);
+        modalScrollOffset.current = 0;
+      }
+      previousModalRef.current = modal;
+    } else {
+      previousModalRef.current = null;
+    }
+  }, [modal]);
+
+  const handlePanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponderCapture: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponderCapture: () => true,
+      onPanResponderGrant: () => {
+        Keyboard.dismiss();
+      },
+      onPanResponderMove: (_, gestureState) => {
+        if (gestureState.dy > 0) {
+          modalPanY.setValue(gestureState.dy);
+        } else {
+          modalPanY.setValue(gestureState.dy * 0.15);
+        }
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        if (gestureState.dy > 70 || (gestureState.dy > 25 && gestureState.vy > 0.3)) {
+          closeModalRef.current();
+        } else {
+          Animated.spring(modalPanY, {
+            toValue: 0,
+            tension: 80,
+            friction: 10,
+            useNativeDriver: true,
+          }).start();
+        }
+      },
+      onPanResponderTerminate: () => {
+        Animated.spring(modalPanY, {
+          toValue: 0,
+          tension: 80,
+          friction: 10,
+          useNativeDriver: true,
+        }).start();
+      },
+    })
+  ).current;
+
+  const modalPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onStartShouldSetPanResponderCapture: () => false,
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        return (
+          modalScrollOffset.current <= 0 &&
+          gestureState.dy > 10 &&
+          Math.abs(gestureState.dy) > Math.abs(gestureState.dx) * 1.5
+        );
+      },
+      onMoveShouldSetPanResponderCapture: (_, gestureState) => {
+        return (
+          modalScrollOffset.current <= 0 &&
+          gestureState.dy > 10 &&
+          Math.abs(gestureState.dy) > Math.abs(gestureState.dx) * 1.5
+        );
+      },
+      onPanResponderGrant: () => {
+        Keyboard.dismiss();
+      },
+      onPanResponderMove: (_, gestureState) => {
+        if (gestureState.dy > 0) {
+          modalPanY.setValue(gestureState.dy);
+        } else {
+          modalPanY.setValue(gestureState.dy * 0.15);
+        }
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        if (gestureState.dy > 80 || (gestureState.dy > 25 && gestureState.vy > 0.35)) {
+          closeModalRef.current();
+        } else {
+          Animated.spring(modalPanY, {
+            toValue: 0,
+            tension: 80,
+            friction: 10,
+            useNativeDriver: true,
+          }).start();
+        }
+      },
+      onPanResponderTerminate: () => {
+        Animated.spring(modalPanY, {
+          toValue: 0,
+          tension: 80,
+          friction: 10,
+          useNativeDriver: true,
+        }).start();
+      },
+    })
+  ).current;
   const isDark = theme === 'dark';
   const palette = useMemo(() => paletteFor(isDark), [isDark]);
 
@@ -3326,7 +3464,7 @@ function FinAgentApp() {
             <View style={styles.flex}><Field label="Due date" value={cardDueDate} onChangeText={setCardDueDate} palette={palette} placeholder="e.g. 15th" /></View>
           </View>
           <View style={styles.modalButtons}>
-            <AppButton label="Cancel" onPress={() => setModal(null)} palette={palette} variant="secondary" />
+            <AppButton label="Cancel" onPress={closeModal} palette={palette} variant="secondary" />
             <AppButton label={editingCardId ? 'Save changes' : 'Save card'} onPress={saveCard} palette={palette} />
           </View>
         </>
@@ -3344,7 +3482,7 @@ function FinAgentApp() {
           <Text style={[styles.fieldLabel, { color: palette.muted }]}>Account / card used</Text>
           <ChoiceChips values={['Primary Checking', ...cards.map(card => card.cardName)]} selected={txSource} onSelect={setTxSource} palette={palette} />
           <View style={styles.modalButtons}>
-            <AppButton label="Cancel" onPress={() => setModal(null)} palette={palette} variant="secondary" />
+            <AppButton label="Cancel" onPress={closeModal} palette={palette} variant="secondary" />
             <AppButton label="Save transaction" onPress={saveTransaction} palette={palette} />
           </View>
         </>
@@ -3358,7 +3496,7 @@ function FinAgentApp() {
           <Field label="Amount" value={billAmount} onChangeText={setBillAmount} palette={palette} placeholder="0.00" keyboardType="decimal-pad" />
           <Field label="Due date" value={billDueDate} onChangeText={setBillDueDate} palette={palette} placeholder="e.g. 1st of month" />
           <View style={styles.modalButtons}>
-            <AppButton label="Cancel" onPress={() => setModal(null)} palette={palette} variant="secondary" />
+            <AppButton label="Cancel" onPress={closeModal} palette={palette} variant="secondary" />
             <AppButton label="Save bill" onPress={saveBill} palette={palette} />
           </View>
         </>
@@ -3373,7 +3511,7 @@ function FinAgentApp() {
           <Field label="Payment amount" value={paymentAmount} onChangeText={setPaymentAmount} palette={palette} placeholder="0.00" keyboardType="decimal-pad" />
           <Text style={[styles.caption, { color: palette.muted }]}>The payment reduces card debt and available cash.</Text>
           <View style={styles.modalButtons}>
-            <AppButton label="Cancel" onPress={() => setModal(null)} palette={palette} variant="secondary" />
+            <AppButton label="Cancel" onPress={closeModal} palette={palette} variant="secondary" />
             <AppButton label="Apply payment" onPress={savePayment} palette={palette} />
           </View>
         </>
@@ -3469,14 +3607,14 @@ function FinAgentApp() {
           </ScrollView>
 
           <View style={styles.modalButtons}>
-            <AppButton label="Cancel" onPress={() => setModal(null)} palette={palette} variant="secondary" />
+            <AppButton label="Cancel" onPress={closeModal} palette={palette} variant="secondary" />
             {isLoadingChat ? (
               <AppButton
                 label="Stop response"
                 icon="stop-circle"
                 onPress={() => {
                   stopAgent();
-                  setModal(null);
+                  closeModal();
                 }}
                 palette={palette}
               />
@@ -3508,7 +3646,7 @@ function FinAgentApp() {
               </Text>
             </View>
             <Pressable
-              onPress={() => setModal(null)}
+              onPress={closeModal}
               accessibilityLabel="Close receipt source sheet"
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
@@ -3588,7 +3726,7 @@ function FinAgentApp() {
           <View style={{ marginTop: 12, marginBottom: 8 }}>
             <AppButton
               label="Cancel"
-              onPress={() => setModal(null)}
+              onPress={closeModal}
               palette={palette}
               variant="quiet"
             />
@@ -3608,7 +3746,7 @@ function FinAgentApp() {
               </Text>
             </View>
             <Pressable
-              onPress={() => setModal(null)}
+              onPress={closeModal}
               accessibilityLabel="Close confirmation sheet"
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
@@ -3680,12 +3818,18 @@ function FinAgentApp() {
             palette={palette}
           />
 
-          <View style={{ marginTop: 20, marginBottom: 8 }}>
+          <View style={{ marginTop: 20, marginBottom: 8, gap: 8 }}>
             <AppButton
               label="Confirm & Add to Expenses"
               icon="checkmark-circle-outline"
               onPress={confirmAndAddReceiptExpense}
               palette={palette}
+            />
+            <AppButton
+              label="Cancel"
+              onPress={closeModal}
+              palette={palette}
+              variant="quiet"
             />
           </View>
         </>
@@ -3876,18 +4020,49 @@ function FinAgentApp() {
       <Modal
         visible={modal !== null}
         transparent
-        animationType="slide"
+        animationType="fade"
         statusBarTranslucent={true}
-        onRequestClose={() => setModal(null)}
+        onRequestClose={closeModal}
       >
         <View style={styles.modalBackdrop}>
-          <KeyboardAvoidingView style={styles.modalKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-            <View style={[styles.modalSheet, { backgroundColor: palette.surface, borderColor: palette.border }]}>
-              <View style={styles.modalHandle} />
-              <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={closeModal}
+            accessibilityRole="button"
+            accessibilityLabel="Close sheet backdrop"
+          />
+          <KeyboardAvoidingView
+            pointerEvents="box-none"
+            style={styles.modalKeyboard}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          >
+            <Animated.View
+              {...modalPanResponder.panHandlers}
+              style={[
+                styles.modalSheet,
+                {
+                  backgroundColor: palette.surface,
+                  borderColor: palette.border,
+                  transform: [{ translateY: modalPanY }],
+                },
+              ]}
+            >
+              <View {...handlePanResponder.panHandlers} style={styles.modalHandleArea}>
+                <View style={[styles.modalHandle, { backgroundColor: isDark ? '#3F3F46' : '#CBD5E1' }]} />
+              </View>
+              <ScrollView
+                bounces={false}
+                overScrollMode="never"
+                scrollEventThrottle={16}
+                onScroll={(e) => {
+                  modalScrollOffset.current = e.nativeEvent.contentOffset.y;
+                }}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+              >
                 {renderModalContent()}
               </ScrollView>
-            </View>
+            </Animated.View>
           </KeyboardAvoidingView>
         </View>
       </Modal>
@@ -4099,9 +4274,10 @@ const styles = StyleSheet.create({
   toast: { position: 'absolute', bottom: 76, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 15, paddingHorizontal: 14, paddingVertical: 11, elevation: 8 },
   toastText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   modalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(9, 9, 11, 0.78)' },
-  modalKeyboard: { maxHeight: '92%' },
-  modalSheet: { maxHeight: '92%', borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, paddingTop: 10, paddingHorizontal: 18, paddingBottom: 26, elevation: 24 },
-  modalHandle: { alignSelf: 'center', width: 38, height: 4, borderRadius: 4, backgroundColor: '#71717a', marginBottom: 16 },
+  modalKeyboard: { maxHeight: '92%', width: '100%' },
+  modalSheet: { maxHeight: '92%', borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, paddingTop: 4, paddingHorizontal: 18, paddingBottom: 26, elevation: 24 },
+  modalHandleArea: { width: '100%', alignItems: 'center', justifyContent: 'center', paddingTop: 6, paddingBottom: 14 },
+  modalHandle: { width: 44, height: 5, borderRadius: 3 },
   modalTitle: { fontSize: 20, fontWeight: '900', marginBottom: 14 },
   backButton: { width: 36, height: 36, borderRadius: 12, borderWidth: 1, alignItems: 'center', justifyContent: 'center', marginRight: 8 },
   screenAnimatedContainer: { flex: 1 },
