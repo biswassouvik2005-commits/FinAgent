@@ -53,7 +53,7 @@ const legacyKeys = [
 
 function parseLegacyJson<T>(
   raw: string | null,
-  schema: z.ZodType<T>,
+  schema: z.ZodType<T, any, any>,
   key: string,
   warnings: string[]
 ): T | undefined {
@@ -93,7 +93,7 @@ export async function loadFinancialData(
   const warnings: string[] = [];
   const current = stored[currentStateKey];
   if (current !== null && current !== undefined) {
-    const parsed = parseLegacyJson(current, financialDataSchema, currentStateKey, warnings);
+    const parsed = parseLegacyJson<FinancialData>(current, financialDataSchema, currentStateKey, warnings);
     if (parsed) return { data: parsed, warnings };
     throw new Error(warnings.join(' '));
   }
