@@ -88,6 +88,10 @@ export interface ChatMessageData {
     category: string;
     date?: string;
     id?: string | number;
+    transaction_id?: string;
+    remaining_balance?: number;
+    card_or_account?: string;
+    is_bank_alert?: boolean;
   };
   safe_to_spend?: {
     dailySafeToSpend: number;
@@ -366,9 +370,94 @@ function ChatDataWidget({
 }) {
   if (!data) return null;
 
-  // 1. Auto-Logged Expense Card
+  // 1. Auto-Logged Expense Card (Bank Alert or Conversational)
   if (data.logged_expense) {
     const exp = data.logged_expense;
+    const isAlert = Boolean(exp.is_bank_alert || exp.transaction_id || typeof exp.remaining_balance === 'number');
+
+    if (isAlert) {
+      return (
+        <View style={[styles.chatWidgetCard, { backgroundColor: isDark ? '#064e3b20' : '#ecfdf5', borderColor: isDark ? '#05966950' : '#a7f3d0' }]}>
+          <View style={styles.chatWidgetHeader}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Ionicons name="notifications-outline" size={16} color="#10b981" />
+              <Text style={[styles.chatWidgetHeaderTitle, { color: isDark ? '#34d399' : '#047857' }]}>
+                BANK ALERT RECONCILED
+              </Text>
+            </View>
+            <View style={[styles.chatWidgetStatusBadge, { backgroundColor: isDark ? '#064e3b60' : '#d1fae5', borderColor: '#10b981' }]}>
+              <Text style={[styles.chatWidgetStatusBadgeText, { color: isDark ? '#6ee7b7' : '#065f46' }]}>SMS Auto-Parsed</Text>
+            </View>
+          </View>
+
+          <View style={styles.chatWidgetHeroRow}>
+            <Text style={[styles.chatWidgetHeroAmount, { color: palette.red }]}>
+              -{formatCurrency(exp.amount)}
+            </Text>
+            <Text style={[styles.caption, { color: palette.muted }]}>
+              {typeof exp.remaining_balance === 'number' ? 'Balance Reconciled' : 'Deducted from Checking'}
+            </Text>
+          </View>
+
+          <View style={styles.chatWidgetDetailsRow}>
+            <View style={[styles.chatWidgetDetailPill, { backgroundColor: palette.elevated, borderColor: palette.border }]}>
+              <Ionicons name="storefront-outline" size={13} color={palette.muted} />
+              <Text numberOfLines={1} style={[styles.caption, { color: palette.text, fontWeight: '700' }]}>{exp.merchant}</Text>
+            </View>
+            <View style={[styles.chatWidgetDetailPill, { backgroundColor: palette.elevated, borderColor: palette.border }]}>
+              <Ionicons name="pricetag-outline" size={13} color={palette.accent} />
+              <Text numberOfLines={1} style={[styles.caption, { color: palette.accent, fontWeight: '700' }]}>{exp.category}</Text>
+            </View>
+            {exp.card_or_account ? (
+              <View style={[styles.chatWidgetDetailPill, { backgroundColor: palette.elevated, borderColor: palette.border }]}>
+                <Ionicons name="card-outline" size={13} color={palette.muted} />
+                <Text numberOfLines={1} style={[styles.caption, { color: palette.muted, fontWeight: '600' }]}>{exp.card_or_account}</Text>
+              </View>
+            ) : null}
+            {exp.transaction_id ? (
+              <View style={[styles.chatWidgetDetailPill, { backgroundColor: palette.elevated, borderColor: palette.border }]}>
+                <Ionicons name="barcode-outline" size={13} color={palette.muted} />
+                <Text numberOfLines={1} style={[styles.caption, { color: palette.muted }]}>Ref: {exp.transaction_id}</Text>
+              </View>
+            ) : null}
+            <View style={[styles.chatWidgetDetailPill, { backgroundColor: palette.elevated, borderColor: palette.border }]}>
+              <Ionicons name="calendar-outline" size={13} color={palette.muted} />
+              <Text numberOfLines={1} style={[styles.caption, { color: palette.muted }]}>{exp.date || 'Today'}</Text>
+            </View>
+          </View>
+
+          {typeof exp.remaining_balance === 'number' ? (
+            <View style={[styles.chatWidgetBalanceRow, { borderTopColor: isDark ? '#05966940' : '#a7f3d0' }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                <Ionicons name="checkmark-done" size={15} color="#10b981" />
+                <Text style={[styles.caption, { color: palette.muted }]}>Checking Reconciled to:</Text>
+              </View>
+              <Text style={[styles.bodyStrong, { color: palette.green }]}>{formatCurrency(exp.remaining_balance)}</Text>
+            </View>
+          ) : typeof data.total_balance === 'number' ? (
+            <View style={[styles.chatWidgetBalanceRow, { borderTopColor: isDark ? '#05966940' : '#a7f3d0' }]}>
+              <Text style={[styles.caption, { color: palette.muted }]}>New Checking Reserve:</Text>
+              <Text style={[styles.bodyStrong, { color: palette.green }]}>{formatCurrency(data.total_balance)}</Text>
+            </View>
+          ) : null}
+
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => navigateToScreen('budget')}
+            style={({ pressed }) => [
+              styles.chatWidgetActionBtn,
+              { backgroundColor: isDark ? '#064e3b60' : '#d1fae5', opacity: pressed ? 0.75 : 1 },
+            ]}
+          >
+            <Ionicons name="receipt-outline" size={14} color={isDark ? '#6ee7b7' : '#047857'} />
+            <Text style={[styles.chatWidgetActionBtnText, { color: isDark ? '#6ee7b7' : '#047857' }]}>
+              View in Ledger & Activity
+            </Text>
+          </Pressable>
+        </View>
+      );
+    }
+
     return (
       <View style={[styles.chatWidgetCard, { backgroundColor: isDark ? '#064e3b25' : '#ecfdf5', borderColor: isDark ? '#05966950' : '#a7f3d0' }]}>
         <View style={styles.chatWidgetHeader}>
@@ -651,60 +740,138 @@ function ChatDataWidget({
   return null;
 }
 
-// Conversational Expense Parser
+// Conversational & Bank Alert Expense Parser
 function parseExpenseFromNaturalLanguage(text: string) {
   if (!text || typeof text !== 'string') return null;
   const clean = text.trim();
+  const lower = clean.toLowerCase();
+
+  const isBankAlert =
+    /(?:alert|notification|authorized|approved|declined|charge of|transaction of|purchase of|avail(?:able)?\s*bal|ending bal|acct bal|balance:|ref:|txn|ref\s*#|card ending|ending in \d{4})/i.test(clean) ||
+    /^(?:chase|citi|wells fargo|bofa|bank of america|amex|apple card|capital one|venmo|paypal|discover)/i.test(clean);
+
   const hasExpenseIntent =
+    isBankAlert ||
     /(spent|paid|bought|cost|charged)\s*(\$|\d)/i.test(clean) ||
     /\$\s*\d+.*(on|at|for)/i.test(clean) ||
     /(on lunch|on dinner|for coffee|at subway|at starbucks|at walmart|for groceries)/i.test(clean);
 
   if (!hasExpenseIntent) return null;
 
+  // 1. Balance
+  let remaining_balance: number | undefined;
+  const balanceMatch = clean.match(/(?:avail(?:able)?\s*bal(?:ance)?|total\s*bal(?:ance)?|acct\s*bal(?:ance)?|ending\s*bal(?:ance)?|bal(?:ance)?):?\s*\$?\s*([\d,]+(?:\.\d{2})?)/i);
+  if (balanceMatch && balanceMatch[1]) {
+    const parsedBal = parseFloat(balanceMatch[1].replace(/,/g, ''));
+    if (Number.isFinite(parsedBal)) {
+      remaining_balance = parsedBal;
+    }
+  }
+
+  // 2. Amount
   let amount = 0;
-  const explicitDollar = clean.match(/\$\s*(\d+(?:\.\d{1,2})?)/);
-  const spentPattern = clean.match(/(?:spent|paid|bought|cost|charged)\s*(?:\$)?\s*(\d+(?:\.\d{1,2})?)/i);
-  const genericNumber = clean.match(/(?:^|\s)(\d+(?:\.\d{1,2})?)(?:\s*(?:dollars?|bucks?|usd))?/i);
-  if (explicitDollar) {
-    amount = parseFloat(explicitDollar[1]);
-  } else if (spentPattern) {
-    amount = parseFloat(spentPattern[1]);
-  } else if (genericNumber) {
-    amount = parseFloat(genericNumber[1]);
+  const alertAmtMatch = clean.match(/(?:charge of|transaction of|purchase of|made a|payment of|spent|paid|amount:?)\s*\$?\s*([\d,]+(?:\.\d{1,2})?)/i);
+  if (alertAmtMatch && alertAmtMatch[1]) {
+    amount = parseFloat(alertAmtMatch[1].replace(/,/g, ''));
+  } else {
+    const allDollarMatches = [...clean.matchAll(/\$\s*([\d,]+(?:\.\d{1,2})?)/gi)];
+    for (const m of allDollarMatches) {
+      const val = parseFloat(m[1].replace(/,/g, ''));
+      if (remaining_balance != null && Math.abs(val - remaining_balance) < 0.001) {
+        continue;
+      }
+      amount = val;
+      break;
+    }
+    if (!amount) {
+      const genericNumber = clean.match(/(?:^|\s)(\d+(?:\.\d{1,2})?)(?:\s*(?:dollars?|bucks?|usd))?/i);
+      if (genericNumber) {
+        amount = parseFloat(genericNumber[1]);
+      }
+    }
   }
 
   if (!amount || amount <= 0) return null;
 
-  let merchant = '';
-  const atMatch = clean.match(/(?:at|from|to|with)\s+([A-Za-z0-9\s'&]+?)(?:\s+(?:for|on|yesterday|today|with|using|in|\.|$)|$)/i);
-  if (atMatch && atMatch[1]) {
-    merchant = atMatch[1].trim();
-  } else {
-    const commonMerchants = ['subway', 'starbucks', 'walmart', 'target', 'amazon', 'uber', 'lyft', 'shell', 'mcdonalds', 'whole foods', "trader joe's"];
-    const found = commonMerchants.find(m => clean.toLowerCase().includes(m));
-    merchant = found ? (found.charAt(0).toUpperCase() + found.slice(1)) : 'Expense';
+  // 3. Txn ID
+  let transaction_id: string | undefined;
+  const txnMatch = clean.match(/(?:ref(?:erence)?\s*(?:#|id|no\.?)?|txn(?:\s*id)?|auth(?:\s*code)?|confirmation\s*#?)\s*[:#]?\s*([A-Za-z0-9-]+)/i);
+  if (txnMatch && txnMatch[1]) {
+    transaction_id = txnMatch[1].trim();
   }
 
-  const lower = clean.toLowerCase();
+  // 4. Card or Account
+  let card_or_account: string | undefined;
+  const cardEndingMatch = clean.match(/(?:card|acct|account)\s*(?:ending(?:\s*in)?|#)?\s*[:#]?\s*(\d{4})/i);
+  if (cardEndingMatch && cardEndingMatch[1]) {
+    card_or_account = `Card ending ${cardEndingMatch[1].trim()}`;
+  } else if (/apple card/i.test(clean)) {
+    card_or_account = 'Apple Card';
+  } else if (/venmo/i.test(clean)) {
+    card_or_account = 'Venmo';
+  } else if (/chase/i.test(clean)) {
+    card_or_account = 'Chase Checking';
+  } else if (/citi/i.test(clean)) {
+    card_or_account = 'Citi Card';
+  }
+
+  // 5. Merchant
+  let merchant = '';
+  const atMatch = clean.match(/(?:at|from|to|with|paid)\s+([A-Za-z0-9\s'&.#\-]+?)(?:\s*(?:\.|\$|\s+(?:for|on|yesterday|today|with|using|in|ref|ref:|txn|bal|balance|avail|total)|$))/i);
+  if (atMatch && atMatch[1]) {
+    merchant = atMatch[1].trim();
+  }
+  if (!merchant || merchant.toLowerCase() === 'card' || merchant.toLowerCase() === 'you') {
+    const commonMerchants = ['subway', 'starbucks', 'walmart', 'target', 'amazon', 'uber', 'lyft', 'shell', 'mcdonalds', 'whole foods', "trader joe's"];
+    const found = commonMerchants.find(m => lower.includes(m));
+    merchant = found ? (found.charAt(0).toUpperCase() + found.slice(1)) : (isBankAlert ? 'Card Transaction' : 'Expense');
+  }
+
+  merchant = merchant
+    .replace(/\s*(?:#\d+|\b\d{3,}\b|\bstore\b\s*\d*|\bpos\b).*$/i, '')
+    .trim();
+  merchant = merchant.replace(/[.#\-,]+$/, '').trim();
+
+  if (merchant.length > 2 && merchant === merchant.toUpperCase()) {
+    merchant = merchant.toLowerCase().split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+  }
+
+  // 6. Date
+  let date = 'Today';
+  const dateMatch = clean.match(/(?:on|date:?)\s+([A-Za-z]{3}\s+\d{1,2}(?:,\s*\d{4})?|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)/i);
+  if (dateMatch && dateMatch[1]) {
+    date = dateMatch[1].trim();
+  }
+
+  // 7. Category
   let category = 'General';
-  if (/groceries|grocery|supermarket|apples|milk|produce/i.test(lower)) {
+  const mLower = merchant.toLowerCase();
+  if (/groceries|grocery|supermarket|apples|milk|produce|trader joe|whole foods/i.test(lower) || /trader joe|safeway|kroger|aldi|publix/i.test(mLower)) {
     category = 'Groceries';
-  } else if (/lunch|dinner|breakfast|meal|food|subway|starbucks|mcdonalds|burger|sandwich|pizza|coffee|cafe|restaurant|dining|snack|drink/i.test(lower)) {
+  } else if (/lunch|dinner|breakfast|meal|food|subway|starbucks|mcdonalds|burger|sandwich|pizza|coffee|cafe|restaurant|dining|snack|drink/i.test(lower) || /starbucks|subway|mcdonald/i.test(mLower)) {
     category = 'Dining';
-  } else if (/gas|fuel|shell|chevron|exxon|uber|lyft|taxi|subway fare|train|bus|transport|parking|toll/i.test(lower)) {
+  } else if (/gas|fuel|shell|chevron|exxon|uber|lyft|taxi|subway fare|train|bus|transport|parking|toll/i.test(lower) || /shell|chevron|exxon|bp|mobil/i.test(mLower)) {
     category = 'Transportation';
   } else if (/movie|cinema|netflix|spotify|game|entertainment|concert|ticket/i.test(lower)) {
     category = 'Entertainment';
-  } else if (/clothes|shoes|amazon|target|shopping|mall|electronics|store|retail/i.test(lower)) {
+  } else if (/clothes|shoes|amazon|target|shopping|mall|electronics|store|retail/i.test(lower) || /target|walmart|amazon/i.test(mLower)) {
     category = 'Shopping';
   } else if (/bill|electric|power|water|internet|utility|utilities|wifi|phone|rent/i.test(lower)) {
     category = 'Utilities';
-  } else if (/gym|pharmacy|medicine|doctor|health|dentist/i.test(lower)) {
+  } else if (/gym|pharmacy|medicine|doctor|health|dentist/i.test(lower) || /cvs|walgreens/i.test(mLower)) {
     category = 'Healthcare';
   }
 
-  return { amount, merchant, category };
+  return {
+    amount,
+    merchant,
+    category,
+    date,
+    transaction_id,
+    remaining_balance,
+    card_or_account,
+    is_bank_alert: isBankAlert
+  };
 }
 
 interface QuickPromptItem {
@@ -715,6 +882,7 @@ interface QuickPromptItem {
 }
 
 const quickPrompts: QuickPromptItem[] = [
+  { id: 'bank_sms', label: '📱 Bank SMS alert', prompt: "Chase Alert: You made a $24.50 transaction at TRADER JOE'S #542 on Oct 19 with card ending 4321. Avail bal: $2,425.50" },
   { id: 'budget', label: '📊 Am I on budget?', prompt: 'Am I on budget?' },
   { id: 'receipt', label: '🧾 Scan a receipt', prompt: 'Scan a receipt', action: 'receipt' },
   { id: 'bills', label: '📅 Bills due soon', prompt: 'Which bills are due soon?' },
@@ -1517,6 +1685,7 @@ function FinAgentApp() {
 
       if (response.data?.logged_expense || response.data?.transaction) {
         const exp = response.data.logged_expense || response.data.transaction;
+        const isAlert = Boolean(exp.is_bank_alert || exp.transaction_id || typeof exp.remaining_balance === 'number');
         const newTx: TransactionItem = {
           id: exp.id || `tx-${Date.now()}`,
           title: exp.merchant || exp.title || 'Expense',
@@ -1524,16 +1693,24 @@ function FinAgentApp() {
           category: exp.category || 'General',
           date: exp.date || 'Today',
           type: 'expense',
-          source: exp.source || 'AI Log',
+          source: exp.card_or_account || exp.source || (isAlert ? 'Bank Alert' : 'AI Log'),
         };
         LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
         setTransactions(previous => [newTx, ...previous]);
-        if (typeof response.data.total_balance === 'number') {
+
+        if (typeof exp.remaining_balance === 'number' && Number.isFinite(exp.remaining_balance) && exp.remaining_balance >= 0) {
+          setLiquidCash(exp.remaining_balance);
+        } else if (typeof response.data.total_balance === 'number') {
           setLiquidCash(response.data.total_balance);
         } else {
           setLiquidCash(prev => Math.max(0, prev - newTx.amount));
         }
-        showToast(`Auto-logged $${newTx.amount.toFixed(2)} at ${newTx.title}!`);
+
+        if (isAlert) {
+          showToast(`Reconciled $${newTx.amount.toFixed(2)} at ${newTx.title}!`);
+        } else {
+          showToast(`Auto-logged $${newTx.amount.toFixed(2)} at ${newTx.title}!`);
+        }
       }
 
       const structuredData: ChatMessageData = {
@@ -1548,6 +1725,10 @@ function FinAgentApp() {
           merchant: response.data.transaction.merchant || response.data.transaction.title || 'Expense',
           category: response.data.transaction.category || 'General',
           date: response.data.transaction.date || 'Today',
+          transaction_id: response.data.transaction.transaction_id,
+          remaining_balance: response.data.transaction.remaining_balance,
+          card_or_account: response.data.transaction.card_or_account,
+          is_bank_alert: response.data.transaction.is_bank_alert,
         } : undefined),
         safe_to_spend: response.data?.safe_to_spend,
       };
@@ -1577,22 +1758,43 @@ function FinAgentApp() {
       // Local fallback expense parsing if network fails or server unreachable
       const localExp = parseExpenseFromNaturalLanguage(text);
       if (localExp && localExp.amount > 0) {
+        const isAlert = Boolean(localExp.is_bank_alert || localExp.transaction_id || typeof localExp.remaining_balance === 'number');
         const newTx: TransactionItem = {
           id: `tx-${Date.now()}`,
           title: localExp.merchant,
           amount: localExp.amount,
           category: localExp.category,
-          date: 'Today',
+          date: localExp.date || 'Today',
           type: 'expense',
-          source: 'AI Log',
+          source: localExp.card_or_account || (isAlert ? 'Bank Alert' : 'AI Log'),
         };
         LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
         setTransactions(previous => [newTx, ...previous]);
-        setLiquidCash(prev => Math.max(0, prev - newTx.amount));
-        showToast(`Auto-logged $${newTx.amount.toFixed(2)} at ${newTx.title}!`);
+
+        let updatedBalance = liquidCash;
+        if (typeof localExp.remaining_balance === 'number' && Number.isFinite(localExp.remaining_balance) && localExp.remaining_balance >= 0) {
+          updatedBalance = localExp.remaining_balance;
+          setLiquidCash(updatedBalance);
+        } else {
+          updatedBalance = Math.max(0, liquidCash - newTx.amount);
+          setLiquidCash(updatedBalance);
+        }
+
+        if (isAlert) {
+          showToast(`Reconciled $${newTx.amount.toFixed(2)} at ${newTx.title}!`);
+        } else {
+          showToast(`Auto-logged $${newTx.amount.toFixed(2)} at ${newTx.title}!`);
+        }
+
+        const fallbackReply = isAlert
+          ? (localExp.remaining_balance != null
+            ? `Bank alert parsed: Logged $${newTx.amount.toFixed(2)} at ${newTx.title} under ${newTx.category}. Checking balance reconciled to $${localExp.remaining_balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}!`
+            : `Bank alert parsed: Logged $${newTx.amount.toFixed(2)} at ${newTx.title} under ${newTx.category}. Added to your transactions!`)
+          : `Logged $${newTx.amount.toFixed(2)} at ${newTx.title} under ${newTx.category} automatically. Added to your transactions!`;
+
         setMessages(previous => [...previous, {
           id: `ai-${Date.now()}`,
-          text: `Logged $${newTx.amount.toFixed(2)} at ${newTx.title} under ${newTx.category} automatically. Added to your transactions!`,
+          text: fallbackReply,
           sender: 'ai',
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           data: {
@@ -1602,8 +1804,12 @@ function FinAgentApp() {
               merchant: newTx.title,
               category: newTx.category,
               date: newTx.date,
+              transaction_id: localExp.transaction_id,
+              remaining_balance: localExp.remaining_balance,
+              card_or_account: localExp.card_or_account,
+              is_bank_alert: isAlert,
             },
-            total_balance: Math.max(0, liquidCash - newTx.amount),
+            total_balance: updatedBalance,
           },
         }]);
         return;
