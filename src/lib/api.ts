@@ -1,68 +1,32 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
-import Constants from 'expo-constants';
-import { Platform } from 'react-native';
 
-export function resolveDefaultApiUrl(): string {
-  // 1. Explicit environment variable takes highest priority
-  const envUrl = process.env.EXPO_PUBLIC_API_URL?.trim();
-  if (envUrl && envUrl !== 'undefined') {
-    return envUrl.replace(/\/$/, '');
-  }
-
-  // 2. Web environment: use current window origin or local IP
-  if (Platform.OS === 'web') {
-    if (typeof window !== 'undefined' && window.location?.origin && !window.location.origin.includes(':8081')) {
-      return window.location.origin.replace(/\/$/, '');
-    }
-    return 'https://fin-agent-server-bioa.vercel.app';
-  }
-
-  // 3. Dynamic Expo host detection (points to development machine IP when running on LAN/device)
-  const hostUri = Constants.expoConfig?.hostUri || (Constants as any)?.manifest2?.extra?.expoClient?.hostUri;
-  if (typeof hostUri === 'string' && hostUri.includes(':')) {
-    const hostIp = hostUri.split(':')[0];
-    if (hostIp && hostIp !== 'localhost' && hostIp !== '127.0.0.1') {
-      return `http://${hostIp}:3000`;
-    }
-  }
-
-  // 4. Android Emulator loopback / Physical device fallback
-  if (Platform.OS === 'android') {
-    return 'https://fin-agent-server-bioa.vercel.app';
-  }
-
-  // 5. iOS Simulator & standard physical device fallback
-  return 'https://fin-agent-server-bioa.vercel.app';
-}
-
-const initialBaseUrl = resolveDefaultApiUrl();
+export const API_BASE_URL = 'https://fin-agent-server-bioa.vercel.app';
 
 const api = axios.create({
-  baseURL: initialBaseUrl,
+  baseURL: API_BASE_URL,
   timeout: 30000,
 });
 
-// Restore any custom user-configured server URL from AsyncStorage
-AsyncStorage.getItem('fin_custom_api_url')
-  .then(saved => {
-    if (saved && saved.trim()) {
-      api.defaults.baseURL = saved.trim().replace(/\/$/, '');
+export function getApiErrorMessage(error: unknown, feature: 'chat' | 'receipt'): string {
+  const serviceName = feature === 'chat' ? 'AI service' : 'receipt scanning service';
+
+  if (axios.isAxiosError(error)) {
+    const responseError = error.response?.data?.error;
+    if (typeof responseError === 'string' && responseError.trim()) return responseError;
+    if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
+      return `The ${serviceName} did not respond in time. Please try again.`;
     }
-  })
-  .catch(() => {});
+    if (error.code === 'ERR_NETWORK') {
+      return `Cannot reach the FinAgent API at ${API_BASE_URL}. Check your network connection and try again.`;
+    }
+    if (error.response?.status) {
+      return `The ${serviceName} returned an error (${error.response.status}). Please try again later.`;
+    }
+  }
 
-export async function setCustomApiUrl(url: string) {
-  const clean = url.trim().replace(/\/$/, '');
-  api.defaults.baseURL = clean;
-  await AsyncStorage.setItem('fin_custom_api_url', clean);
-}
-
-export async function resetApiUrlToDefault(): Promise<string> {
-  const def = resolveDefaultApiUrl();
-  api.defaults.baseURL = def;
-  await AsyncStorage.removeItem('fin_custom_api_url');
-  return def;
+  return error instanceof Error && error.message
+    ? error.message
+    : `Unable to connect to the ${serviceName}.`;
 }
 
 export default api;

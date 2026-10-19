@@ -15,28 +15,15 @@ Press `w` in the Expo terminal to open the same app in a browser.
 
 ## Connect the API
 
-The advisor and receipt scanner use the Express API in `server.ts`. Start the API in a second terminal:
-
-```sh
-npm run dev
-```
-
-For a physical Expo Go device, set `EXPO_PUBLIC_API_URL` in the project-root `.env.local` (or `.env`) to the computer's reachable LAN address:
+Chat and receipt-scanning requests use the deployed Express API:
 
 ```text
-EXPO_PUBLIC_API_URL=http://192.168.1.20:3000
+https://fin-agent-server-bioa.vercel.app
 ```
 
-Replace `192.168.1.20` with the computer's current Wi-Fi IPv4 address. `.env.local` takes priority over `.env`, so update or remove any stale URL in `.env.local`. Keep the phone and computer on the same Wi-Fi network, allow incoming connections to port 3000 in the computer's firewall, and fully restart Expo and reload the app after changing the URL. The API binds to `0.0.0.0`.
+The app uses this fixed URL on web, iOS, and Android; local host detection, `EXPO_PUBLIC_API_URL`, and saved server-address overrides are not used. Configure `GEMINI_API_KEY` in the Vercel project's server-side environment settings to enable natural-language advice and receipt scanning. Deterministic calculations continue to work without Gemini.
 
-Natural-language financial advice and receipt reading require a Gemini key set only in the API server environment. For PowerShell:
-
-```powershell
-$env:GEMINI_API_KEY = "your-server-side-key"
-npm run dev
-```
-
-Do not add the key to an `EXPO_PUBLIC_*` variable or commit it. Deterministic calculations (arithmetic, budget allocation, balances, utilization, category totals, bill totals, cash-only affordability checks, and debt ordering) run in code without Gemini. For natural-language advice, only an aggregate financial summary is sent to Gemini; receipt images are sent for receipt extraction. When Gemini is unavailable, calculations continue to work and the API returns a clear unavailable response for advice or receipt scanning.
+When changing the backend, redeploy it to Vercel so the fixed API URL serves the updated code. Do not put the Gemini key in an `EXPO_PUBLIC_*` variable or commit it. For natural-language advice, only an aggregate financial summary is sent to Gemini; receipt images are sent for receipt extraction. When Gemini is unavailable, calculations continue to work and the API returns a clear unavailable response for advice or receipt scanning.
 
 ## Data and privacy
 

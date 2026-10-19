@@ -4,9 +4,10 @@ import test from 'node:test';
 
 process.env.NODE_ENV = 'test';
 delete process.env.GEMINI_API_KEY;
-const { app } = await import('../server');
+const { app, default: vercelHandler } = await import('../server');
 
 test('validates API requests and serves deterministic calculations without Gemini', async () => {
+  assert.equal(vercelHandler, app);
   const server = createServer(app);
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
@@ -14,6 +15,10 @@ test('validates API requests and serves deterministic calculations without Gemin
   const baseUrl = `http://127.0.0.1:${address.port}`;
 
   try {
+    const health = await fetch(`${baseUrl}/api/health`);
+    assert.equal(health.status, 200);
+    assert.deepEqual(await health.json(), { status: 'ok' });
+
     const invalid = await fetch(`${baseUrl}/api/chat`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },

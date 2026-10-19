@@ -1,4 +1,6 @@
+import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import axios from 'axios';
 import * as ImagePicker from 'expo-image-picker';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -26,10 +28,7 @@ import {
   type ScrollView as ScrollViewRef,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import axios from 'axios';
-import api from '../lib/api';
-import { resetApiUrlToDefault, resolveDefaultApiUrl, setCustomApiUrl } from '../lib/apiSettings';
+import api, { getApiErrorMessage } from '../lib/api';
 import { NetWorthChart } from './NetWorthChart';
 import { PieChart, type CategoryItem } from './PieChart';
 
@@ -990,19 +989,6 @@ function FinAgentApp() {
   const [onboardCardApr, setOnboardCardApr] = useState('');
   const [onboardCardLast4, setOnboardCardLast4] = useState('');
   const [onboardCardDueDate, setOnboardCardDueDate] = useState('');
-  const [serverUrl, setServerUrl] = useState(api.defaults.baseURL || resolveDefaultApiUrl());
-
-  const updateServerUrl = (val: string) => setServerUrl(val);
-
-  const saveServerUrl = async () => {
-    try {
-      await setCustomApiUrl(serverUrl);
-      showToast('Backend server address saved');
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : 'Could not save the backend server address.');
-    }
-  };
-
   const [userName, setUserName] = useState('');
   const [monthlyIncome, setMonthlyIncome] = useState(0);
   const [liquidCash, setLiquidCash] = useState(0);
@@ -1300,11 +1286,6 @@ function FinAgentApp() {
           setBills([]);
           setMonthlyIncome(0);
           setLiquidCash(0);
-        }
-        const customUrl = await AsyncStorage.getItem('fin_custom_api_url');
-        if (customUrl) {
-          setServerUrl(customUrl);
-          api.defaults.baseURL = customUrl;
         }
         setStorageStatus('ready');
       } catch (error) {
@@ -1655,9 +1636,6 @@ function FinAgentApp() {
     abortControllerRef.current = abortController;
 
     try {
-      if (!api.defaults.baseURL) {
-        api.defaults.baseURL = resolveDefaultApiUrl();
-      }
       const response = await api.post(
         '/api/chat',
         {
@@ -1815,11 +1793,7 @@ function FinAgentApp() {
         return;
       }
 
-      const isNetworkErr = error?.code === 'ERR_NETWORK' || error?.message?.includes('Network Error') || error?.message?.includes('Failed to fetch');
-      const targetBase = api.defaults.baseURL || resolveDefaultApiUrl();
-      const message = isNetworkErr
-        ? `Cannot reach backend at ${targetBase}. Please make sure your server is running ("npm run dev" or "npm start").`
-        : error instanceof Error ? error.message : 'Unable to connect to the AI service.';
+      const message = getApiErrorMessage(error, 'chat');
       setApiError(message);
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       setMessages(previous => [...previous, {
@@ -1889,10 +1863,6 @@ function FinAgentApp() {
       if (asset.uri) {
         setReceiptImageUri(asset.uri);
       }
-      if (!api.defaults.baseURL) {
-        api.defaults.baseURL = resolveDefaultApiUrl();
-      }
-
       const response = await api.post('/api/receipt', {
         base64Image: asset.base64,
         mimeType: asset.mimeType || 'image/jpeg',
@@ -1926,11 +1896,7 @@ function FinAgentApp() {
       setModal('receipt');
       showToast(`Receipt scanned: ${merchant}`);
     } catch (error) {
-      const isNetworkErr = (error as any)?.code === 'ERR_NETWORK' || (error as any)?.message?.includes('Network Error');
-      const targetBase = api.defaults.baseURL || resolveDefaultApiUrl();
-      const message = isNetworkErr
-        ? `Cannot reach backend at ${targetBase}. Please make sure your server is running ("npm run dev" or "npm start").`
-        : error instanceof Error ? error.message : 'Unable to scan this receipt.';
+      const message = getApiErrorMessage(error, 'receipt');
       console.error('Receipt scan failed', error);
       Alert.alert('Receipt scan failed', message);
     } finally {
@@ -2701,41 +2667,6 @@ function FinAgentApp() {
         <View style={styles.rowBetween}>
           <Text style={[styles.bodyStrong, { color: palette.muted }]}>Estimated net worth</Text>
           <Text style={[styles.bodyStrong, { color: palette.green }]}>{formatCurrency(netWorth)}</Text>
-        </View>
-        <View style={{ paddingTop: 10, borderTopWidth: 1, borderTopColor: palette.border }}>
-          <Field
-            label="Backend Server Address"
-            value={serverUrl}
-            onChangeText={updateServerUrl}
-            palette={palette}
-            placeholder="http://localhost:3000"
-            autoCapitalize="none"
-          />
-          <View style={[styles.rowBetween, { marginTop: -4, marginBottom: 8 }]}>
-            <Text style={[styles.caption, { color: palette.muted }]}>Auto: {resolveDefaultApiUrl()}</Text>
-            <AppButton
-              label="Save URL"
-              variant="quiet"
-              compact
-              palette={palette}
-              onPress={saveServerUrl}
-            />
-            <AppButton
-              label="Reset URL"
-              variant="quiet"
-              compact
-              palette={palette}
-              onPress={async () => {
-                try {
-                  const def = await resetApiUrlToDefault();
-                  setServerUrl(def);
-                  showToast('Server URL reset to ' + def);
-                } catch (error) {
-                  showToast(error instanceof Error ? error.message : 'Could not reset the backend server address.');
-                }
-              }}
-            />
-          </View>
         </View>
         <View style={[styles.rowBetween, styles.topGap, { paddingTop: 12, borderTopWidth: 1, borderTopColor: palette.border }]}>
           <Text style={[styles.caption, { color: palette.muted }]}>Start over with a clean slate</Text>

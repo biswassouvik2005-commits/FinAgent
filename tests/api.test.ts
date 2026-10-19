@@ -1,18 +1,20 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import axios, { AxiosError, type InternalAxiosRequestConfig } from 'axios';
-import { getApiErrorMessage } from '../src/lib/api';
+import api, { API_BASE_URL, getApiErrorMessage } from '../src/lib/api';
 
-test('explains a network failure using the configured API host and Expo restart guidance', () => {
+test('uses the deployed API URL and explains network failures', () => {
+  assert.equal(API_BASE_URL, 'https://fin-agent-server-bioa.vercel.app');
+  assert.equal(api.defaults.baseURL, API_BASE_URL);
+
   const error = new AxiosError(
     'Network Error',
     AxiosError.ERR_NETWORK,
-    { baseURL: 'http://192.168.0.105:3000' } as InternalAxiosRequestConfig
+    { baseURL: API_BASE_URL } as InternalAxiosRequestConfig
   );
   const message = getApiErrorMessage(error, 'chat');
-  assert.match(message, /192\.168\.0\.105:3000/);
-  assert.match(message, /same Wi-Fi/);
-  assert.match(message, /fully restart Expo/);
+  assert.match(message, /fin-agent-server-bioa\.vercel\.app/);
+  assert.match(message, /network connection/);
 });
 
 test('uses meaningful API response errors and timeout guidance', () => {

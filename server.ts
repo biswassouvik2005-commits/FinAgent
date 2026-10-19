@@ -31,6 +31,7 @@ const receiptResultSchema = z.object({
 app.use(express.json({ limit: isVercel ? '4.25mb' : '15mb' }));
 app.use(cors());
 export { app };
+export default app;
 
 function getGeminiClient() {
   const key = process.env.GEMINI_API_KEY?.trim();
