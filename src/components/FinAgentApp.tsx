@@ -7,6 +7,7 @@ import {
   Alert,
   Animated,
   Easing,
+  Image,
   Keyboard,
   KeyboardAvoidingView,
   LayoutAnimation,
@@ -39,7 +40,7 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 type Screen = 'home' | 'cards' | 'agent' | 'budget' | 'bills' | 'receipts';
 type CardNetwork = 'visa' | 'mastercard' | 'amex' | 'discover';
 type TransactionType = 'income' | 'expense';
-type ModalType = 'card' | 'transaction' | 'bill' | 'payment' | 'compose' | 'receipt' | null;
+type ModalType = 'card' | 'transaction' | 'bill' | 'payment' | 'compose' | 'receipt' | 'receipt_source' | null;
 type IconName = keyof typeof Ionicons.glyphMap;
 
 interface CreditCardItem {
@@ -112,6 +113,7 @@ interface ScannedReceipt {
   total: number;
   category: string;
   date: string;
+  imageUri?: string;
 }
 
 const defaultCards: CreditCardItem[] = [];
@@ -939,6 +941,54 @@ function FinAgentApp() {
 
   const [isScanning, setIsScanning] = useState(false);
   const [scannedReceipt, setScannedReceipt] = useState<ScannedReceipt | null>(null);
+  const [receiptImageUri, setReceiptImageUri] = useState<string | null>(null);
+  const [scanStepIndex, setScanStepIndex] = useState(0);
+  const scanLaserAnim = useRef(new Animated.Value(0)).current;
+
+  const scanSteps = [
+    'Aligning viewfinder…',
+    'AI Vision: Detecting receipt borders & angle…',
+    'Neural OCR: Extracting merchant & line items…',
+    'Computing total amount & tax…',
+    'Categorizing with 50/30/20 budget…',
+  ];
+
+  useEffect(() => {
+    if (isScanning) {
+      setScanStepIndex(0);
+      const stepTimer = setInterval(() => {
+        setScanStepIndex(prev => (prev + 1) % 5);
+      }, 1200);
+
+      const laserLoop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(scanLaserAnim, {
+            toValue: 1,
+            duration: 1500,
+            easing: Easing.inOut(Easing.quad),
+            useNativeDriver: true,
+          }),
+          Animated.timing(scanLaserAnim, {
+            toValue: 0,
+            duration: 1500,
+            easing: Easing.inOut(Easing.quad),
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      laserLoop.start();
+
+      return () => {
+        clearInterval(stepTimer);
+        laserLoop.stop();
+        scanLaserAnim.setValue(0);
+      };
+    } else {
+      scanLaserAnim.stopAnimation();
+      scanLaserAnim.setValue(0);
+    }
+  }, [isScanning]);
+
   const [toast, setToast] = useState('');
   const toastAnim = useRef(new Animated.Value(0)).current;
   const [apiError, setApiError] = useState('');
@@ -1588,23 +1638,51 @@ function FinAgentApp() {
     setApiError('');
   };
 
+  const loadDemoReceipt = () => {
+    setModal(null);
+    const sample: ScannedReceipt = {
+      merchant: 'Subway',
+      date: new Date().toISOString().split('T')[0],
+      total: 14.0,
+      category: 'Dining',
+    };
+    setReceiptImageUri(null);
+    setScannedReceipt(sample);
+    setReceiptMerchant(sample.merchant);
+    setReceiptTotal(sample.total.toFixed(2));
+    setReceiptCategory(sample.category);
+    setReceiptDate(sample.date);
+    setReceiptSource(cards.length > 0 ? cards[0].cardName : 'Primary Checking');
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setModal('receipt');
+    showToast('Loaded Demo Receipt ($14 Subway)');
+  };
+
   const processReceipt = async (fromCamera: boolean) => {
     try {
+      setModal(null);
       setIsScanning(true);
       navigateToScreen('receipts');
       if (fromCamera) {
         const permission = await ImagePicker.requestCameraPermissionsAsync();
         if (!permission.granted) {
           Alert.alert('Camera permission needed', 'Allow camera access to scan a receipt, or choose a photo from your library.');
+          setIsScanning(false);
           return;
         }
       }
       const result = fromCamera
         ? await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], base64: true, quality: 0.7 })
         : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], base64: true, quality: 0.7 });
-      if (result.canceled) return;
+      if (result.canceled) {
+        setIsScanning(false);
+        return;
+      }
       const asset = result.assets[0];
       if (!asset?.base64) throw new Error('The selected image could not be read. Please select another image.');
+      if (asset.uri) {
+        setReceiptImageUri(asset.uri);
+      }
       if (!api.defaults.baseURL) {
         api.defaults.baseURL = resolveDefaultApiUrl();
       }
@@ -1627,6 +1705,7 @@ function FinAgentApp() {
         total,
         category,
         date,
+        imageUri: asset.uri,
       });
 
       // Pre-fill editable fields
@@ -1654,30 +1733,8 @@ function FinAgentApp() {
   };
 
   const chooseReceiptSource = () => {
-    Alert.alert('Scan a receipt', 'Choose where to get the receipt image.', [
-      { text: 'Take photo', onPress: () => void processReceipt(true) },
-      { text: 'Photo library', onPress: () => void processReceipt(false) },
-      {
-        text: 'Demo Receipt ($14 Subway)',
-        onPress: () => {
-          const sample = {
-            merchant: 'Subway',
-            date: new Date().toISOString().split('T')[0],
-            total: 14.0,
-            category: 'Dining',
-          };
-          setScannedReceipt(sample);
-          setReceiptMerchant(sample.merchant);
-          setReceiptTotal(sample.total.toFixed(2));
-          setReceiptCategory(sample.category);
-          setReceiptDate(sample.date);
-          setReceiptSource(cards.length > 0 ? cards[0].cardName : 'Primary Checking');
-          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-          setModal('receipt');
-        },
-      },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setModal('receipt_source');
   };
 
   const confirmAndAddReceiptExpense = () => {
@@ -2548,28 +2605,190 @@ function FinAgentApp() {
   const renderReceipts = () => (
     <>
       <View style={styles.welcomeBlock}>
-        <Text style={[styles.pageTitle, { color: palette.text }]}>Receipt scanner</Text>
-        <Text style={[styles.caption, { color: palette.muted }]}>Take a photo or choose an image to extract receipt details.</Text>
-      </View>
-      <Panel palette={palette} style={styles.receiptPanel}>
-        <View style={[styles.receiptIcon, { backgroundColor: palette.elevated }]}>
-          {isScanning ? <ActivityIndicator color={palette.accent} /> : <Ionicons name="camera-outline" size={30} color={palette.accent} />}
-        </View>
-        <Text style={[styles.sectionTitle, { color: palette.text }]}>{isScanning ? 'Reading receipt…' : 'Add a receipt image'}</Text>
-        <Text style={[styles.caption, styles.centerText, { color: palette.muted }]}>FinAgent will find the merchant, category, and total before adding the expense.</Text>
-        <AppButton label="Take photo or choose image" icon="camera-outline" onPress={chooseReceiptSource} palette={palette} disabled={isScanning} />
-      </Panel>
-      {scannedReceipt ? (
-        <Panel palette={palette}>
-          <Text style={[styles.eyebrow, { color: palette.accent }]}>RECEIPT OCR READY</Text>
-          <View style={styles.rowBetween}>
-            <View style={styles.flex}>
-              <Text style={[styles.sectionTitle, { color: palette.text }]}>{receiptMerchant || scannedReceipt.merchant}</Text>
-              <Text style={[styles.caption, { color: palette.muted }]}>{receiptCategory || scannedReceipt.category} · {receiptDate || scannedReceipt.date}</Text>
-            </View>
-            <Text style={[styles.sectionTitle, { color: palette.green }]}>{formatCurrency(parseFloat(receiptTotal) || scannedReceipt.total)}</Text>
+        <View style={styles.rowBetween}>
+          <View style={styles.flex}>
+            <Text style={[styles.eyebrow, { color: palette.accent }]}>AI OCR VISION</Text>
+            <Text style={[styles.pageTitle, { color: palette.text }]}>Receipt Scanner</Text>
           </View>
-          <View style={{ marginTop: 12, gap: 8 }}>
+          <View style={[styles.scannerHeaderBadge, { backgroundColor: isDark ? '#7c3aed25' : '#ede9fe', borderColor: palette.accent }]}>
+            <Ionicons name="sparkles" size={12} color={palette.accent} />
+            <Text style={[styles.scannerHeaderBadgeText, { color: palette.accent }]}>Neural OCR</Text>
+          </View>
+        </View>
+        <Text style={[styles.caption, { color: palette.muted, marginTop: 4 }]}>
+          Scan receipts to auto-extract merchant, total, date & 50/30/20 category with edge detection.
+        </Text>
+      </View>
+
+      {/* High-tech Viewfinder HUD */}
+      <View style={[styles.viewfinderCard, { borderColor: palette.border, backgroundColor: isDark ? '#0b0f19' : '#1e293b' }]}>
+        {/* Corner Reticles */}
+        <View style={[styles.cornerReticle, styles.cornerReticleTL, { borderColor: palette.accent }]} />
+        <View style={[styles.cornerReticle, styles.cornerReticleTR, { borderColor: palette.accent }]} />
+        <View style={[styles.cornerReticle, styles.cornerReticleBL, { borderColor: palette.accent }]} />
+        <View style={[styles.cornerReticle, styles.cornerReticleBR, { borderColor: palette.accent }]} />
+
+        {/* Viewfinder Content Area */}
+        {receiptImageUri ? (
+          <View style={styles.viewfinderImageWrap}>
+            <Image source={{ uri: receiptImageUri }} style={styles.viewfinderImg} resizeMode="contain" />
+            <View style={styles.viewfinderImgBadge}>
+              <Ionicons name="image-outline" size={12} color="#34d399" />
+              <Text style={styles.viewfinderImgBadgeText}>PREVIEW CAPTURED</Text>
+            </View>
+          </View>
+        ) : (
+          <View style={styles.viewfinderEmptyContent}>
+            <View style={[styles.viewfinderIconCircle, { backgroundColor: isDark ? '#1e1b4b70' : '#312e8170' }]}>
+              <Ionicons name="scan-outline" size={38} color={palette.accent} />
+            </View>
+            <Text style={styles.viewfinderTitle}>Position receipt within frame</Text>
+            <Text style={styles.viewfinderSubtitle}>Ensure good lighting & keep receipt flat</Text>
+          </View>
+        )}
+
+        {/* Animated Sweeping Laser Scanner Line */}
+        {isScanning ? (
+          <>
+            <Animated.View
+              style={[
+                styles.laserBeam,
+                {
+                  transform: [
+                    {
+                      translateY: scanLaserAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [12, 185],
+                      }),
+                    },
+                  ],
+                },
+              ]}
+            >
+              <View style={styles.laserCoreLine} />
+              <View style={styles.laserGlowAura} />
+            </Animated.View>
+
+            <View style={styles.scannerLiveTicker}>
+              <ActivityIndicator size="small" color="#34d399" style={{ marginRight: 6 }} />
+              <Text style={styles.scannerLiveTickerText}>
+                {scanSteps[scanStepIndex] || 'AI Vision: Processing receipt…'}
+              </Text>
+            </View>
+          </>
+        ) : null}
+      </View>
+
+      {/* Direct Quick Action Tiles */}
+      <View style={styles.scannerActionGrid}>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => void processReceipt(true)}
+          disabled={isScanning}
+          style={({ pressed }) => [
+            styles.scannerActionCard,
+            { backgroundColor: palette.surface, borderColor: palette.border, opacity: isScanning ? 0.6 : pressed ? 0.75 : 1 },
+          ]}
+        >
+          <View style={[styles.scannerActionIconWrap, { backgroundColor: '#7c3aed20' }]}>
+            <Ionicons name="camera" size={20} color={palette.accent} />
+          </View>
+          <Text style={[styles.scannerActionTitle, { color: palette.text }]}>Snap Photo</Text>
+          <Text style={[styles.scannerActionSub, { color: palette.muted }]}>Open Camera</Text>
+        </Pressable>
+
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => void processReceipt(false)}
+          disabled={isScanning}
+          style={({ pressed }) => [
+            styles.scannerActionCard,
+            { backgroundColor: palette.surface, borderColor: palette.border, opacity: isScanning ? 0.6 : pressed ? 0.75 : 1 },
+          ]}
+        >
+          <View style={[styles.scannerActionIconWrap, { backgroundColor: '#3b82f620' }]}>
+            <Ionicons name="images" size={20} color="#3b82f6" />
+          </View>
+          <Text style={[styles.scannerActionTitle, { color: palette.text }]}>Gallery</Text>
+          <Text style={[styles.scannerActionSub, { color: palette.muted }]}>Choose Image</Text>
+        </Pressable>
+
+        <Pressable
+          accessibilityRole="button"
+          onPress={loadDemoReceipt}
+          disabled={isScanning}
+          style={({ pressed }) => [
+            styles.scannerActionCard,
+            { backgroundColor: palette.surface, borderColor: palette.border, opacity: isScanning ? 0.6 : pressed ? 0.75 : 1 },
+          ]}
+        >
+          <View style={[styles.scannerActionIconWrap, { backgroundColor: '#10b98120' }]}>
+            <Ionicons name="flash" size={20} color={palette.green} />
+          </View>
+          <Text style={[styles.scannerActionTitle, { color: palette.text }]}>Demo Receipt</Text>
+          <Text style={[styles.scannerActionSub, { color: palette.muted }]}>$14 Subway</Text>
+        </Pressable>
+      </View>
+
+      {/* Scanned Receipt Voucher Ticket */}
+      {scannedReceipt ? (
+        <View style={[styles.ticketVoucherCard, { backgroundColor: palette.surface, borderColor: palette.border }]}>
+          <View style={styles.ticketHeaderRow}>
+            <View style={[styles.ticketStoreBadge, { backgroundColor: '#10b98120', borderColor: palette.green }]}>
+              <Ionicons name="storefront" size={18} color={palette.green} />
+            </View>
+            <View style={styles.flex}>
+              <View style={styles.rowBetween}>
+                <Text numberOfLines={1} style={[styles.ticketMerchantName, { color: palette.text }]}>
+                  {receiptMerchant || scannedReceipt.merchant}
+                </Text>
+                <View style={[styles.ticketStatusPill, { backgroundColor: '#10b98120', borderColor: palette.green }]}>
+                  <Ionicons name="checkmark-circle" size={11} color={palette.green} />
+                  <Text style={[styles.ticketStatusPillText, { color: palette.green }]}>OCR VERIFIED</Text>
+                </View>
+              </View>
+              <Text style={[styles.caption, { color: palette.muted }]}>
+                {receiptDate || scannedReceipt.date} · {receiptSource}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.ticketAmountRow}>
+            <View>
+              <Text style={[styles.caption, { color: palette.muted }]}>TOTAL DETECTED</Text>
+              <Text style={[styles.ticketAmountText, { color: palette.green }]}>
+                {formatCurrency(parseFloat(receiptTotal) || scannedReceipt.total)}
+              </Text>
+            </View>
+            <View style={[styles.ticketCategoryPill, { backgroundColor: palette.elevated, borderColor: palette.border }]}>
+              <Ionicons name="pricetag-outline" size={13} color={palette.accent} />
+              <Text style={[styles.caption, { color: palette.accent, fontWeight: '700' }]}>
+                {receiptCategory || scannedReceipt.category}
+              </Text>
+            </View>
+          </View>
+
+          {/* Barcode & Reference */}
+          <View style={styles.ticketBarcodeSection}>
+            <View style={[styles.ticketDashedDivider, { borderColor: palette.border }]} />
+            <View style={styles.ticketBarcodeRow}>
+              <Text style={[styles.ticketBarcodeBars, { color: palette.muted }]}>
+                ||| | || |||| | ||| || |||| | ||| || |
+              </Text>
+              <Text style={[styles.ticketBarcodeCode, { color: palette.muted }]}>
+                REF: OCR-{(receiptMerchant || 'RC').slice(0, 3).toUpperCase()}-{(receiptTotal || '0').replace('.', '')}
+              </Text>
+            </View>
+          </View>
+
+          {/* Action Buttons */}
+          <View style={styles.ticketActionsContainer}>
+            <AppButton
+              label="Confirm & Add to Ledger"
+              icon="checkmark-circle-outline"
+              onPress={confirmAndAddReceiptExpense}
+              palette={palette}
+            />
             <AppButton
               label="Review & Edit in Sheet"
               icon="create-outline"
@@ -2578,20 +2797,43 @@ function FinAgentApp() {
               variant="secondary"
             />
             <AppButton
-              label="Confirm & Add to Expenses"
-              icon="checkmark-circle-outline"
-              onPress={confirmAndAddReceiptExpense}
-              palette={palette}
-            />
-            <AppButton
-              label="Discard receipt"
-              onPress={() => setScannedReceipt(null)}
+              label="Discard Receipt"
+              onPress={() => {
+                setScannedReceipt(null);
+                setReceiptImageUri(null);
+              }}
               palette={palette}
               variant="quiet"
             />
           </View>
-        </Panel>
+        </View>
       ) : null}
+
+      {/* Pro Tips Panel */}
+      <Panel palette={palette} style={styles.receiptTipsPanel}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <Ionicons name="bulb-outline" size={18} color="#f59e0b" />
+          <Text style={[styles.bodyStrong, { color: palette.text }]}>Tips for Best OCR Accuracy</Text>
+        </View>
+        <View style={styles.receiptTipItem}>
+          <Ionicons name="checkmark-outline" size={14} color={palette.green} />
+          <Text style={[styles.caption, { color: palette.muted, flex: 1 }]}>
+            Place receipt flat on a dark or high-contrast surface.
+          </Text>
+        </View>
+        <View style={styles.receiptTipItem}>
+          <Ionicons name="checkmark-outline" size={14} color={palette.green} />
+          <Text style={[styles.caption, { color: palette.muted, flex: 1 }]}>
+            Ensure the merchant name, date, and total line are clearly visible.
+          </Text>
+        </View>
+        <View style={styles.receiptTipItem}>
+          <Ionicons name="shield-checkmark-outline" size={14} color={palette.accent} />
+          <Text style={[styles.caption, { color: palette.muted, flex: 1 }]}>
+            Receipts are parsed in real-time via AI vision without permanent cloud storage.
+          </Text>
+        </View>
+      </Panel>
     </>
   );
 
@@ -3042,6 +3284,106 @@ function FinAgentApp() {
         </>
       );
     }
+    if (modal === 'receipt_source') {
+      return (
+        <>
+          <View style={styles.rowBetween}>
+            <View style={styles.flex}>
+              <Text style={[styles.eyebrow, { color: palette.accent }]}>AI OCR CAPTURE</Text>
+              <Text style={[styles.modalTitle, { color: palette.text, marginBottom: 2 }]}>Scan Receipt</Text>
+              <Text style={[styles.caption, { color: palette.muted }]}>
+                Choose a source to extract receipt items and amounts automatically.
+              </Text>
+            </View>
+            <Pressable
+              onPress={() => setModal(null)}
+              accessibilityLabel="Close receipt source sheet"
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="close-circle-outline" size={24} color={palette.muted} />
+            </Pressable>
+          </View>
+
+          <View style={styles.sourceCardsContainer}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => void processReceipt(true)}
+              style={({ pressed }) => [
+                styles.sourceCard,
+                { backgroundColor: palette.elevated, borderColor: palette.border, opacity: pressed ? 0.75 : 1 },
+              ]}
+            >
+              <View style={[styles.sourceIconWrap, { backgroundColor: '#7c3aed20' }]}>
+                <Ionicons name="camera" size={24} color={palette.accent} />
+              </View>
+              <View style={styles.flex}>
+                <View style={styles.rowBetween}>
+                  <Text style={[styles.bodyStrong, { color: palette.text }]}>Snap with Camera</Text>
+                  <View style={[styles.sourceBadge, { backgroundColor: '#10b98120', borderColor: palette.green }]}>
+                    <Text style={[styles.sourceBadgeText, { color: palette.green }]}>LIVE OCR</Text>
+                  </View>
+                </View>
+                <Text style={[styles.caption, { color: palette.muted, marginTop: 2 }]}>
+                  Point at your physical paper receipt in real-time
+                </Text>
+              </View>
+            </Pressable>
+
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => void processReceipt(false)}
+              style={({ pressed }) => [
+                styles.sourceCard,
+                { backgroundColor: palette.elevated, borderColor: palette.border, opacity: pressed ? 0.75 : 1 },
+              ]}
+            >
+              <View style={[styles.sourceIconWrap, { backgroundColor: '#3b82f620' }]}>
+                <Ionicons name="images" size={24} color="#3b82f6" />
+              </View>
+              <View style={styles.flex}>
+                <Text style={[styles.bodyStrong, { color: palette.text }]}>Choose from Gallery</Text>
+                <Text style={[styles.caption, { color: palette.muted, marginTop: 2 }]}>
+                  Upload a photo, screenshot, or digital receipt
+                </Text>
+              </View>
+            </Pressable>
+
+            <Pressable
+              accessibilityRole="button"
+              onPress={loadDemoReceipt}
+              style={({ pressed }) => [
+                styles.sourceCard,
+                { backgroundColor: palette.elevated, borderColor: palette.border, opacity: pressed ? 0.75 : 1 },
+              ]}
+            >
+              <View style={[styles.sourceIconWrap, { backgroundColor: '#10b98120' }]}>
+                <Ionicons name="flash" size={24} color={palette.green} />
+              </View>
+              <View style={styles.flex}>
+                <View style={styles.rowBetween}>
+                  <Text style={[styles.bodyStrong, { color: palette.text }]}>Try Demo Receipt</Text>
+                  <View style={[styles.sourceBadge, { backgroundColor: '#f59e0b20', borderColor: '#f59e0b' }]}>
+                    <Text style={[styles.sourceBadgeText, { color: '#f59e0b' }]}>$14 SUBWAY</Text>
+                  </View>
+                </View>
+                <Text style={[styles.caption, { color: palette.muted, marginTop: 2 }]}>
+                  Instant test with sample dining expense
+                </Text>
+              </View>
+            </Pressable>
+          </View>
+
+          <View style={{ marginTop: 12, marginBottom: 8 }}>
+            <AppButton
+              label="Cancel"
+              onPress={() => setModal(null)}
+              palette={palette}
+              variant="quiet"
+            />
+          </View>
+        </>
+      );
+    }
     if (modal === 'receipt') {
       return (
         <>
@@ -3061,6 +3403,16 @@ function FinAgentApp() {
               <Ionicons name="close-circle-outline" size={24} color={palette.muted} />
             </Pressable>
           </View>
+
+          {receiptImageUri ? (
+            <View style={[styles.receiptReviewThumbnail, { backgroundColor: palette.elevated, borderColor: palette.border }]}>
+              <Image source={{ uri: receiptImageUri }} style={styles.receiptReviewImg} resizeMode="cover" />
+              <View style={styles.receiptReviewBadge}>
+                <Ionicons name="scan-outline" size={12} color="#10b981" />
+                <Text style={styles.receiptReviewBadgeText}>OCR Source Captured</Text>
+              </View>
+            </View>
+          ) : null}
 
           <Field
             label="Merchant / Business"
@@ -3309,7 +3661,13 @@ function FinAgentApp() {
         </Animated.View>
       ) : null}
 
-      <Modal visible={modal !== null} transparent animationType="slide" onRequestClose={() => setModal(null)}>
+      <Modal
+        visible={modal !== null}
+        transparent
+        animationType="slide"
+        statusBarTranslucent={true}
+        onRequestClose={() => setModal(null)}
+      >
         <View style={styles.modalBackdrop}>
           <KeyboardAvoidingView style={styles.modalKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
             <View style={[styles.modalSheet, { backgroundColor: palette.surface, borderColor: palette.border }]}>
@@ -3530,7 +3888,7 @@ const styles = StyleSheet.create({
   toastText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   modalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: '#0009' },
   modalKeyboard: { maxHeight: '92%' },
-  modalSheet: { maxHeight: '92%', borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, paddingTop: 10, paddingHorizontal: 18, paddingBottom: 26 },
+  modalSheet: { maxHeight: '92%', borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, paddingTop: 10, paddingHorizontal: 18, paddingBottom: 26, elevation: 24 },
   modalHandle: { alignSelf: 'center', width: 38, height: 4, borderRadius: 4, backgroundColor: '#71717a', marginBottom: 16 },
   modalTitle: { fontSize: 20, fontWeight: '900', marginBottom: 14 },
   backButton: { width: 36, height: 36, borderRadius: 12, borderWidth: 1, alignItems: 'center', justifyContent: 'center', marginRight: 8 },
@@ -3639,6 +3997,354 @@ const styles = StyleSheet.create({
   chatWidgetActionBtnText: {
     fontSize: 11.5,
     fontWeight: '800',
+  },
+  scannerHeaderBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  scannerHeaderBadgeText: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+  },
+  viewfinderCard: {
+    height: 220,
+    width: '100%',
+    borderRadius: 22,
+    borderWidth: 1.5,
+    position: 'relative',
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 4,
+  },
+  cornerReticle: {
+    position: 'absolute',
+    width: 26,
+    height: 26,
+    zIndex: 10,
+  },
+  cornerReticleTL: {
+    top: 14,
+    left: 14,
+    borderTopWidth: 3.5,
+    borderLeftWidth: 3.5,
+    borderTopLeftRadius: 8,
+  },
+  cornerReticleTR: {
+    top: 14,
+    right: 14,
+    borderTopWidth: 3.5,
+    borderRightWidth: 3.5,
+    borderTopRightRadius: 8,
+  },
+  cornerReticleBL: {
+    bottom: 14,
+    left: 14,
+    borderBottomWidth: 3.5,
+    borderLeftWidth: 3.5,
+    borderBottomLeftRadius: 8,
+  },
+  cornerReticleBR: {
+    bottom: 14,
+    right: 14,
+    borderBottomWidth: 3.5,
+    borderRightWidth: 3.5,
+    borderBottomRightRadius: 8,
+  },
+  viewfinderEmptyContent: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 20,
+  },
+  viewfinderIconCircle: {
+    width: 66,
+    height: 66,
+    borderRadius: 33,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  viewfinderTitle: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '800',
+    textAlign: 'center',
+    letterSpacing: -0.2,
+  },
+  viewfinderSubtitle: {
+    color: '#94a3b8',
+    fontSize: 11.5,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  viewfinderImageWrap: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  viewfinderImg: {
+    width: '90%',
+    height: '85%',
+    borderRadius: 12,
+  },
+  viewfinderImgBadge: {
+    position: 'absolute',
+    top: 14,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#052e16ee',
+    borderColor: '#34d399',
+    borderWidth: 1,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  viewfinderImgBadgeText: {
+    color: '#34d399',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  laserBeam: {
+    position: 'absolute',
+    left: 18,
+    right: 18,
+    zIndex: 15,
+  },
+  laserCoreLine: {
+    height: 2.5,
+    backgroundColor: '#34d399',
+    borderRadius: 2,
+    shadowColor: '#10b981',
+    shadowOpacity: 0.9,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  laserGlowAura: {
+    height: 14,
+    backgroundColor: '#10b98125',
+    marginTop: -2,
+    borderRadius: 6,
+  },
+  scannerLiveTicker: {
+    position: 'absolute',
+    bottom: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0f172aee',
+    borderColor: '#34d39960',
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
+    zIndex: 20,
+    elevation: 6,
+  },
+  scannerLiveTickerText: {
+    color: '#f8fafc',
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+  scannerActionGrid: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  scannerActionCard: {
+    flex: 1,
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    elevation: 2,
+  },
+  scannerActionIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 2,
+  },
+  scannerActionTitle: {
+    fontSize: 12.5,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  scannerActionSub: {
+    fontSize: 10,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  ticketVoucherCard: {
+    borderRadius: 20,
+    borderWidth: 1.5,
+    padding: 16,
+    gap: 12,
+    elevation: 3,
+  },
+  ticketHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  ticketStoreBadge: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ticketMerchantName: {
+    fontSize: 17,
+    fontWeight: '800',
+  },
+  ticketStatusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 2.5,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  ticketStatusPillText: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+  },
+  ticketAmountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 6,
+  },
+  ticketAmountText: {
+    fontSize: 28,
+    fontWeight: '900',
+    letterSpacing: -0.6,
+  },
+  ticketCategoryPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  ticketBarcodeSection: {
+    gap: 8,
+    paddingVertical: 2,
+  },
+  ticketDashedDivider: {
+    borderTopWidth: 1,
+    borderStyle: 'dashed',
+    width: '100%',
+    marginVertical: 4,
+  },
+  ticketBarcodeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  ticketBarcodeBars: {
+    fontSize: 12,
+    letterSpacing: 2,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    fontWeight: '700',
+  },
+  ticketBarcodeCode: {
+    fontSize: 10,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    fontWeight: '700',
+  },
+  ticketActionsContainer: {
+    gap: 8,
+    marginTop: 4,
+  },
+  receiptTipsPanel: {
+    gap: 8,
+  },
+  receiptTipItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  sourceCardsContainer: {
+    gap: 10,
+    marginVertical: 12,
+  },
+  sourceCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    elevation: 2,
+  },
+  sourceIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sourceBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  sourceBadgeText: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  receiptReviewThumbnail: {
+    height: 140,
+    borderRadius: 14,
+    borderWidth: 1,
+    overflow: 'hidden',
+    marginBottom: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  receiptReviewImg: {
+    width: '100%',
+    height: '100%',
+  },
+  receiptReviewBadge: {
+    position: 'absolute',
+    bottom: 8,
+    right: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#0f172acc',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  receiptReviewBadgeText: {
+    color: '#34d399',
+    fontSize: 10,
+    fontWeight: '700',
   },
 });
 
