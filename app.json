@@ -22,8 +22,15 @@
     }
   },
   "expo": {
+    "name": "FinsAI",
+    "slug": "finsai",
     "android": {
       "package": "com.picchi_vut.fintechassistant"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "869132e0-f97b-4ca2-95f5-e0d99706e4e8"
+      }
     }
   }
 }
