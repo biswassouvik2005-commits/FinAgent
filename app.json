@@ -14,5 +14,16 @@
   ],
   "android": {
     "softwareKeyboardLayoutMode": "resize"
+  },
+  "extra": {
+    "router": {},
+    "eas": {
+      "projectId": "21abe040-ae48-4454-922e-d29e6f257dd8"
+    }
+  },
+  "expo": {
+    "android": {
+      "package": "com.picchi_vut.fintechassistant"
+    }
   }
 }
