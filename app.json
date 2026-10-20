@@ -11,5 +11,8 @@
       }
     ],
     "expo-font"
-  ]
+  ],
+  "android": {
+    "softwareKeyboardLayoutMode": "resize"
+  }
 }

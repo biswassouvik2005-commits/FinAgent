@@ -13,6 +13,10 @@ npx expo start
 
 Press `w` in the Expo terminal to open the same app in a browser.
 
+## Languages
+
+The interface supports English, Spanish, French, German, Portuguese, Hindi, Simplified Chinese, Japanese, and Arabic. Use the globe button in the app header to change languages. Your selection is saved on the device and restored the next time you open the app.
+
 ## Connect the API
 
 Chat and receipt-scanning requests use the deployed Express API:

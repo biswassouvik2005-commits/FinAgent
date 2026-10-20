@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { StyleSheet, Text, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
@@ -13,7 +14,7 @@ interface PieChartProps {
   colors?: string[];
 }
 
-const defaultColors = ['#6366F1', '#0D9488', '#B89B5E', '#64748B', '#F59E0B', '#10B981'];
+const defaultColors = ['#526FC4', '#607ACC', '#6E85D3', '#7D91DA', '#8B9DE0', '#9AA9E6'];
 const size = 130;
 const center = size / 2;
 const radius = 54;
@@ -32,6 +33,7 @@ const makeSlicePath = (start: number, end: number) => {
 };
 
 export const PieChart: React.FC<PieChartProps> = ({ data, isDark, colors = defaultColors }) => {
+  const { t } = useTranslation();
   const validData = data.filter(item => Number.isFinite(item.amount) && item.amount > 0);
   const total = validData.reduce((sum, item) => sum + item.amount, 0);
   if (!validData.length || !total || colors.length === 0) return null;
@@ -61,10 +63,10 @@ export const PieChart: React.FC<PieChartProps> = ({ data, isDark, colors = defau
           <View key={slice.category} style={styles.legendRow}>
             <View style={styles.categoryName}>
               <View style={[styles.dot, { backgroundColor: slice.color }]} />
-              <Text numberOfLines={1} style={[styles.category, { color: isDark ? '#A1A1AA' : '#64748B' }]}>{slice.category}</Text>
+              <Text numberOfLines={1} style={[styles.category, { color: isDark ? '#C0C6D6' : '#475569' }]}>{t(slice.category)}</Text>
             </View>
-            <Text style={[styles.amount, { color: isDark ? '#FAFAFA' : '#0F172A' }]}>{slice.amount.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })}</Text>
-            <Text style={[styles.percentage, { color: isDark ? '#A1A1AA' : '#64748B' }]}>{slice.percentage}%</Text>
+            <Text style={[styles.amount, { color: isDark ? '#F8F9FC' : '#101828' }]}>{slice.amount.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })}</Text>
+            <Text style={[styles.percentage, { color: isDark ? '#C0C6D6' : '#475569' }]}>{slice.percentage}%</Text>
           </View>
         ))}
       </View>

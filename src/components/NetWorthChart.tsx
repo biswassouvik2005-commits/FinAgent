@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { StyleSheet, Text, View } from 'react-native';
 
 interface NetWorthChartProps {
@@ -7,8 +8,9 @@ interface NetWorthChartProps {
 }
 
 export function NetWorthChart({ currentValue, isDark }: NetWorthChartProps) {
-  const textColor = isDark ? '#FAFAFA' : '#0F172A';
-  const mutedColor = isDark ? '#A1A1AA' : '#64748B';
+  const { t } = useTranslation();
+  const textColor = isDark ? '#F8F9FC' : '#101828';
+  const mutedColor = isDark ? '#C0C6D6' : '#475569';
 
   return (
     <View style={styles.container}>
@@ -19,7 +21,7 @@ export function NetWorthChart({ currentValue, isDark }: NetWorthChartProps) {
         })}
       </Text>
       <Text style={[styles.caption, { color: mutedColor }]}>
-        Historical trend is unavailable until dated balance history is recorded.
+        {t('Historical trend is unavailable until dated balance history is recorded.')}
       </Text>
     </View>
   );

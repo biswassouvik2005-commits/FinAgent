@@ -4,6 +4,7 @@ import axios from 'axios';
 import * as ImagePicker from 'expo-image-picker';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
   Alert,
@@ -14,14 +15,15 @@ import {
   KeyboardAvoidingView,
   LayoutAnimation,
   Modal,
+  Text as NativeText,
+  TextInput as NativeTextInput,
   PanResponder,
   Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   Share,
   StyleSheet,
-  Text,
-  TextInput,
   UIManager,
   View,
   type KeyboardTypeOptions,
@@ -29,8 +31,25 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import api, { getApiErrorMessage } from '../lib/api';
+import i18n, { isSupportedLanguage, supportedLanguages, type LanguageCode } from '../lib/i18n';
 import { NetWorthChart } from './NetWorthChart';
 import { PieChart, type CategoryItem } from './PieChart';
+
+type LocalizedTextProps = React.ComponentProps<typeof NativeText>;
+type LocalizedTextInputProps = React.ComponentProps<typeof NativeTextInput>;
+
+function Text({ children, ...props }: LocalizedTextProps) {
+  const { t } = useTranslation();
+  const localizedChildren = React.Children.map(children, child =>
+    typeof child === 'string' ? t(child) : child
+  );
+  return <NativeText {...props}>{localizedChildren}</NativeText>;
+}
+
+function TextInput({ placeholder, ...props }: LocalizedTextInputProps) {
+  const { t } = useTranslation();
+  return <NativeTextInput {...props} placeholder={placeholder ? t(placeholder) : undefined} />;
+}
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -39,7 +58,7 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 type Screen = 'home' | 'cards' | 'agent' | 'budget' | 'bills' | 'receipts';
 type CardNetwork = 'visa' | 'mastercard' | 'amex' | 'discover';
 type TransactionType = 'income' | 'expense';
-type ModalType = 'card' | 'transaction' | 'bill' | 'payment' | 'compose' | 'receipt' | 'receipt_source' | null;
+type ModalType = 'card' | 'transaction' | 'bill' | 'payment' | 'compose' | 'receipt' | 'receipt_source' | 'language' | null;
 type IconName = keyof typeof Ionicons.glyphMap;
 
 interface CreditCardItem {
@@ -124,14 +143,14 @@ const defaultTransactions: TransactionItem[] = [];
 const defaultBills: UpcomingBill[] = [];
 
 const categories = ['Groceries', 'Dining', 'Housing', 'Utilities', 'Transportation', 'Entertainment', 'Health', 'Income'];
-const categoryColors = ['#6366F1', '#0D9488', '#B89B5E', '#64748B', '#3B82F6', '#EC4899', '#14B8A6', '#F59E0B'];
+const categoryColors = ['#526FC4', '#607ACC', '#6E85D3', '#7D91DA', '#8B9DE0', '#9AA9E6', '#A9B5EC', '#B8C2F1'];
 const cardColors: Record<CardNetwork, string> = {
-  visa: '#272b63',
-  mastercard: '#292a32',
-  amex: '#654b17',
-  discover: '#155e55',
+  visa: '#354577',
+  mastercard: '#414F7F',
+  amex: '#4D5A87',
+  discover: '#59668F',
 };
-const storageKeys = ['fin_theme', 'fin_onboarded', 'fin_cards', 'fin_transactions', 'fin_bills', 'fin_monthly_income', 'fin_liquid_cash', 'fin_user_name'] as const;
+const storageKeys = ['fin_theme', 'fin_onboarded', 'fin_cards', 'fin_transactions', 'fin_bills', 'fin_monthly_income', 'fin_liquid_cash', 'fin_user_name', 'fin_language'] as const;
 
 const formatCurrency = (value: number, decimals = 2) =>
   `$${value.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}`;
@@ -171,28 +190,28 @@ interface Palette {
 
 const paletteFor = (isDark: boolean): Palette => isDark
   ? {
-      background: '#09090B',
-      surface: '#18181B',
-      elevated: '#202024',
-      border: '#27272A',
-      text: '#FAFAFA',
-      muted: '#A1A1AA',
-      accent: '#818CF8',
-      green: '#4ADE80',
-      red: '#F87171',
-      input: '#141416',
+      background: '#0B0E17',
+      surface: '#171C2A',
+      elevated: '#242B3D',
+      border: '#3A435B',
+      text: '#F8F9FC',
+      muted: '#C0C6D6',
+      accent: '#B6C3FF',
+      green: '#A6B5F3',
+      red: '#D0A4B2',
+      input: '#1B2232',
     }
   : {
-      background: '#F8FAFC',
+      background: '#F7F8FC',
       surface: '#FFFFFF',
-      elevated: '#F1F5F9',
-      border: '#E2E8F0',
-      text: '#0F172A',
-      muted: '#64748B',
-      accent: '#4F46E5',
-      green: '#15803D',
-      red: '#B91C1C',
-      input: '#F8FAFC',
+      elevated: '#EEF1F8',
+      border: '#C9D1E2',
+      text: '#101828',
+      muted: '#475569',
+      accent: '#526FC4',
+      green: '#526FC4',
+      red: '#8D5C72',
+      input: '#F7F8FC',
     };
 
 function AppButton({
@@ -212,7 +231,7 @@ function AppButton({
   disabled?: boolean;
   compact?: boolean;
 }) {
-  const isDark = palette.background === '#09090B';
+  const isDark = palette.background === '#0B0E17';
   const backgroundColor = variant === 'primary'
     ? palette.accent
     : variant === 'danger'
@@ -529,7 +548,7 @@ function ChatDataWidget({
   // 2. Budget & Category Breakdown Card
   if (data.category_breakdown && data.category_breakdown.length > 0) {
     const totalSpentInBreakdown = data.category_breakdown.reduce((s, c) => s + (Number(c.amount) || 0), 0);
-    const statusColor = data.budget_status === 'Over Budget' ? palette.red : (data.budget_status === 'Nearing Limit' ? '#f59e0b' : palette.green);
+    const statusColor = data.budget_status === 'Over Budget' ? palette.red : (data.budget_status === 'Nearing Limit' ? palette.accent : palette.green);
 
     return (
       <View style={[styles.chatWidgetCard, { backgroundColor: palette.surface, borderColor: palette.border }]}>
@@ -602,13 +621,13 @@ function ChatDataWidget({
       <View style={[styles.chatWidgetCard, { backgroundColor: palette.surface, borderColor: palette.border }]}>
         <View style={styles.chatWidgetHeader}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <Ionicons name="calendar" size={16} color="#f59e0b" />
+            <Ionicons name="calendar" size={16} color={palette.accent} />
             <Text style={[styles.chatWidgetHeaderTitle, { color: palette.text }]}>
               UPCOMING BILLS & SUBSCRIPTIONS
             </Text>
           </View>
-          <View style={[styles.chatWidgetStatusBadge, { backgroundColor: '#f59e0b25', borderColor: '#f59e0b' }]}>
-            <Text style={[styles.chatWidgetStatusBadgeText, { color: '#fbbf24' }]}>
+          <View style={[styles.chatWidgetStatusBadge, { backgroundColor: `${palette.accent}20`, borderColor: palette.accent }]}>
+            <Text style={[styles.chatWidgetStatusBadgeText, { color: palette.accent }]}>
               {data.upcoming_bills.length} Due Soon
             </Text>
           </View>
@@ -621,7 +640,7 @@ function ChatDataWidget({
                 <Text numberOfLines={1} style={[styles.bodyStrong, { color: palette.text, fontSize: 13 }]}>{bill.bill_name}</Text>
                 <Text style={[styles.caption, { color: palette.muted, fontSize: 11 }]}>Due {bill.due_date}</Text>
               </View>
-              <Text style={[styles.bodyStrong, { color: '#f59e0b', fontSize: 14 }]}>
+              <Text style={[styles.bodyStrong, { color: palette.accent, fontSize: 14 }]}>
                 {formatCurrency(bill.amount)}
               </Text>
             </View>
@@ -641,8 +660,8 @@ function ChatDataWidget({
             { backgroundColor: palette.elevated, borderColor: palette.border, borderWidth: 1, opacity: pressed ? 0.75 : 1 },
           ]}
         >
-          <Ionicons name="calendar-outline" size={14} color="#f59e0b" />
-          <Text style={[styles.chatWidgetActionBtnText, { color: '#f59e0b' }]}>
+          <Ionicons name="calendar-outline" size={14} color={palette.accent} />
+          <Text style={[styles.chatWidgetActionBtnText, { color: palette.accent }]}>
             Manage & Schedule Bills
           </Text>
         </Pressable>
@@ -662,8 +681,8 @@ function ChatDataWidget({
               PORTFOLIO HEALTH
             </Text>
           </View>
-          <View style={[styles.chatWidgetStatusBadge, { backgroundColor: isHealthy ? '#10b98125' : '#f59e0b25', borderColor: isHealthy ? palette.green : '#f59e0b' }]}>
-            <Text style={[styles.chatWidgetStatusBadgeText, { color: isHealthy ? palette.green : '#fbbf24' }]}>
+          <View style={[styles.chatWidgetStatusBadge, { backgroundColor: isHealthy ? `${palette.green}20` : `${palette.accent}20`, borderColor: isHealthy ? palette.green : palette.accent }]}>
+            <Text style={[styles.chatWidgetStatusBadgeText, { color: isHealthy ? palette.green : palette.accent }]}>
               {data.portfolio_health}
             </Text>
           </View>
@@ -710,7 +729,7 @@ function ChatDataWidget({
               SAFE-TO-SPEND SNAPSHOT
             </Text>
           </View>
-          <View style={[styles.chatWidgetStatusBadge, { backgroundColor: isGood ? '#10b98125' : '#ef444425', borderColor: isGood ? palette.green : palette.red }]}>
+          <View style={[styles.chatWidgetStatusBadge, { backgroundColor: isGood ? `${palette.green}20` : `${palette.accent}20`, borderColor: isGood ? palette.green : palette.accent }]}>
             <Text style={[styles.chatWidgetStatusBadgeText, { color: isGood ? palette.green : palette.red }]}>
               {sts.statusLabel || (isGood ? 'Guilt-Free' : 'Deficit')}
             </Text>
@@ -896,6 +915,7 @@ const quickPrompts: QuickPromptItem[] = [
 ];
 
 function FinAgentApp() {
+  const { t } = useTranslation();
   const [storageStatus, setStorageStatus] = useState<'loading' | 'ready' | 'failed'>('loading');
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [screen, setScreen] = useState<Screen>('home');
@@ -1154,7 +1174,9 @@ function FinAgentApp() {
   const toastAnim = useRef(new Animated.Value(0)).current;
   const [apiError, setApiError] = useState('');
   const insets = useSafeAreaInsets();
-  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  const keyboardOffset = insets.top + 64;
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const chatScroll = useRef<ScrollViewRef>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -1366,44 +1388,23 @@ function FinAgentApp() {
   }, [monthlyIncome, liquidCash, transactions, bills]);
 
   const safeToSpendColors = useMemo(() => {
-    if (safeToSpendData.status === 'green') {
-      return {
-        badgeBg: isDark ? '#14532d50' : '#dcfce7',
-        badgeBorder: isDark ? '#15803d60' : '#bbf7d0',
-        badgeText: isDark ? '#4ade80' : '#15803d',
-        heroAmount: isDark ? '#4ade80' : '#15803d',
-        dot: isDark ? '#4ade80' : '#15803d',
-        cardBorder: isDark ? '#15803d50' : '#bbf7d0',
-        bannerBg: isDark ? '#14532d25' : '#f0fdf4',
-        bannerBorder: isDark ? '#15803d40' : '#bbf7d0',
-        bannerText: isDark ? '#86efac' : '#166534',
-      };
-    }
-    if (safeToSpendData.status === 'amber') {
-      return {
-        badgeBg: isDark ? '#78350f50' : '#fef3c7',
-        badgeBorder: isDark ? '#d9770660' : '#fde68a',
-        badgeText: isDark ? '#fbbf24' : '#b45309',
-        heroAmount: isDark ? '#fbbf24' : '#d97706',
-        dot: '#f59e0b',
-        cardBorder: isDark ? '#d9770640' : '#fde68a',
-        bannerBg: isDark ? '#78350f25' : '#fffbeb',
-        bannerBorder: isDark ? '#d9770640' : '#fed7aa',
-        bannerText: isDark ? '#fde68a' : '#92400e',
-      };
-    }
+    const level = safeToSpendData.status === 'green' ? 0 : safeToSpendData.status === 'amber' ? 1 : 2;
+    const darkBackgrounds = ['#23283D', '#2B3250', '#343D63'];
+    const lightBackgrounds = ['#F1F3FA', '#E9ECF7', '#E1E6F4'];
+    const darkBorders = ['#374263', '#46547F', '#55659A'];
+    const lightBorders = ['#DCE1F1', '#CCD4EC', '#BBC7E7'];
     return {
-      badgeBg: isDark ? '#7f1d1d50' : '#fee2e2',
-      badgeBorder: isDark ? '#b91c1c60' : '#fecaca',
-      badgeText: isDark ? '#f87171' : '#b91c1c',
-      heroAmount: isDark ? '#f87171' : '#b91c1c',
-      dot: isDark ? '#f87171' : '#b91c1c',
-      cardBorder: isDark ? '#b91c1c40' : '#fecaca',
-      bannerBg: isDark ? '#7f1d1d25' : '#fef2f2',
-      bannerBorder: isDark ? '#b91c1c40' : '#fca5a5',
-      bannerText: isDark ? '#fca5a5' : '#991b1b',
+      badgeBg: isDark ? darkBackgrounds[level] : lightBackgrounds[level],
+      badgeBorder: isDark ? darkBorders[level] : lightBorders[level],
+      badgeText: palette.accent,
+      heroAmount: palette.accent,
+      dot: palette.accent,
+      cardBorder: isDark ? darkBorders[level] : lightBorders[level],
+      bannerBg: isDark ? darkBackgrounds[level] : lightBackgrounds[level],
+      bannerBorder: isDark ? darkBorders[level] : lightBorders[level],
+      bannerText: isDark ? palette.accent : '#455486',
     };
-  }, [safeToSpendData.status, isDark]);
+  }, [safeToSpendData.status, isDark, palette.accent]);
 
   useEffect(() => {
     let mounted = true;
@@ -1412,6 +1413,9 @@ function FinAgentApp() {
         const entries = await AsyncStorage.multiGet([...storageKeys]);
         if (!mounted) return;
         const stored = Object.fromEntries(entries);
+        if (typeof stored.fin_language === 'string' && isSupportedLanguage(stored.fin_language)) {
+          await i18n.changeLanguage(stored.fin_language);
+        }
         if (stored.fin_theme === 'dark' || stored.fin_theme === 'light') setTheme(stored.fin_theme);
 
         const onboarded = stored.fin_onboarded === 'true';
@@ -1582,25 +1586,24 @@ function FinAgentApp() {
   };
 
   useEffect(() => {
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-
-    const showSub = Keyboard.addListener(showEvent, () => {
-      setIsKeyboardVisible(true);
+    let scrollTimer: ReturnType<typeof setTimeout> | undefined;
+    const showSub = Keyboard.addListener('keyboardDidShow', () => {
+      setKeyboardVisible(true);
       if (screen === 'agent') {
-        setTimeout(() => {
+        scrollTimer = setTimeout(() => {
           chatScroll.current?.scrollToEnd({ animated: true });
         }, 80);
       }
     });
 
-    const hideSub = Keyboard.addListener(hideEvent, () => {
-      setIsKeyboardVisible(false);
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => {
+      setKeyboardVisible(false);
     });
 
     return () => {
       showSub.remove();
       hideSub.remove();
+      if (scrollTimer) clearTimeout(scrollTimer);
     };
   }, [screen]);
 
@@ -1630,6 +1633,44 @@ function FinAgentApp() {
         useNativeDriver: true,
       }).start(() => setToast(''));
     }, 2800);
+  };
+
+  const refreshDashboard = async () => {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    try {
+      const entries = await AsyncStorage.multiGet([
+        'fin_user_name',
+        'fin_cards',
+        'fin_transactions',
+        'fin_bills',
+        'fin_monthly_income',
+        'fin_liquid_cash',
+      ]);
+      const stored = Object.fromEntries(entries);
+      setUserName(stored.fin_user_name ?? '');
+      setCards(parseArray(stored.fin_cards ?? null, [], 'fin_cards'));
+      setTransactions(parseArray(stored.fin_transactions ?? null, [], 'fin_transactions'));
+      setBills(parseArray(stored.fin_bills ?? null, [], 'fin_bills'));
+      setMonthlyIncome(parseNumber(stored.fin_monthly_income ?? null, 0, 'fin_monthly_income'));
+      setLiquidCash(parseNumber(stored.fin_liquid_cash ?? null, 0, 'fin_liquid_cash'));
+    } catch (error) {
+      console.error('Failed to refresh dashboard data from AsyncStorage', error);
+      showToast('Unable to refresh your dashboard. Please try again.');
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  const selectLanguage = async (language: LanguageCode) => {
+    try {
+      await i18n.changeLanguage(language);
+      await AsyncStorage.setItem('fin_language', language);
+      setModal(null);
+    } catch (error) {
+      console.error('Failed to save language preference', error);
+      showToast(t('Could not save language preference.'));
+    }
   };
 
   const openNewCard = () => {
@@ -2184,7 +2225,7 @@ function FinAgentApp() {
           <Text style={styles.eyebrowWhite}>{percentage.toFixed(1)}% used</Text>
         </View>
         <View style={styles.progressTrack}>
-          <View style={[styles.progressFill, { width: `${percentage}%`, backgroundColor: percentage > 30 ? '#fbbf24' : '#34d399' }]} />
+          <View style={[styles.progressFill, { width: `${percentage}%`, backgroundColor: percentage > 30 ? palette.accent : palette.green }]} />
         </View>
         {actions ? (
           <View style={styles.cardActions}>
@@ -2209,10 +2250,11 @@ function FinAgentApp() {
   };
 
   const renderHome = () => (
-    <>
+    <View style={styles.dashboardContent}>
       <View style={styles.welcomeBlock}>
-        <Text style={[styles.eyebrow, { color: palette.muted }]}>PERSONAL FINANCE OVERVIEW</Text>
-        <Text style={[styles.pageTitle, { color: palette.text }]}>Welcome{userName ? `, ${userName}` : ''}</Text>
+        <Text style={[styles.pageTitle, { color: palette.text }]}>
+          {userName ? t('Welcome, {{name}}', { name: userName }) : t('Welcome')}
+        </Text>
       </View>
 
       {/* Daily Safe-to-Spend Hero Metric Card */}
@@ -2312,7 +2354,7 @@ function FinAgentApp() {
             ]}
           >
             <Text style={[styles.safeToSpendBreakdownLabel, { color: palette.muted }]}>Spent</Text>
-            <Text style={[styles.safeToSpendBreakdownValue, { color: palette.red }]}>
+            <Text style={[styles.safeToSpendBreakdownValue, { color: palette.accent }]}>
               -{formatCurrency(safeToSpendData.spentSoFar, 0)}
             </Text>
           </Pressable>
@@ -2330,7 +2372,7 @@ function FinAgentApp() {
             ]}
           >
             <Text style={[styles.safeToSpendBreakdownLabel, { color: palette.muted }]}>Bills Due</Text>
-            <Text style={[styles.safeToSpendBreakdownValue, { color: '#f59e0b' }]}>
+            <Text style={[styles.safeToSpendBreakdownValue, { color: palette.accent }]}>
               -{formatCurrency(safeToSpendData.upcomingBills, 0)}
             </Text>
           </Pressable>
@@ -2345,51 +2387,40 @@ function FinAgentApp() {
             ]}
           >
             <Text style={[styles.safeToSpendBreakdownLabel, { color: palette.muted }]}>Days Left</Text>
-            <Text style={[styles.safeToSpendBreakdownValue, { color: palette.green }]}>
+            <Text style={[styles.safeToSpendBreakdownValue, { color: palette.accent }]}>
               {safeToSpendData.daysLeft}d
             </Text>
           </View>
         </View>
 
-        {/* Traceable Formula */}
-        <View style={[styles.safeToSpendFormulaRow, { borderTopColor: palette.border }]}>
-          <Text style={[styles.safeToSpendFormulaText, { color: palette.muted }]} numberOfLines={1}>
-            Formula: (${formatCurrency(safeToSpendData.monthlyBudget, 0)} - ${formatCurrency(safeToSpendData.spentSoFar, 0)} - ${formatCurrency(safeToSpendData.upcomingBills, 0)}) ÷ {safeToSpendData.daysLeft}d
-          </Text>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => navigateToScreen('budget')}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Text style={[styles.caption, { color: palette.accent, fontWeight: '700' }]}>
-              Audit &rarr;
-            </Text>
-          </Pressable>
-        </View>
       </Panel>
 
       {/* Hero Net Worth Card */}
       <Panel palette={palette} style={styles.heroPanel}>
         <View style={styles.rowBetween}>
-          <Text style={[styles.eyebrow, { color: palette.muted }]}>TOTAL NET WORTH</Text>
-          <Ionicons name="trending-up" size={18} color={palette.green} />
+          <Text style={[styles.eyebrow, { color: palette.muted }]}>Total net worth</Text>
+          <Ionicons name="trending-up" size={18} color={palette.accent} />
         </View>
         <Text style={[styles.netWorth, { color: palette.text }]}>{formatCurrency(netWorth)}</Text>
         <View style={styles.heroStatRow}>
           <View style={[styles.statChip, { backgroundColor: palette.elevated, borderColor: palette.border }]}>
             <Text style={[styles.caption, { color: palette.muted }]}>Cash</Text>
-            <Text style={[styles.statChipValue, { color: palette.green }]}>{formatCurrency(liquidCash, 0)}</Text>
+            <Text style={[styles.statChipValue, { color: palette.accent }]}>{formatCurrency(liquidCash, 0)}</Text>
           </View>
           <View style={[styles.statChip, { backgroundColor: palette.elevated, borderColor: palette.border }]}>
             <Text style={[styles.caption, { color: palette.muted }]}>Debt</Text>
-            <Text style={[styles.statChipValue, { color: palette.red }]}>{formatCurrency(totalCardDebt, 0)}</Text>
+            <Text style={[styles.statChipValue, { color: palette.accent }]}>{formatCurrency(totalCardDebt, 0)}</Text>
           </View>
         </View>
         <NetWorthChart currentValue={netWorth} isDark={isDark} />
       </Panel>
 
       {/* Modern Quick Action Pills */}
-      <View style={styles.quickActionsRow}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.quickActionsRow}
+      >
         <Pressable
           accessibilityRole="button"
           onPress={openTransactionModal}
@@ -2435,7 +2466,7 @@ function FinAgentApp() {
             },
           ]}
         >
-          <Ionicons name="camera-outline" size={16} color={palette.green} />
+          <Ionicons name="camera-outline" size={16} color={palette.accent} />
           <Text style={[styles.quickActionText, { color: palette.text }]}>Receipt</Text>
         </Pressable>
 
@@ -2455,12 +2486,12 @@ function FinAgentApp() {
           <Ionicons name="sparkles-outline" size={16} color={palette.accent} />
           <Text style={[styles.quickActionText, { color: palette.text }]}>Ask AI</Text>
         </Pressable>
-      </View>
+      </ScrollView>
 
       {/* Cards Section */}
       <View style={styles.section}>
         <View style={styles.rowBetween}>
-          <SectionTitle title="Your cards" subtitle={`${cards.length} connected`} palette={palette} />
+          <SectionTitle title="Your cards" subtitle={t('{{count}} connected', { count: cards.length })} palette={palette} />
           <Pressable onPress={() => navigateToScreen('cards')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <Text style={[styles.link, { color: palette.accent }]}>Manage</Text>
           </Pressable>
@@ -2485,7 +2516,9 @@ function FinAgentApp() {
         <View style={styles.rowBetween}>
           <SectionTitle
             title="50 / 30 / 20 budget"
-            subtitle={monthlyIncome > 0 ? `Based on ${formatCurrency(monthlyIncome, 0)} monthly income` : 'Track spending targets & pacing'}
+            subtitle={monthlyIncome > 0
+              ? t('Based on {{amount}} monthly income', { amount: formatCurrency(monthlyIncome, 0) })
+              : 'Track spending targets & pacing'}
             palette={palette}
           />
           {monthlyIncome > 0 ? (
@@ -2516,21 +2549,21 @@ function FinAgentApp() {
                 spent: budgetBreakdown.needsSpent,
                 target: budgetBreakdown.needsTarget,
                 pct: budgetBreakdown.needsPct,
-                color: '#60a5fa',
+                color: palette.accent,
               },
               {
                 label: 'Wants (30%)',
                 spent: budgetBreakdown.wantsSpent,
                 target: budgetBreakdown.wantsTarget,
                 pct: budgetBreakdown.wantsPct,
-                color: '#c084fc',
+                color: isDark ? '#8796D2' : '#7888BE',
               },
               {
                 label: 'Savings & debt (20%)',
                 spent: budgetBreakdown.savingsSpent,
                 target: budgetBreakdown.savingsTarget,
                 pct: budgetBreakdown.savingsPct,
-                color: '#34d399',
+                color: isDark ? '#6D7FB8' : '#98A6D2',
               },
             ].map(item => (
               <View key={item.label} style={styles.budgetMeter}>
@@ -2546,7 +2579,7 @@ function FinAgentApp() {
                       styles.progressFill,
                       {
                         width: `${item.pct}%`,
-                        backgroundColor: item.pct > 100 ? '#f59e0b' : item.color,
+                        backgroundColor: item.color,
                       },
                     ]}
                   />
@@ -2575,7 +2608,7 @@ function FinAgentApp() {
         </View>
         {renderTransactionList(transactions.slice(0, 5))}
       </Panel>
-    </>
+    </View>
   );
 
   const renderCards = () => (
@@ -2588,11 +2621,11 @@ function FinAgentApp() {
         <AppButton label="Add card" icon="add" onPress={openNewCard} palette={palette} compact />
       </View>
       <Panel palette={palette}>
-        <Text style={[styles.eyebrow, { color: palette.muted }]}>TOTAL CREDIT UTILIZATION</Text>
+        <Text style={[styles.eyebrow, { color: palette.muted }]}>Total credit utilization</Text>
         <Text style={[styles.netWorth, { color: palette.accent }]}>{utilization.toFixed(1)}%</Text>
         <Text style={[styles.caption, { color: palette.muted }]}>{formatCurrency(totalCardDebt, 0)} debt across {formatCurrency(totalCreditLimit, 0)} available credit</Text>
         <View style={[styles.progressTrack, { height: 10, backgroundColor: palette.elevated }]}>
-          <View style={[styles.progressFill, { width: `${Math.min(100, utilization)}%`, backgroundColor: utilization > 30 ? '#f59e0b' : '#34d399' }]} />
+          <View style={[styles.progressFill, { width: `${Math.min(100, utilization)}%`, backgroundColor: utilization > 30 ? palette.accent : palette.green }]} />
         </View>
         <Text style={[styles.caption, styles.topGap, { color: palette.muted }]}>Keeping utilization below 30% can support a healthy credit profile.</Text>
       </Panel>
@@ -2624,16 +2657,18 @@ function FinAgentApp() {
 
   const renderAgent = () => (
     <View style={styles.agentInner}>
-      <Panel palette={palette} style={styles.contextPanel}>
-        <View style={[styles.liveDot, { backgroundColor: palette.green }]} />
-        <View style={styles.flex}>
-          <Text style={[styles.bodyStrong, { color: palette.text }]}>FinAgent live context</Text>
-          <Text style={[styles.caption, { color: palette.muted }]}>{cards.length} cards · {formatCurrency(totalCardDebt, 0)} debt · {formatCurrency(liquidCash, 0)} cash</Text>
-        </View>
-        <Pressable onPress={resetChat} accessibilityLabel="Reset conversation" hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Ionicons name="refresh-outline" size={20} color={palette.muted} />
-        </Pressable>
-      </Panel>
+      {!keyboardVisible ? (
+        <Panel palette={palette} style={styles.contextPanel}>
+          <View style={[styles.liveDot, { backgroundColor: palette.accent }]} />
+          <View style={styles.flex}>
+            <Text style={[styles.bodyStrong, { color: palette.text }]}>FinAgent live context</Text>
+            <Text style={[styles.caption, { color: palette.muted }]}>{cards.length} cards · {formatCurrency(totalCardDebt, 0)} debt · {formatCurrency(liquidCash, 0)} cash</Text>
+          </View>
+          <Pressable onPress={resetChat} accessibilityLabel="Reset conversation" hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Ionicons name="refresh-outline" size={20} color={palette.muted} />
+          </Pressable>
+        </Panel>
+      ) : null}
       <Panel palette={palette} style={styles.chatPanel}>
         <ScrollView
           ref={chatScroll}
@@ -2687,39 +2722,41 @@ function FinAgentApp() {
         </ScrollView>
 
         {/* Quick-Prompt Chips Above the Keyboard / Chat Input */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.quickPromptChipsRow}
-          style={styles.quickPromptChipsScroll}
-          keyboardShouldPersistTaps="handled"
-        >
-          {quickPrompts.map(item => (
-            <Pressable
-              key={item.id}
-              onPress={() => {
-                if (item.action === 'receipt') {
-                  chooseReceiptSource();
-                } else {
-                  void sendMessage(item.prompt);
-                }
-              }}
-              disabled={isLoadingChat}
-              accessibilityRole="button"
-              accessibilityLabel={item.label}
-              style={({ pressed }) => [
-                styles.quickPromptChip,
-                {
-                  backgroundColor: pressed ? palette.surface : palette.elevated,
-                  borderColor: palette.border,
-                  opacity: isLoadingChat ? 0.6 : 1,
-                },
-              ]}
-            >
-              <Text style={[styles.quickPromptChipText, { color: palette.text }]}>{item.label}</Text>
-            </Pressable>
-          ))}
-        </ScrollView>
+        {!keyboardVisible ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.quickPromptChipsRow}
+            style={styles.quickPromptChipsScroll}
+            keyboardShouldPersistTaps="handled"
+          >
+            {quickPrompts.map(item => (
+              <Pressable
+                key={item.id}
+                onPress={() => {
+                  if (item.action === 'receipt') {
+                    chooseReceiptSource();
+                  } else {
+                    void sendMessage(item.prompt);
+                  }
+                }}
+                disabled={isLoadingChat}
+                accessibilityRole="button"
+                accessibilityLabel={item.label}
+                style={({ pressed }) => [
+                  styles.quickPromptChip,
+                  {
+                    backgroundColor: pressed ? palette.surface : palette.elevated,
+                    borderColor: palette.border,
+                    opacity: isLoadingChat ? 0.6 : 1,
+                  },
+                ]}
+              >
+                <Text style={[styles.quickPromptChipText, { color: palette.text }]}>{item.label}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        ) : null}
 
         <View style={[styles.chatComposer, { borderColor: palette.border, backgroundColor: palette.input }]}>
           <Pressable
@@ -2754,6 +2791,8 @@ function FinAgentApp() {
             multiline
             maxLength={2000}
             editable={!isLoadingChat}
+            scrollEnabled
+            textAlignVertical="top"
             onFocus={() => {
               setTimeout(() => {
                 chatScroll.current?.scrollToEnd({ animated: true });
@@ -2826,7 +2865,7 @@ function FinAgentApp() {
       </Panel>
       <Panel palette={palette}>
         <View style={styles.rowBetween}>
-          <SectionTitle title="Transaction ledger" subtitle={`${filteredTransactions.length} entries`} palette={palette} />
+          <SectionTitle title="Transaction ledger" subtitle={t('{{count}} entries', { count: filteredTransactions.length })} palette={palette} />
           <AppButton label="Add" icon="add" onPress={openTransactionModal} palette={palette} compact />
         </View>
         <TextInput
@@ -2915,7 +2954,7 @@ function FinAgentApp() {
           <View style={styles.viewfinderImageWrap}>
             <Image source={{ uri: receiptImageUri }} style={styles.viewfinderImg} resizeMode="contain" />
             <View style={styles.viewfinderImgBadge}>
-              <Ionicons name="image-outline" size={12} color="#34d399" />
+              <Ionicons name="image-outline" size={12} color={palette.green} />
               <Text style={styles.viewfinderImgBadgeText}>PREVIEW CAPTURED</Text>
             </View>
           </View>
@@ -2952,7 +2991,7 @@ function FinAgentApp() {
             </Animated.View>
 
             <View style={styles.scannerLiveTicker}>
-              <ActivityIndicator size="small" color="#34d399" style={{ marginRight: 6 }} />
+              <ActivityIndicator size="small" color={palette.accent} style={{ marginRight: 6 }} />
               <Text style={styles.scannerLiveTickerText}>
                 {scanSteps[scanStepIndex] || 'AI Vision: Processing receipt…'}
               </Text>
@@ -2988,8 +3027,8 @@ function FinAgentApp() {
             { backgroundColor: palette.surface, borderColor: palette.border, opacity: isScanning ? 0.6 : pressed ? 0.75 : 1 },
           ]}
         >
-          <View style={[styles.scannerActionIconWrap, { backgroundColor: '#3b82f620' }]}>
-            <Ionicons name="images" size={20} color="#3b82f6" />
+          <View style={[styles.scannerActionIconWrap, { backgroundColor: `${palette.accent}20` }]}>
+            <Ionicons name="images" size={20} color={palette.accent} />
           </View>
           <Text style={[styles.scannerActionTitle, { color: palette.text }]}>Gallery</Text>
           <Text style={[styles.scannerActionSub, { color: palette.muted }]}>Choose Image</Text>
@@ -3004,7 +3043,7 @@ function FinAgentApp() {
             { backgroundColor: palette.surface, borderColor: palette.border, opacity: isScanning ? 0.6 : pressed ? 0.75 : 1 },
           ]}
         >
-          <View style={[styles.scannerActionIconWrap, { backgroundColor: '#10b98120' }]}>
+          <View style={[styles.scannerActionIconWrap, { backgroundColor: `${palette.accent}20` }]}>
             <Ionicons name="flash" size={20} color={palette.green} />
           </View>
           <Text style={[styles.scannerActionTitle, { color: palette.text }]}>Demo Receipt</Text>
@@ -3016,7 +3055,7 @@ function FinAgentApp() {
       {scannedReceipt ? (
         <View style={[styles.ticketVoucherCard, { backgroundColor: palette.surface, borderColor: palette.border }]}>
           <View style={styles.ticketHeaderRow}>
-            <View style={[styles.ticketStoreBadge, { backgroundColor: '#10b98120', borderColor: palette.green }]}>
+            <View style={[styles.ticketStoreBadge, { backgroundColor: `${palette.accent}20`, borderColor: palette.accent }]}>
               <Ionicons name="storefront" size={18} color={palette.green} />
             </View>
             <View style={styles.flex}>
@@ -3024,7 +3063,7 @@ function FinAgentApp() {
                 <Text numberOfLines={1} style={[styles.ticketMerchantName, { color: palette.text }]}>
                   {receiptMerchant || scannedReceipt.merchant}
                 </Text>
-                <View style={[styles.ticketStatusPill, { backgroundColor: '#10b98120', borderColor: palette.green }]}>
+                <View style={[styles.ticketStatusPill, { backgroundColor: `${palette.accent}20`, borderColor: palette.accent }]}>
                   <Ionicons name="checkmark-circle" size={11} color={palette.green} />
                   <Text style={[styles.ticketStatusPillText, { color: palette.green }]}>OCR VERIFIED</Text>
                 </View>
@@ -3094,7 +3133,7 @@ function FinAgentApp() {
       {/* Pro Tips Panel */}
       <Panel palette={palette} style={styles.receiptTipsPanel}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-          <Ionicons name="bulb-outline" size={18} color="#f59e0b" />
+          <Ionicons name="bulb-outline" size={18} color={palette.accent} />
           <Text style={[styles.bodyStrong, { color: palette.text }]}>Tips for Best OCR Accuracy</Text>
         </View>
         <View style={styles.receiptTipItem}>
@@ -3132,6 +3171,9 @@ function FinAgentApp() {
           <Text style={[styles.brandName, { color: palette.text }]}>FinAgent</Text>
           <Text style={[styles.brandTagline, { color: palette.muted }]}>Setup & Personalization</Text>
         </View>
+        <Pressable onPress={() => setModal('language')} accessibilityRole="button" accessibilityLabel={t('Choose language')} style={[styles.themeButton, { borderColor: palette.border }]}>
+          <Ionicons name="globe-outline" size={19} color={palette.accent} />
+        </Pressable>
         <Pressable onPress={() => setTheme(isDark ? 'light' : 'dark')} accessibilityLabel="Toggle theme" style={[styles.themeButton, { borderColor: palette.border }]}>
           <Ionicons name={isDark ? 'sunny-outline' : 'moon-outline'} size={20} color={isDark ? '#fbbf24' : palette.accent} />
         </Pressable>
@@ -3164,7 +3206,7 @@ function FinAgentApp() {
             );
           })}
         </View>
-        <Text style={[styles.caption, { color: palette.muted }]}>Step {onboardStep} of 3</Text>
+        <Text style={[styles.caption, { color: palette.muted }]}>{t('Step {{step}} of 3', { step: onboardStep })}</Text>
       </View>
 
       {onboardStep === 1 ? (
@@ -3380,6 +3422,41 @@ function FinAgentApp() {
   };
 
   const renderModalContent = () => {
+    if (modal === 'language') {
+      return (
+        <>
+          <Text style={[styles.modalTitle, { color: palette.text }]}>{t('Choose language')}</Text>
+          <Text style={[styles.caption, { color: palette.muted, marginBottom: 14 }]}>
+            {t('Select your preferred language.')}
+          </Text>
+          <View style={styles.languageOptions}>
+            {supportedLanguages.map(language => {
+              const selected = i18n.resolvedLanguage === language.code;
+              return (
+                <Pressable
+                  key={language.code}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
+                  onPress={() => void selectLanguage(language.code)}
+                  style={[
+                    styles.languageOption,
+                    {
+                      backgroundColor: selected ? palette.accent : palette.elevated,
+                      borderColor: selected ? palette.accent : palette.border,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.languageOptionText, { color: selected ? '#fff' : palette.text }]}>
+                    {language.label}
+                  </Text>
+                  {selected ? <Ionicons name="checkmark" size={17} color="#fff" /> : null}
+                </Pressable>
+              );
+            })}
+          </View>
+        </>
+      );
+    }
     if (modal === 'card') {
       return (
         <>
@@ -3600,7 +3677,7 @@ function FinAgentApp() {
               <View style={styles.flex}>
                 <View style={styles.rowBetween}>
                   <Text style={[styles.bodyStrong, { color: palette.text }]}>Snap with Camera</Text>
-                  <View style={[styles.sourceBadge, { backgroundColor: '#10b98120', borderColor: palette.green }]}>
+                  <View style={[styles.sourceBadge, { backgroundColor: `${palette.accent}20`, borderColor: palette.accent }]}>
                     <Text style={[styles.sourceBadgeText, { color: palette.green }]}>LIVE OCR</Text>
                   </View>
                 </View>
@@ -3618,8 +3695,8 @@ function FinAgentApp() {
                 { backgroundColor: palette.elevated, borderColor: palette.border, opacity: pressed ? 0.75 : 1 },
               ]}
             >
-              <View style={[styles.sourceIconWrap, { backgroundColor: '#3b82f620' }]}>
-                <Ionicons name="images" size={24} color="#3b82f6" />
+              <View style={[styles.sourceIconWrap, { backgroundColor: `${palette.accent}20` }]}>
+                <Ionicons name="images" size={24} color={palette.accent} />
               </View>
               <View style={styles.flex}>
                 <Text style={[styles.bodyStrong, { color: palette.text }]}>Choose from Gallery</Text>
@@ -3637,14 +3714,14 @@ function FinAgentApp() {
                 { backgroundColor: palette.elevated, borderColor: palette.border, opacity: pressed ? 0.75 : 1 },
               ]}
             >
-              <View style={[styles.sourceIconWrap, { backgroundColor: '#10b98120' }]}>
+              <View style={[styles.sourceIconWrap, { backgroundColor: `${palette.accent}20` }]}>
                 <Ionicons name="flash" size={24} color={palette.green} />
               </View>
               <View style={styles.flex}>
                 <View style={styles.rowBetween}>
                   <Text style={[styles.bodyStrong, { color: palette.text }]}>Try Demo Receipt</Text>
-                  <View style={[styles.sourceBadge, { backgroundColor: '#f59e0b20', borderColor: '#f59e0b' }]}>
-                    <Text style={[styles.sourceBadgeText, { color: '#f59e0b' }]}>$14 SUBWAY</Text>
+                  <View style={[styles.sourceBadge, { backgroundColor: `${palette.accent}20`, borderColor: palette.accent }]}>
+                    <Text style={[styles.sourceBadgeText, { color: palette.accent }]}>$14 SUBWAY</Text>
                   </View>
                 </View>
                 <Text style={[styles.caption, { color: palette.muted, marginTop: 2 }]}>
@@ -3689,7 +3766,7 @@ function FinAgentApp() {
             <View style={[styles.receiptReviewThumbnail, { backgroundColor: palette.elevated, borderColor: palette.border }]}>
               <Image source={{ uri: receiptImageUri }} style={styles.receiptReviewImg} resizeMode="cover" />
               <View style={styles.receiptReviewBadge}>
-                <Ionicons name="scan-outline" size={12} color="#10b981" />
+                <Ionicons name="scan-outline" size={12} color={palette.green} />
                 <Text style={styles.receiptReviewBadgeText}>OCR Source Captured</Text>
               </View>
             </View>
@@ -3840,11 +3917,10 @@ function FinAgentApp() {
               <Ionicons name="chevron-back" size={20} color={palette.text} />
             </Pressable>
           ) : null}
-          <View style={[styles.brandMark, { backgroundColor: palette.accent }]}><Text style={[styles.brandMarkText, { color: isDark ? '#09090B' : '#FFFFFF' }]}>F</Text></View>
-          <View style={styles.brandCopy}>
-            <Text style={[styles.brandName, { color: palette.text }]}>FinAgent</Text>
-            <Text style={[styles.brandTagline, { color: palette.muted }]}>Your money, in focus</Text>
-          </View>
+          <View style={styles.headerSpacer} />
+          <Pressable onPress={() => setModal('language')} accessibilityRole="button" accessibilityLabel={t('Choose language')} style={[styles.themeButton, { borderColor: palette.border }]}>
+            <Ionicons name="globe-outline" size={19} color={palette.accent} />
+          </Pressable>
           <Pressable onPress={() => setTheme(isDark ? 'light' : 'dark')} accessibilityLabel="Toggle color theme" style={[styles.themeButton, { borderColor: palette.border }]}>
             <Ionicons name={isDark ? 'sunny-outline' : 'moon-outline'} size={20} color={isDark ? '#fbbf24' : palette.accent} />
           </Pressable>
@@ -3866,17 +3942,17 @@ function FinAgentApp() {
         <Animated.View style={[styles.screenAnimatedContainer, { opacity: screenFadeAnim, transform: [{ translateY: screenSlideAnim }] }]}>
           {screen === 'agent' ? (
             <KeyboardAvoidingView
-              style={styles.agentScreen}
-              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-              keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 64 : 0}
+              style={[styles.agentScreen, { paddingBottom: keyboardVisible ? 0 : insets.bottom }]}
+              behavior="padding"
+              keyboardVerticalOffset={keyboardOffset}
             >
               {renderAgent()}
             </KeyboardAvoidingView>
           ) : (
             <KeyboardAvoidingView
               style={styles.flex}
-              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-              keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 64 : 0}
+              behavior="padding"
+              keyboardVerticalOffset={keyboardOffset}
             >
               <ScrollView
                 key={screen}
@@ -3884,6 +3960,15 @@ function FinAgentApp() {
                 contentContainerStyle={styles.pageContent}
                 keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator={false}
+                refreshControl={screen === 'home' ? (
+                  <RefreshControl
+                    refreshing={isRefreshing}
+                    onRefresh={() => void refreshDashboard()}
+                    tintColor={palette.accent}
+                    colors={[palette.accent]}
+                    progressBackgroundColor={palette.surface}
+                  />
+                ) : undefined}
               >
                 {renderScreen()}
               </ScrollView>
@@ -3891,7 +3976,7 @@ function FinAgentApp() {
           )}
         </Animated.View>
 
-        {(!isKeyboardVisible || screen !== 'agent') ? (
+        {(!keyboardVisible || screen !== 'agent') ? (
           <View style={[styles.tabBar, { backgroundColor: palette.surface, borderTopColor: palette.border }]}>
             {tabs.map(tab => {
               const active = tab.id === screen;
@@ -4011,7 +4096,8 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   app: { flex: 1 },
   loadingScreen: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  header: { minHeight: 64, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth },
+  header: { minHeight: 56, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth },
+  headerSpacer: { flex: 1 },
   brandMark: { width: 38, height: 38, borderRadius: 13, backgroundColor: '#4F46E5', alignItems: 'center', justifyContent: 'center' },
   brandMarkText: { color: '#fff', fontSize: 19, fontWeight: '900' },
   brandCopy: { marginLeft: 10, flex: 1 },
@@ -4022,18 +4108,19 @@ const styles = StyleSheet.create({
   storageWarning: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 8 },
   storageWarningText: { color: '#fff', fontSize: 12, flex: 1 },
   mainScroll: { flex: 1 },
-  pageContent: { padding: 16, paddingBottom: 32, gap: 16, maxWidth: 760, width: '100%', alignSelf: 'center' },
-  welcomeBlock: { marginBottom: 2 },
-  pageTitle: { fontSize: 24, fontWeight: '800', letterSpacing: -0.4 },
-  eyebrow: { fontSize: 10, fontWeight: '800', letterSpacing: 1.1, marginBottom: 6 },
+  pageContent: { paddingHorizontal: 14, paddingTop: 14, paddingBottom: 28, gap: 14, maxWidth: 760, width: '100%', alignSelf: 'center' },
+  dashboardContent: { width: '100%', maxWidth: 520, alignSelf: 'center', gap: 12 },
+  welcomeBlock: { marginBottom: 0 },
+  pageTitle: { fontSize: 23, fontWeight: '800', letterSpacing: -0.4 },
+  eyebrow: { fontSize: 11, fontWeight: '800', letterSpacing: 1.1, marginBottom: 6 },
   eyebrowWhite: { color: '#ffffffbb', fontSize: 10, fontWeight: '800', letterSpacing: 0.8, marginBottom: 4 },
   netWorth: { fontSize: 32, fontWeight: '900', letterSpacing: -0.7, marginTop: 5, marginBottom: 10 },
   panel: { borderRadius: 20, borderWidth: 1, padding: 16, gap: 12 },
   safeToSpendCard: {
-    borderRadius: 22,
+    borderRadius: 20,
     borderWidth: 1.5,
-    padding: 18,
-    gap: 12,
+    padding: 16,
+    gap: 10,
   },
   safeToSpendHeader: {
     flexDirection: 'row',
@@ -4087,18 +4174,21 @@ const styles = StyleSheet.create({
   },
   safeToSpendBreakdownGrid: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
   },
   safeToSpendBreakdownChip: {
-    flex: 1,
+    flexBasis: '48%',
+    flexGrow: 1,
+    minHeight: 54,
     paddingVertical: 8,
-    paddingHorizontal: 6,
+    paddingHorizontal: 10,
     borderRadius: 12,
     borderWidth: 1,
     alignItems: 'center',
   },
   safeToSpendBreakdownLabel: {
-    fontSize: 9.5,
+    fontSize: 10,
     fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 0.4,
@@ -4127,8 +4217,8 @@ const styles = StyleSheet.create({
   heroStatRow: { flexDirection: 'row', gap: 10, marginBottom: 4 },
   statChip: { flex: 1, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 12, borderWidth: 1, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   statChipValue: { fontSize: 14, fontWeight: '800' },
-  quickActionsRow: { flexDirection: 'row', gap: 8, justifyContent: 'space-between' },
-  quickActionPill: { flex: 1, minHeight: 40, borderRadius: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 6, paddingVertical: 8 },
+  quickActionsRow: { flexDirection: 'row', gap: 8, paddingRight: 14 },
+  quickActionPill: { width: 100, minHeight: 44, borderRadius: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 8 },
   quickActionText: { fontSize: 12, fontWeight: '800' },
   emptyBudgetContainer: { alignItems: 'center', paddingVertical: 14, paddingHorizontal: 8 },
   metricRow: { flexDirection: 'row', gap: 12, marginBottom: 8 },
@@ -4137,7 +4227,7 @@ const styles = StyleSheet.create({
   section: { gap: 9 },
   sectionHeading: { marginBottom: 2 },
   sectionTitle: { fontSize: 17, fontWeight: '800' },
-  caption: { fontSize: 12, lineHeight: 17 },
+  caption: { fontSize: 13, lineHeight: 19 },
   bodyStrong: { fontSize: 14, fontWeight: '700' },
   link: { fontSize: 13, fontWeight: '700' },
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
@@ -4148,7 +4238,7 @@ const styles = StyleSheet.create({
   buttonCompact: { minHeight: 36, paddingHorizontal: 10, paddingVertical: 8, alignSelf: 'flex-start' },
   buttonBorder: { borderWidth: 1 },
   buttonText: { fontSize: 13, fontWeight: '800' },
-  buttonTextCompact: { fontSize: 11 },
+  buttonTextCompact: { fontSize: 12 },
   cardCarousel: { gap: 10, paddingRight: 10 },
   cardPanel: { width: 260, minHeight: 170, justifyContent: 'space-between', gap: 10, borderWidth: 0 },
   cardName: { color: '#fff', fontWeight: '800', fontSize: 14 },
@@ -4184,16 +4274,16 @@ const styles = StyleSheet.create({
   messageRowUser: { alignItems: 'flex-end' },
   messageBubble: { maxWidth: '92%', borderRadius: 16, paddingHorizontal: 12, paddingVertical: 10 },
   userMessageBubble: { borderBottomRightRadius: 5 },
-  messageText: { fontSize: 14, lineHeight: 20 },
+  messageText: { fontSize: 15, lineHeight: 22 },
   messageFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginTop: 6 },
   messageTime: { fontSize: 10 },
   loadingSpinner: { marginVertical: 10 },
   loadingRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginVertical: 8, paddingHorizontal: 6 },
-  chatComposer: { minHeight: 52, borderWidth: 1, borderRadius: 16, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 4, gap: 8 },
-  composerIconButton: { width: 36, height: 36, borderRadius: 11, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  clearButton: { padding: 4 },
-  chatInput: { flex: 1, minHeight: 44, maxHeight: 120, fontSize: 14, paddingVertical: 8, paddingHorizontal: 4 },
-  sendButton: { width: 38, height: 38, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  chatComposer: { minHeight: 56, borderWidth: 1.5, borderRadius: 16, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 5, gap: 8 },
+  composerIconButton: { width: 40, height: 40, borderRadius: 12, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  clearButton: { padding: 6 },
+  chatInput: { flex: 1, minHeight: 46, maxHeight: 120, fontSize: 16, paddingVertical: 8, paddingHorizontal: 4 },
+  sendButton: { width: 42, height: 42, borderRadius: 13, justifyContent: 'center', alignItems: 'center' },
   fieldWrap: { gap: 5, marginBottom: 10 },
   fieldLabel: { fontSize: 11, fontWeight: '700' },
   field: { minHeight: 44, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14 },
@@ -4207,7 +4297,7 @@ const styles = StyleSheet.create({
   centerText: { textAlign: 'center' },
   tabBar: { minHeight: 62, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', paddingHorizontal: 3, paddingBottom: Platform.OS === 'ios' ? 2 : 5 },
   tabItem: { minWidth: 46, flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3, paddingVertical: 6 },
-  tabLabel: { fontSize: 9, fontWeight: '700' },
+  tabLabel: { fontSize: 10, fontWeight: '700' },
   toast: { position: 'absolute', bottom: 76, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 15, paddingHorizontal: 14, paddingVertical: 11, elevation: 8 },
   toastText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   modalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(9, 9, 11, 0.78)' },
@@ -4215,6 +4305,9 @@ const styles = StyleSheet.create({
   modalSheet: { maxHeight: '92%', borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, paddingTop: 10, paddingHorizontal: 18, paddingBottom: 26, elevation: 24 },
   modalHandle: { alignSelf: 'center', width: 38, height: 4, borderRadius: 4, backgroundColor: '#71717a', marginBottom: 16 },
   modalTitle: { fontSize: 20, fontWeight: '900', marginBottom: 14 },
+  languageOptions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  languageOption: { width: '47%', minHeight: 48, borderWidth: 1, borderRadius: 13, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  languageOptionText: { fontSize: 14, fontWeight: '700' },
   backButton: { width: 36, height: 36, borderRadius: 12, borderWidth: 1, alignItems: 'center', justifyContent: 'center', marginRight: 8 },
   screenAnimatedContainer: { flex: 1 },
   stopButton: { backgroundColor: '#ef4444' },
@@ -4426,15 +4519,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: '#052e16ee',
-    borderColor: '#34d399',
+    backgroundColor: '#202943ee',
+    borderColor: '#8E9CCF',
     borderWidth: 1,
     paddingHorizontal: 9,
     paddingVertical: 3,
     borderRadius: 10,
   },
   viewfinderImgBadgeText: {
-    color: '#34d399',
+    color: '#A5B4FC',
     fontSize: 10,
     fontWeight: '800',
     letterSpacing: 0.5,
@@ -4447,16 +4540,16 @@ const styles = StyleSheet.create({
   },
   laserCoreLine: {
     height: 2.5,
-    backgroundColor: '#34d399',
+    backgroundColor: '#8E9CCF',
     borderRadius: 2,
-    shadowColor: '#10b981',
+    shadowColor: '#7788C3',
     shadowOpacity: 0.9,
     shadowRadius: 8,
     elevation: 8,
   },
   laserGlowAura: {
     height: 14,
-    backgroundColor: '#10b98125',
+    backgroundColor: '#8E9CCF25',
     marginTop: -2,
     borderRadius: 6,
   },
@@ -4466,7 +4559,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#0f172aee',
-    borderColor: '#34d39960',
+    borderColor: '#8E9CCF60',
     borderWidth: 1,
     paddingHorizontal: 12,
     paddingVertical: 6,
@@ -4666,7 +4759,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   receiptReviewBadgeText: {
-    color: '#34d399',
+    color: '#A5B4FC',
     fontSize: 10,
     fontWeight: '700',
   },
