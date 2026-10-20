@@ -4771,8 +4771,13 @@ function FinAgentApp() {
             style={[
               styles.tabBar,
               {
-                backgroundColor: isDark ? '#18181B' : '#0F172A',
-                borderColor: isDark ? '#27272A' : '#1E293B',
+                backgroundColor: isDark ? '#18181B' : '#F0FDF4',
+                borderColor: isDark ? '#27272A' : '#BBF7D0',
+                shadowColor: isDark ? '#000000' : '#047857',
+                shadowOpacity: isDark ? 0.25 : 0.08,
+                shadowRadius: 18,
+                shadowOffset: { width: 0, height: 4 },
+                elevation: isDark ? 12 : 6,
               },
             ]}
           >
@@ -4797,9 +4802,9 @@ function FinAgentApp() {
                       styles.tabIconBadge,
                       active
                         ? {
-                            backgroundColor: isDark ? palette.accentSubtle : 'rgba(16, 185, 129, 0.22)',
-                            borderColor: isDark ? palette.accentBorder : 'rgba(52, 211, 153, 0.45)',
-                            borderWidth: 1,
+                            backgroundColor: isDark ? palette.accentSubtle : '#DCFCE7',
+                            borderColor: isDark ? palette.accentBorder : '#86EFAC',
+                            borderWidth: 1.5,
                           }
                         : styles.tabIconUnboxed,
                     ]}
@@ -4807,7 +4812,7 @@ function FinAgentApp() {
                     <Ionicons
                       name={tab.icon}
                       size={active ? 20 : 19}
-                      color={active ? (isDark ? palette.accent : '#34D399') : (isDark ? palette.muted : '#94A3B8')}
+                      color={active ? (isDark ? palette.accent : '#059669') : (isDark ? palette.muted : '#52796F')}
                     />
                   </View>
                   <Text
@@ -4815,7 +4820,7 @@ function FinAgentApp() {
                     style={[
                       styles.tabLabel,
                       {
-                        color: active ? (isDark ? palette.text : '#FFFFFF') : (isDark ? palette.muted : '#94A3B8'),
+                        color: active ? (isDark ? palette.text : '#065F46') : (isDark ? palette.muted : '#52796F'),
                         fontWeight: active ? '700' : '500',
                       },
                     ]}
