@@ -28,6 +28,8 @@ import {
   View,
   type KeyboardTypeOptions,
   type ScrollView as ScrollViewRef,
+  type StyleProp,
+  type ViewStyle,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import api, { getApiErrorMessage } from '../lib/api';
@@ -145,10 +147,10 @@ const defaultBills: UpcomingBill[] = [];
 const categories = ['Groceries', 'Dining', 'Housing', 'Utilities', 'Transportation', 'Entertainment', 'Health', 'Income'];
 const categoryColors = ['#526FC4', '#607ACC', '#6E85D3', '#7D91DA', '#8B9DE0', '#9AA9E6', '#A9B5EC', '#B8C2F1'];
 const cardColors: Record<CardNetwork, string> = {
-  visa: '#354577',
-  mastercard: '#414F7F',
-  amex: '#4D5A87',
-  discover: '#59668F',
+  visa: '#1E1B4B',
+  mastercard: '#0F172A',
+  amex: '#064E3B',
+  discover: '#312E81',
 };
 const storageKeys = ['fin_theme', 'fin_onboarded', 'fin_cards', 'fin_transactions', 'fin_bills', 'fin_monthly_income', 'fin_liquid_cash', 'fin_user_name', 'fin_language'] as const;
 
@@ -180,38 +182,77 @@ interface Palette {
   surface: string;
   elevated: string;
   border: string;
+  borderSubtle: string;
   text: string;
   muted: string;
   accent: string;
+  accentSubtle: string;
+  accentBorder: string;
   green: string;
+  greenSubtle: string;
+  greenBorder: string;
   red: string;
+  redSubtle: string;
+  redBorder: string;
+  amber: string;
+  amberSubtle: string;
+  amberBorder: string;
+  blueSubtle: string;
+  purpleSubtle: string;
+  cyanSubtle: string;
   input: string;
 }
 
 const paletteFor = (isDark: boolean): Palette => isDark
   ? {
-      background: '#0B0E17',
-      surface: '#171C2A',
-      elevated: '#242B3D',
-      border: '#3A435B',
-      text: '#F8F9FC',
-      muted: '#C0C6D6',
-      accent: '#B6C3FF',
-      green: '#A6B5F3',
-      red: '#D0A4B2',
-      input: '#1B2232',
+      background: '#09090B',
+      surface: '#18181B',
+      elevated: '#222226',
+      border: '#27272A',
+      borderSubtle: '#333338',
+      text: '#FAFAFA',
+      muted: '#A1A1AA',
+      accent: '#818CF8',
+      accentSubtle: 'rgba(129, 140, 248, 0.14)',
+      accentBorder: 'rgba(129, 140, 248, 0.3)',
+      green: '#4ADE80',
+      greenSubtle: 'rgba(74, 222, 128, 0.14)',
+      greenBorder: 'rgba(74, 222, 128, 0.3)',
+      red: '#F87171',
+      redSubtle: 'rgba(248, 113, 113, 0.14)',
+      redBorder: 'rgba(248, 113, 113, 0.3)',
+      amber: '#FBBF24',
+      amberSubtle: 'rgba(251, 191, 36, 0.14)',
+      amberBorder: 'rgba(251, 191, 36, 0.3)',
+      blueSubtle: 'rgba(96, 165, 250, 0.14)',
+      purpleSubtle: 'rgba(192, 132, 252, 0.14)',
+      cyanSubtle: 'rgba(56, 189, 248, 0.14)',
+      input: '#141416',
     }
   : {
-      background: '#F7F8FC',
+      background: '#F8FAFC',
       surface: '#FFFFFF',
-      elevated: '#EEF1F8',
-      border: '#C9D1E2',
-      text: '#101828',
-      muted: '#475569',
-      accent: '#526FC4',
-      green: '#526FC4',
-      red: '#8D5C72',
-      input: '#F7F8FC',
+      elevated: '#F1F5F9',
+      border: '#E2E8F0',
+      borderSubtle: '#EEF2F6',
+      text: '#0F172A',
+      muted: '#64748B',
+      accent: '#4F46E5',
+      accentSubtle: '#EEF2FF',
+      accentBorder: '#C7D2FE',
+      green: '#15803D',
+      greenSubtle: '#ECFDF5',
+      greenBorder: '#A7F3D0',
+      red: '#B91C1C',
+      redSubtle: '#FEF2F2',
+      redBorder: '#FECACA',
+      amber: '#D97706',
+      amberSubtle: '#FFFBEB',
+      amberBorder: '#FDE68A',
+      blueSubtle: '#EFF6FF',
+      purpleSubtle: '#F5F3FF',
+      cyanSubtle: '#E0F2FE',
+      input: '#F8FAFC',
     };
 
 function AppButton({
@@ -277,9 +318,28 @@ function Panel({
 }: {
   children: React.ReactNode;
   palette: Palette;
-  style?: object;
+  style?: StyleProp<ViewStyle>;
 }) {
-  return <View style={[styles.panel, { backgroundColor: palette.surface, borderColor: palette.border }, style]}>{children}</View>;
+  const isDark = palette.background === '#09090B';
+  return (
+    <View
+      style={[
+        styles.panel,
+        {
+          backgroundColor: palette.surface,
+          borderColor: palette.border,
+          shadowColor: isDark ? '#000000' : '#0F172A',
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: isDark ? 0.3 : 0.05,
+          shadowRadius: 16,
+          elevation: isDark ? 1 : 2,
+        },
+        style,
+      ]}
+    >
+      {children}
+    </View>
+  );
 }
 
 function SectionTitle({
@@ -366,16 +426,55 @@ function ChoiceChips<T extends string>({
 
 function TransactionRow({ item, palette }: { item: TransactionItem; palette: Palette }) {
   const income = item.type === 'income';
+  const cat = (item.category || '').toLowerCase();
+
+  let iconName: any = 'receipt-outline';
+  let iconBg = palette.elevated;
+  let iconColor = palette.muted;
+
+  if (income) {
+    iconName = 'arrow-down-outline';
+    iconBg = palette.greenSubtle;
+    iconColor = palette.green;
+  } else if (cat.includes('grocer') || cat.includes('food') || cat.includes('dining')) {
+    iconName = 'restaurant-outline';
+    iconBg = palette.redSubtle;
+    iconColor = palette.red;
+  } else if (cat.includes('shop') || cat.includes('retail')) {
+    iconName = 'bag-handle-outline';
+    iconBg = palette.accentSubtle;
+    iconColor = palette.accent;
+  } else if (cat.includes('transport') || cat.includes('travel') || cat.includes('car') || cat.includes('gas')) {
+    iconName = 'car-outline';
+    iconBg = palette.blueSubtle;
+    iconColor = '#3B82F6';
+  } else if (cat.includes('util') || cat.includes('bill') || cat.includes('rent')) {
+    iconName = 'flash-outline';
+    iconBg = palette.amberSubtle;
+    iconColor = palette.amber;
+  } else if (cat.includes('entertain') || cat.includes('sub')) {
+    iconName = 'film-outline';
+    iconBg = palette.purpleSubtle;
+    iconColor = '#8B5CF6';
+  }
+
   return (
-    <View style={[styles.transactionRow, { borderBottomColor: palette.border }]}>
-      <View style={[styles.transactionIcon, { backgroundColor: income ? '#064e3b' : palette.elevated }]}>
-        <Ionicons name={income ? 'arrow-down-outline' : 'arrow-up-outline'} size={18} color={income ? palette.green : palette.muted} />
+    <View style={[styles.transactionRow, { borderBottomColor: palette.borderSubtle }]}>
+      <View style={[styles.transactionIcon, { backgroundColor: iconBg }]}>
+        <Ionicons name={iconName} size={18} color={iconColor} />
       </View>
       <View style={styles.transactionInfo}>
         <Text numberOfLines={1} style={[styles.bodyStrong, { color: palette.text }]}>{item.title}</Text>
-        <Text numberOfLines={1} style={[styles.caption, { color: palette.muted }]}>{item.category} · {item.source} · {item.date}</Text>
+        <Text numberOfLines={1} style={[styles.caption, { color: palette.muted }]}>
+          {item.category} · {item.source} · {item.date}
+        </Text>
       </View>
-      <Text style={[styles.transactionAmount, { color: income ? palette.green : palette.text }]}>
+      <Text
+        style={[
+          styles.transactionAmount,
+          { color: income ? palette.green : palette.text },
+        ]}
+      >
         {income ? '+' : '-'}{formatCurrency(item.amount)}
       </Text>
     </View>
@@ -1388,23 +1487,44 @@ function FinAgentApp() {
   }, [monthlyIncome, liquidCash, transactions, bills]);
 
   const safeToSpendColors = useMemo(() => {
-    const level = safeToSpendData.status === 'green' ? 0 : safeToSpendData.status === 'amber' ? 1 : 2;
-    const darkBackgrounds = ['#23283D', '#2B3250', '#343D63'];
-    const lightBackgrounds = ['#F1F3FA', '#E9ECF7', '#E1E6F4'];
-    const darkBorders = ['#374263', '#46547F', '#55659A'];
-    const lightBorders = ['#DCE1F1', '#CCD4EC', '#BBC7E7'];
+    if (safeToSpendData.status === 'green') {
+      return {
+        badgeBg: isDark ? 'rgba(74, 222, 128, 0.14)' : '#DCFCE7',
+        badgeBorder: isDark ? 'rgba(74, 222, 128, 0.3)' : '#BBF7D0',
+        badgeText: isDark ? '#4ADE80' : '#15803D',
+        heroAmount: isDark ? '#4ADE80' : '#15803D',
+        dot: isDark ? '#4ADE80' : '#15803D',
+        cardBorder: isDark ? 'rgba(74, 222, 128, 0.35)' : '#86EFAC',
+        bannerBg: isDark ? 'rgba(74, 222, 128, 0.08)' : '#F0FDF4',
+        bannerBorder: isDark ? 'rgba(74, 222, 128, 0.22)' : '#BBF7D0',
+        bannerText: isDark ? '#86EFAC' : '#166534',
+      };
+    }
+    if (safeToSpendData.status === 'amber') {
+      return {
+        badgeBg: isDark ? 'rgba(251, 191, 36, 0.14)' : '#FEF3C7',
+        badgeBorder: isDark ? 'rgba(251, 191, 36, 0.3)' : '#FDE68A',
+        badgeText: isDark ? '#FBBF24' : '#B45309',
+        heroAmount: isDark ? '#FBBF24' : '#D97706',
+        dot: isDark ? '#FBBF24' : '#D97706',
+        cardBorder: isDark ? 'rgba(251, 191, 36, 0.35)' : '#FCD34D',
+        bannerBg: isDark ? 'rgba(251, 191, 36, 0.08)' : '#FFFBEB',
+        bannerBorder: isDark ? 'rgba(251, 191, 36, 0.22)' : '#FDE68A',
+        bannerText: isDark ? '#FDE68A' : '#92400E',
+      };
+    }
     return {
-      badgeBg: isDark ? darkBackgrounds[level] : lightBackgrounds[level],
-      badgeBorder: isDark ? darkBorders[level] : lightBorders[level],
-      badgeText: palette.accent,
-      heroAmount: palette.accent,
-      dot: palette.accent,
-      cardBorder: isDark ? darkBorders[level] : lightBorders[level],
-      bannerBg: isDark ? darkBackgrounds[level] : lightBackgrounds[level],
-      bannerBorder: isDark ? darkBorders[level] : lightBorders[level],
-      bannerText: isDark ? palette.accent : '#455486',
+      badgeBg: isDark ? 'rgba(248, 113, 113, 0.14)' : '#FEE2E2',
+      badgeBorder: isDark ? 'rgba(248, 113, 113, 0.3)' : '#FECACA',
+      badgeText: isDark ? '#F87171' : '#B91C1C',
+      heroAmount: isDark ? '#F87171' : '#DC2626',
+      dot: isDark ? '#F87171' : '#DC2626',
+      cardBorder: isDark ? 'rgba(248, 113, 113, 0.35)' : '#FCA5A5',
+      bannerBg: isDark ? 'rgba(248, 113, 113, 0.08)' : '#FEF2F2',
+      bannerBorder: isDark ? 'rgba(248, 113, 113, 0.22)' : '#FECACA',
+      bannerText: isDark ? '#FCA5A5' : '#991B1B',
     };
-  }, [safeToSpendData.status, isDark, palette.accent]);
+  }, [safeToSpendData.status, isDark]);
 
   useEffect(() => {
     let mounted = true;
@@ -2207,25 +2327,61 @@ function FinAgentApp() {
 
   const renderCard = (card: CreditCardItem, actions = false) => {
     const percentage = card.creditLimit > 0 ? Math.min(100, (card.balance / card.creditLimit) * 100) : 0;
+    const seg1Fill = Math.min(1, percentage / 30);
+    const seg2Fill = percentage > 30 ? Math.min(1, (percentage - 30) / 40) : 0;
+    const seg3Fill = percentage > 70 ? Math.min(1, (percentage - 70) / 30) : 0;
+    const isOver = percentage > 70;
+    const isMedium = percentage > 30;
+    const segColor = isOver ? '#F87171' : isMedium ? '#FBBF24' : '#34D399';
+
     return (
-      <Panel key={card.id} palette={palette} style={[styles.cardPanel, { backgroundColor: cardColors[card.network] }]}>
+      <View
+        key={card.id}
+        style={[
+          styles.cardPanel,
+          {
+            backgroundColor: cardColors[card.network] || '#0F172A',
+            shadowColor: '#000000',
+            shadowOffset: { width: 0, height: 6 },
+            shadowOpacity: 0.22,
+            shadowRadius: 14,
+            elevation: 4,
+          },
+        ]}
+      >
         <View style={styles.rowBetween}>
           <View style={styles.flex}>
-            <Text style={styles.eyebrowWhite}>{card.network.toUpperCase()}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Ionicons name="card" size={13} color="#A5B4FC" />
+              <Text style={styles.eyebrowWhite}>{card.network.toUpperCase()}</Text>
+            </View>
             <Text numberOfLines={1} style={styles.cardName}>{card.cardName}</Text>
           </View>
-          <Text style={styles.cardNumber}>**** {card.last4}</Text>
+          <View style={styles.cardChipPill}>
+            <Text style={styles.cardNumber}>•••• {card.last4}</Text>
+          </View>
         </View>
         <View style={styles.cardBalanceBlock}>
-          <Text style={styles.eyebrowWhite}>Outstanding balance</Text>
+          <Text style={styles.eyebrowWhite}>OUTSTANDING BALANCE</Text>
           <Text style={styles.cardBalance}>{formatCurrency(card.balance)}</Text>
         </View>
         <View style={styles.rowBetween}>
           <Text style={styles.eyebrowWhite}>Limit {formatCurrency(card.creditLimit, 0)}</Text>
-          <Text style={styles.eyebrowWhite}>{percentage.toFixed(1)}% used</Text>
+          <Text style={[styles.eyebrowWhite, { color: isOver ? '#FCA5A5' : '#E2E8F0' }]}>
+            {percentage.toFixed(1)}% used
+          </Text>
         </View>
-        <View style={styles.progressTrack}>
-          <View style={[styles.progressFill, { width: `${percentage}%`, backgroundColor: percentage > 30 ? palette.accent : palette.green }]} />
+        {/* Segmented 3-bar progress track inspired by reference design */}
+        <View style={styles.segmentedProgressRow}>
+          <View style={styles.segmentedBarTrack}>
+            <View style={[styles.segmentedBarFill, { width: `${seg1Fill * 100}%`, backgroundColor: segColor }]} />
+          </View>
+          <View style={styles.segmentedBarTrack}>
+            <View style={[styles.segmentedBarFill, { width: `${seg2Fill * 100}%`, backgroundColor: segColor }]} />
+          </View>
+          <View style={styles.segmentedBarTrack}>
+            <View style={[styles.segmentedBarFill, { width: `${seg3Fill * 100}%`, backgroundColor: segColor }]} />
+          </View>
         </View>
         {actions ? (
           <View style={styles.cardActions}>
@@ -2245,13 +2401,14 @@ function FinAgentApp() {
             <Text style={styles.eyebrowWhite}>Min {formatCurrency(card.minPayment)}</Text>
           </View>
         ) : null}
-      </Panel>
+      </View>
     );
   };
 
   const renderHome = () => (
     <View style={styles.dashboardContent}>
       <View style={styles.welcomeBlock}>
+        <Text style={[styles.eyebrow, { color: palette.muted }]}>PERSONAL FINANCE OVERVIEW</Text>
         <Text style={[styles.pageTitle, { color: palette.text }]}>
           {userName ? t('Welcome, {{name}}', { name: userName }) : t('Welcome')}
         </Text>
@@ -2321,7 +2478,7 @@ function FinAgentApp() {
           </Text>
         </View>
 
-        {/* Formula Breakdown Chips */}
+        {/* Formula Breakdown Chips with Aesthetic Color Shades */}
         <View style={styles.safeToSpendBreakdownGrid}>
           <Pressable
             accessibilityRole="button"
@@ -2329,14 +2486,14 @@ function FinAgentApp() {
             style={({ pressed }) => [
               styles.safeToSpendBreakdownChip,
               {
-                backgroundColor: palette.elevated,
-                borderColor: palette.border,
+                backgroundColor: palette.accentSubtle,
+                borderColor: palette.accentBorder,
                 opacity: pressed ? 0.75 : 1,
               },
             ]}
           >
-            <Text style={[styles.safeToSpendBreakdownLabel, { color: palette.muted }]}>Budget</Text>
-            <Text style={[styles.safeToSpendBreakdownValue, { color: palette.text }]}>
+            <Text style={[styles.safeToSpendBreakdownLabel, { color: palette.accent }]}>Budget</Text>
+            <Text style={[styles.safeToSpendBreakdownValue, { color: palette.accent }]}>
               {formatCurrency(safeToSpendData.monthlyBudget, 0)}
             </Text>
           </Pressable>
@@ -2347,14 +2504,14 @@ function FinAgentApp() {
             style={({ pressed }) => [
               styles.safeToSpendBreakdownChip,
               {
-                backgroundColor: palette.elevated,
-                borderColor: palette.border,
+                backgroundColor: palette.redSubtle,
+                borderColor: palette.redBorder,
                 opacity: pressed ? 0.75 : 1,
               },
             ]}
           >
-            <Text style={[styles.safeToSpendBreakdownLabel, { color: palette.muted }]}>Spent</Text>
-            <Text style={[styles.safeToSpendBreakdownValue, { color: palette.accent }]}>
+            <Text style={[styles.safeToSpendBreakdownLabel, { color: palette.red }]}>Spent</Text>
+            <Text style={[styles.safeToSpendBreakdownValue, { color: palette.red }]}>
               -{formatCurrency(safeToSpendData.spentSoFar, 0)}
             </Text>
           </Pressable>
@@ -2365,14 +2522,14 @@ function FinAgentApp() {
             style={({ pressed }) => [
               styles.safeToSpendBreakdownChip,
               {
-                backgroundColor: palette.elevated,
-                borderColor: palette.border,
+                backgroundColor: palette.amberSubtle,
+                borderColor: palette.amberBorder,
                 opacity: pressed ? 0.75 : 1,
               },
             ]}
           >
-            <Text style={[styles.safeToSpendBreakdownLabel, { color: palette.muted }]}>Bills Due</Text>
-            <Text style={[styles.safeToSpendBreakdownValue, { color: palette.accent }]}>
+            <Text style={[styles.safeToSpendBreakdownLabel, { color: palette.amber }]}>Bills Due</Text>
+            <Text style={[styles.safeToSpendBreakdownValue, { color: palette.amber }]}>
               -{formatCurrency(safeToSpendData.upcomingBills, 0)}
             </Text>
           </Pressable>
@@ -2381,51 +2538,73 @@ function FinAgentApp() {
             style={[
               styles.safeToSpendBreakdownChip,
               {
-                backgroundColor: palette.elevated,
-                borderColor: palette.border,
+                backgroundColor: palette.greenSubtle,
+                borderColor: palette.greenBorder,
               },
             ]}
           >
-            <Text style={[styles.safeToSpendBreakdownLabel, { color: palette.muted }]}>Days Left</Text>
-            <Text style={[styles.safeToSpendBreakdownValue, { color: palette.accent }]}>
+            <Text style={[styles.safeToSpendBreakdownLabel, { color: palette.green }]}>Days Left</Text>
+            <Text style={[styles.safeToSpendBreakdownValue, { color: palette.green }]}>
               {safeToSpendData.daysLeft}d
             </Text>
           </View>
         </View>
 
+        {/* Traceable Formula */}
+        <View style={[styles.safeToSpendFormulaRow, { borderTopColor: palette.border }]}>
+          <Text style={[styles.safeToSpendFormulaText, { color: palette.muted }]} numberOfLines={1}>
+            Formula: (${formatCurrency(safeToSpendData.monthlyBudget, 0)} - ${formatCurrency(safeToSpendData.spentSoFar, 0)} - ${formatCurrency(safeToSpendData.upcomingBills, 0)}) ÷ {safeToSpendData.daysLeft}d
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => navigateToScreen('budget')}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={[styles.caption, { color: palette.accent, fontWeight: '700' }]}>
+              Audit &rarr;
+            </Text>
+          </Pressable>
+        </View>
       </Panel>
 
       {/* Hero Net Worth Card */}
       <Panel palette={palette} style={styles.heroPanel}>
         <View style={styles.rowBetween}>
-          <Text style={[styles.eyebrow, { color: palette.muted }]}>Total net worth</Text>
-          <Ionicons name="trending-up" size={18} color={palette.accent} />
+          <Text style={[styles.eyebrow, { color: palette.muted }]}>TOTAL NET WORTH</Text>
+          <View style={[styles.trendBadge, { backgroundColor: palette.greenSubtle }]}>
+            <Ionicons name="trending-up" size={14} color={palette.green} />
+            <Text style={[styles.trendBadgeText, { color: palette.green }]}>+4.8%</Text>
+          </View>
         </View>
         <Text style={[styles.netWorth, { color: palette.text }]}>{formatCurrency(netWorth)}</Text>
-        <View style={styles.heroStatRow}>
-          <View style={[styles.statChip, { backgroundColor: palette.elevated, borderColor: palette.border }]}>
-            <Text style={[styles.caption, { color: palette.muted }]}>Cash</Text>
-            <Text style={[styles.statChipValue, { color: palette.accent }]}>{formatCurrency(liquidCash, 0)}</Text>
+        <View style={[styles.splitBarContainer, { backgroundColor: palette.elevated, borderColor: palette.border }]}>
+          <View style={styles.splitBarSection}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <View style={[styles.statusDot, { backgroundColor: palette.green }]} />
+              <Text style={[styles.caption, { color: palette.muted, fontWeight: '600' }]}>Cash</Text>
+            </View>
+            <Text style={[styles.statChipValue, { color: palette.green }]}>{formatCurrency(liquidCash, 0)}</Text>
           </View>
-          <View style={[styles.statChip, { backgroundColor: palette.elevated, borderColor: palette.border }]}>
-            <Text style={[styles.caption, { color: palette.muted }]}>Debt</Text>
-            <Text style={[styles.statChipValue, { color: palette.accent }]}>{formatCurrency(totalCardDebt, 0)}</Text>
+          <View style={[styles.splitBarDivider, { backgroundColor: palette.border }]} />
+          <View style={styles.splitBarSection}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <View style={[styles.statusDot, { backgroundColor: totalCardDebt > 0 ? palette.red : palette.muted }]} />
+              <Text style={[styles.caption, { color: palette.muted, fontWeight: '600' }]}>Debt</Text>
+            </View>
+            <Text style={[styles.statChipValue, { color: totalCardDebt > 0 ? palette.red : palette.text }]}>{formatCurrency(totalCardDebt, 0)}</Text>
           </View>
         </View>
         <NetWorthChart currentValue={netWorth} isDark={isDark} />
       </Panel>
 
       {/* Modern Quick Action Pills */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.quickActionsRow}
-      >
+      <View style={styles.quickActionsRow}>
         <Pressable
           accessibilityRole="button"
           onPress={openTransactionModal}
           style={({ pressed }) => [
             styles.quickActionPill,
+            styles.quickActionPrimary,
             {
               backgroundColor: palette.accent,
               transform: [{ scale: pressed ? 0.94 : 1 }],
@@ -2466,7 +2645,7 @@ function FinAgentApp() {
             },
           ]}
         >
-          <Ionicons name="camera-outline" size={16} color={palette.accent} />
+          <Ionicons name="camera-outline" size={16} color={palette.green} />
           <Text style={[styles.quickActionText, { color: palette.text }]}>Receipt</Text>
         </Pressable>
 
@@ -2483,10 +2662,44 @@ function FinAgentApp() {
             },
           ]}
         >
-          <Ionicons name="sparkles-outline" size={16} color={palette.accent} />
+          <Ionicons name="sparkles-outline" size={16} color="#8B5CF6" />
           <Text style={[styles.quickActionText, { color: palette.text }]}>Ask AI</Text>
         </Pressable>
-      </ScrollView>
+      </View>
+
+      {/* Categories Quick Hub (from reference image left screen) */}
+      <View style={styles.categoriesHubContainer}>
+        <View style={styles.categoriesRow}>
+          {[
+            { id: 'cards', label: 'Cards', icon: 'card-outline', bg: palette.accentSubtle, color: palette.accent },
+            { id: 'budget', label: 'Budget', icon: 'pie-chart-outline', bg: palette.purpleSubtle, color: '#8B5CF6' },
+            { id: 'bills', label: 'Bills', icon: 'calendar-outline', bg: palette.amberSubtle, color: palette.amber },
+            { id: 'receipts', label: 'Receipts', icon: 'camera-outline', bg: palette.greenSubtle, color: palette.green },
+            { id: 'agent', label: 'AI Advice', icon: 'sparkles-outline', bg: palette.cyanSubtle, color: '#0EA5E9' },
+          ].map(cat => (
+            <Pressable
+              key={cat.id}
+              accessibilityRole="button"
+              accessibilityLabel={cat.label}
+              onPress={() => navigateToScreen(cat.id as Screen)}
+              style={({ pressed }) => [
+                styles.categoryHubItem,
+                {
+                  opacity: pressed ? 0.75 : 1,
+                  transform: [{ scale: pressed ? 0.93 : 1 }],
+                },
+              ]}
+            >
+              <View style={[styles.categoryCircle, { backgroundColor: cat.bg }]}>
+                <Ionicons name={cat.icon as any} size={20} color={cat.color} />
+              </View>
+              <Text numberOfLines={1} style={[styles.categoryHubLabel, { color: palette.text }]}>
+                {cat.label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      </View>
 
       {/* Cards Section */}
       <View style={styles.section}>
@@ -2549,43 +2762,62 @@ function FinAgentApp() {
                 spent: budgetBreakdown.needsSpent,
                 target: budgetBreakdown.needsTarget,
                 pct: budgetBreakdown.needsPct,
-                color: palette.accent,
+                color: '#3B82F6',
+                bgSubtle: palette.blueSubtle,
+                tag: 'Essential',
               },
               {
                 label: 'Wants (30%)',
                 spent: budgetBreakdown.wantsSpent,
                 target: budgetBreakdown.wantsTarget,
                 pct: budgetBreakdown.wantsPct,
-                color: isDark ? '#8796D2' : '#7888BE',
+                color: '#8B5CF6',
+                bgSubtle: palette.purpleSubtle,
+                tag: 'Flexible',
               },
               {
                 label: 'Savings & debt (20%)',
                 spent: budgetBreakdown.savingsSpent,
                 target: budgetBreakdown.savingsTarget,
                 pct: budgetBreakdown.savingsPct,
-                color: isDark ? '#6D7FB8' : '#98A6D2',
+                color: '#10B981',
+                bgSubtle: palette.greenSubtle,
+                tag: 'Growth',
               },
-            ].map(item => (
-              <View key={item.label} style={styles.budgetMeter}>
-                <View style={styles.rowBetween}>
-                  <Text style={[styles.bodyStrong, { color: palette.text }]}>{item.label}</Text>
-                  <Text style={[styles.caption, { color: palette.muted }]}>
-                    {formatCurrency(item.spent, 0)} / {formatCurrency(item.target, 0)} ({item.pct.toFixed(0)}%)
-                  </Text>
+            ].map(item => {
+              const seg1 = Math.min(1, item.pct / 33.33);
+              const seg2 = item.pct > 33.33 ? Math.min(1, (item.pct - 33.33) / 33.33) : 0;
+              const seg3 = item.pct > 66.66 ? Math.min(1, (item.pct - 66.66) / 33.34) : 0;
+              const isOver = item.pct > 100;
+
+              return (
+                <View key={item.label} style={styles.budgetMeter}>
+                  <View style={styles.rowBetween}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={[styles.bodyStrong, { color: palette.text }]}>{item.label}</Text>
+                      <View style={[styles.budgetTagPill, { backgroundColor: item.bgSubtle }]}>
+                        <Text style={[styles.budgetTagPillText, { color: item.color }]}>{item.tag}</Text>
+                      </View>
+                    </View>
+                    <Text style={[styles.caption, { color: palette.muted }]}>
+                      {formatCurrency(item.spent, 0)} / {formatCurrency(item.target, 0)} ({item.pct.toFixed(0)}%)
+                    </Text>
+                  </View>
+                  {/* Segmented 3-bar progress row inspired by reference design */}
+                  <View style={styles.segmentedProgressRow}>
+                    <View style={[styles.segmentedBarTrack, { backgroundColor: item.bgSubtle }]}>
+                      <View style={[styles.segmentedBarFill, { width: `${seg1 * 100}%`, backgroundColor: isOver ? '#F59E0B' : item.color }]} />
+                    </View>
+                    <View style={[styles.segmentedBarTrack, { backgroundColor: item.bgSubtle }]}>
+                      <View style={[styles.segmentedBarFill, { width: `${seg2 * 100}%`, backgroundColor: isOver ? '#F59E0B' : item.color }]} />
+                    </View>
+                    <View style={[styles.segmentedBarTrack, { backgroundColor: item.bgSubtle }]}>
+                      <View style={[styles.segmentedBarFill, { width: `${seg3 * 100}%`, backgroundColor: isOver ? '#F59E0B' : item.color }]} />
+                    </View>
+                  </View>
                 </View>
-                <View style={[styles.progressTrack, { backgroundColor: palette.elevated }]}>
-                  <View
-                    style={[
-                      styles.progressFill,
-                      {
-                        width: `${item.pct}%`,
-                        backgroundColor: item.color,
-                      },
-                    ]}
-                  />
-                </View>
-              </View>
-            ))}
+              );
+            })}
             <AppButton
               label="Open budget & activity"
               icon="pie-chart-outline"
@@ -3907,29 +4139,61 @@ function FinAgentApp() {
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <View style={styles.app} {...panResponder.panHandlers}>
         <View style={[styles.header, { backgroundColor: palette.background, borderBottomColor: palette.border }]}>
-          {screenHistory.length > 1 ? (
+          <View style={styles.headerLeft}>
+            {screenHistory.length > 1 ? (
+              <Pressable
+                onPress={goBack}
+                accessibilityLabel="Back to previous screen"
+                style={[styles.backButton, { backgroundColor: palette.elevated, borderColor: palette.border }]}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name="chevron-back" size={20} color={palette.text} />
+              </Pressable>
+            ) : null}
+            <View style={[styles.brandMark, { backgroundColor: palette.accent }]}>
+              <Text style={[styles.brandMarkText, { color: '#FFFFFF' }]}>F</Text>
+            </View>
+            <View style={styles.brandCopy}>
+              <Text numberOfLines={1} style={[styles.brandName, { color: palette.text }]}>FinAgent</Text>
+              <Text numberOfLines={1} style={[styles.brandTagline, { color: palette.muted }]}>Your money, in focus</Text>
+            </View>
+          </View>
+
+          <View style={styles.headerActions}>
             <Pressable
-              onPress={goBack}
-              accessibilityLabel="Back to previous screen"
-              style={[styles.backButton, { backgroundColor: palette.elevated, borderColor: palette.border }]}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              onPress={() => setModal('language')}
+              accessibilityRole="button"
+              accessibilityLabel={t('Choose language')}
+              style={[styles.headerIconBtn, { borderColor: palette.border, backgroundColor: palette.surface }]}
+              hitSlop={6}
             >
-              <Ionicons name="chevron-back" size={20} color={palette.text} />
+              <Ionicons name="globe-outline" size={18} color={palette.accent} />
             </Pressable>
-          ) : null}
-          <View style={styles.headerSpacer} />
-          <Pressable onPress={() => setModal('language')} accessibilityRole="button" accessibilityLabel={t('Choose language')} style={[styles.themeButton, { borderColor: palette.border }]}>
-            <Ionicons name="globe-outline" size={19} color={palette.accent} />
-          </Pressable>
-          <Pressable onPress={() => setTheme(isDark ? 'light' : 'dark')} accessibilityLabel="Toggle color theme" style={[styles.themeButton, { borderColor: palette.border }]}>
-            <Ionicons name={isDark ? 'sunny-outline' : 'moon-outline'} size={20} color={isDark ? '#fbbf24' : palette.accent} />
-          </Pressable>
-          <Pressable onPress={handleResetData} accessibilityLabel="Reset all data" style={[styles.themeButton, { borderColor: palette.border }]}>
-            <Ionicons name="refresh-outline" size={19} color={palette.red} />
-          </Pressable>
-          <Pressable onPress={openTransactionModal} accessibilityLabel="Add transaction" style={[styles.headerAdd, { backgroundColor: palette.accent }]}>
-            <Ionicons name="add" size={23} color={isDark ? '#09090B' : '#FFFFFF'} />
-          </Pressable>
+            <Pressable
+              onPress={() => setTheme(isDark ? 'light' : 'dark')}
+              accessibilityLabel="Toggle color theme"
+              style={[styles.headerIconBtn, { borderColor: palette.border, backgroundColor: palette.surface }]}
+              hitSlop={6}
+            >
+              <Ionicons name={isDark ? 'sunny-outline' : 'moon-outline'} size={18} color={isDark ? '#fbbf24' : palette.accent} />
+            </Pressable>
+            <Pressable
+              onPress={handleResetData}
+              accessibilityLabel="Reset all data"
+              style={[styles.headerIconBtn, { borderColor: palette.border, backgroundColor: palette.surface }]}
+              hitSlop={6}
+            >
+              <Ionicons name="refresh-outline" size={18} color={palette.red} />
+            </Pressable>
+            <Pressable
+              onPress={openTransactionModal}
+              accessibilityLabel="Add transaction"
+              style={[styles.headerAddBtn, { backgroundColor: palette.accent }]}
+              hitSlop={8}
+            >
+              <Ionicons name="add" size={22} color="#FFFFFF" />
+            </Pressable>
+          </View>
         </View>
 
         {storageStatus === 'failed' ? (
@@ -3977,28 +4241,54 @@ function FinAgentApp() {
         </Animated.View>
 
         {(!keyboardVisible || screen !== 'agent') ? (
-          <View style={[styles.tabBar, { backgroundColor: palette.surface, borderTopColor: palette.border }]}>
-            {tabs.map(tab => {
-              const active = tab.id === screen;
-              return (
-                <Pressable
-                  key={tab.id}
-                  accessibilityRole="tab"
-                  accessibilityState={{ selected: active }}
-                  onPress={() => navigateToScreen(tab.id)}
-                  style={({ pressed }) => [
-                    styles.tabItem,
-                    {
-                      opacity: pressed ? 0.7 : 1,
-                      transform: [{ scale: pressed ? 0.93 : 1 }],
-                    },
-                  ]}
-                >
-                  <Ionicons name={tab.icon} size={20} color={active ? palette.accent : palette.muted} />
-                  <Text style={[styles.tabLabel, { color: active ? palette.accent : palette.muted }]}>{tab.label}</Text>
-                </Pressable>
-              );
-            })}
+          <View style={styles.floatingTabBarWrapper} pointerEvents="box-none">
+            <View
+              style={[
+                styles.tabBar,
+                {
+                  backgroundColor: isDark ? '#141416' : '#0F172A',
+                  borderColor: isDark ? '#27272A' : '#1E293B',
+                },
+              ]}
+            >
+              {tabs.map(tab => {
+                const active = tab.id === screen;
+                return (
+                  <Pressable
+                    key={tab.id}
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected: active }}
+                    onPress={() => navigateToScreen(tab.id)}
+                    style={({ pressed }) => [
+                      styles.tabItem,
+                      active && (isDark ? styles.tabItemActiveDark : styles.tabItemActiveLight),
+                      {
+                        opacity: pressed ? 0.75 : 1,
+                        transform: [{ scale: pressed ? 0.92 : 1 }],
+                      },
+                    ]}
+                  >
+                    <Ionicons
+                      name={tab.icon}
+                      size={active ? 20 : 19}
+                      color={active ? '#818CF8' : '#94A3B8'}
+                    />
+                    <Text
+                      numberOfLines={1}
+                      style={[
+                        styles.tabLabel,
+                        {
+                          color: active ? '#FFFFFF' : '#94A3B8',
+                          fontWeight: active ? '800' : '600',
+                        },
+                      ]}
+                    >
+                      {tab.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
           </View>
         ) : null}
       </View>
@@ -4096,31 +4386,34 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   app: { flex: 1 },
   loadingScreen: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  header: { minHeight: 56, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth },
-  headerSpacer: { flex: 1 },
-  brandMark: { width: 38, height: 38, borderRadius: 13, backgroundColor: '#4F46E5', alignItems: 'center', justifyContent: 'center' },
-  brandMarkText: { color: '#fff', fontSize: 19, fontWeight: '900' },
-  brandCopy: { marginLeft: 10, flex: 1 },
-  brandName: { fontSize: 17, fontWeight: '800' },
-  brandTagline: { fontSize: 11, marginTop: 1 },
-  themeButton: { width: 40, height: 40, borderRadius: 13, borderWidth: 1, alignItems: 'center', justifyContent: 'center', marginRight: 8 },
-  headerAdd: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  header: { minHeight: 60, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: StyleSheet.hairlineWidth },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', flexShrink: 1, marginRight: 8 },
+  brandMark: { width: 36, height: 36, borderRadius: 12, backgroundColor: '#4F46E5', alignItems: 'center', justifyContent: 'center' },
+  brandMarkText: { color: '#fff', fontSize: 18, fontWeight: '900' },
+  brandCopy: { marginLeft: 9, flexShrink: 1, justifyContent: 'center' },
+  brandName: { fontSize: 17, fontWeight: '800', letterSpacing: -0.3 },
+  brandTagline: { fontSize: 10.5, marginTop: 1 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 0 },
+  headerIconBtn: { width: 36, height: 36, borderRadius: 11, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  headerAddBtn: { width: 36, height: 36, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  themeButton: { width: 36, height: 36, borderRadius: 11, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  headerAdd: { width: 36, height: 36, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   storageWarning: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 8 },
   storageWarningText: { color: '#fff', fontSize: 12, flex: 1 },
   mainScroll: { flex: 1 },
-  pageContent: { paddingHorizontal: 14, paddingTop: 14, paddingBottom: 28, gap: 14, maxWidth: 760, width: '100%', alignSelf: 'center' },
-  dashboardContent: { width: '100%', maxWidth: 520, alignSelf: 'center', gap: 12 },
+  pageContent: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 110, gap: 16, maxWidth: 760, width: '100%', alignSelf: 'center' },
+  dashboardContent: { width: '100%', maxWidth: 560, alignSelf: 'center', gap: 16 },
   welcomeBlock: { marginBottom: 0 },
-  pageTitle: { fontSize: 23, fontWeight: '800', letterSpacing: -0.4 },
+  pageTitle: { fontSize: 24, fontWeight: '800', letterSpacing: -0.4 },
   eyebrow: { fontSize: 11, fontWeight: '800', letterSpacing: 1.1, marginBottom: 6 },
   eyebrowWhite: { color: '#ffffffbb', fontSize: 10, fontWeight: '800', letterSpacing: 0.8, marginBottom: 4 },
-  netWorth: { fontSize: 32, fontWeight: '900', letterSpacing: -0.7, marginTop: 5, marginBottom: 10 },
-  panel: { borderRadius: 20, borderWidth: 1, padding: 16, gap: 12 },
+  netWorth: { fontSize: 34, fontWeight: '900', letterSpacing: -0.8, marginTop: 4, marginBottom: 8 },
+  panel: { borderRadius: 24, borderWidth: 1, padding: 18, gap: 14 },
   safeToSpendCard: {
-    borderRadius: 20,
+    borderRadius: 24,
     borderWidth: 1.5,
-    padding: 16,
-    gap: 10,
+    padding: 18,
+    gap: 12,
   },
   safeToSpendHeader: {
     flexDirection: 'row',
@@ -4130,8 +4423,8 @@ const styles = StyleSheet.create({
   safeToSpendBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 9,
-    paddingVertical: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     borderRadius: 20,
     gap: 5,
   },
@@ -4162,14 +4455,14 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   safeToSpendDetailBanner: {
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     borderWidth: 1,
   },
   safeToSpendDetailText: {
-    fontSize: 12,
-    lineHeight: 17,
+    fontSize: 12.5,
+    lineHeight: 18,
     fontWeight: '600',
   },
   safeToSpendBreakdownGrid: {
@@ -4180,46 +4473,148 @@ const styles = StyleSheet.create({
   safeToSpendBreakdownChip: {
     flexBasis: '48%',
     flexGrow: 1,
-    minHeight: 54,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: 12,
+    minHeight: 56,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 14,
     borderWidth: 1,
     alignItems: 'center',
   },
   safeToSpendBreakdownLabel: {
-    fontSize: 10,
+    fontSize: 10.5,
     fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 0.4,
     marginBottom: 2,
   },
   safeToSpendBreakdownValue: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '800',
   },
   safeToSpendFormulaRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: 8,
+    paddingTop: 10,
     borderTopWidth: StyleSheet.hairlineWidth,
     marginTop: 2,
   },
   safeToSpendFormulaText: {
-    fontSize: 10,
+    fontSize: 10.5,
     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
     fontWeight: '600',
     flex: 1,
     marginRight: 6,
   },
-  heroPanel: { padding: 18, gap: 12 },
+  heroPanel: { padding: 20, gap: 12 },
   heroStatRow: { flexDirection: 'row', gap: 10, marginBottom: 4 },
+  splitBarContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginTop: 4,
+    marginBottom: 6,
+  },
+  splitBarSection: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 6,
+  },
+  splitBarDivider: {
+    width: 1,
+    height: 24,
+    marginHorizontal: 8,
+  },
+  statusDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+  },
+  trendBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  trendBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
   statChip: { flex: 1, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 12, borderWidth: 1, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   statChipValue: { fontSize: 14, fontWeight: '800' },
-  quickActionsRow: { flexDirection: 'row', gap: 8, paddingRight: 14 },
-  quickActionPill: { width: 100, minHeight: 44, borderRadius: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 8 },
+  quickActionsRow: { flexDirection: 'row', gap: 8, paddingVertical: 2, justifyContent: 'space-between' },
+  quickActionPill: { flex: 1, minHeight: 44, borderRadius: 22, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 6, paddingVertical: 8 },
+  quickActionPrimary: {
+    shadowColor: '#4F46E5',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 4,
+  },
   quickActionText: { fontSize: 12, fontWeight: '800' },
+  categoriesHubContainer: { paddingVertical: 4 },
+  categoriesRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4 },
+  categoryHubItem: { alignItems: 'center', gap: 6, flex: 1 },
+  categoryCircle: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
+  categoryHubLabel: { fontSize: 11, fontWeight: '700' },
+  cardPanel: { width: 270, minHeight: 175, borderRadius: 22, padding: 18, justifyContent: 'space-between', gap: 10, borderWidth: 0 },
+  cardChipPill: { backgroundColor: 'rgba(255, 255, 255, 0.15)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+  segmentedProgressRow: { flexDirection: 'row', gap: 6, height: 7, marginTop: 6 },
+  segmentedBarTrack: { flex: 1, height: '100%', borderRadius: 4, overflow: 'hidden', backgroundColor: 'rgba(255, 255, 255, 0.2)' },
+  segmentedBarFill: { height: '100%', borderRadius: 4 },
+  budgetTagPill: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 8 },
+  budgetTagPillText: { fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
+  floatingTabBarWrapper: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingBottom: Platform.OS === 'ios' ? 14 : 16,
+  },
+  tabBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    width: '100%',
+    maxWidth: 520,
+    height: 64,
+    borderRadius: 32,
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 22,
+    elevation: 16,
+  },
+  tabItem: {
+    flex: 1,
+    height: 52,
+    borderRadius: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+    paddingVertical: 4,
+  },
+  tabItemActiveLight: {
+    backgroundColor: '#1E293B',
+    borderRadius: 22,
+  },
+  tabItemActiveDark: {
+    backgroundColor: '#27272A',
+    borderRadius: 22,
+  },
+  tabLabel: { fontSize: 10.5, letterSpacing: 0.2 },
   emptyBudgetContainer: { alignItems: 'center', paddingVertical: 14, paddingHorizontal: 8 },
   metricRow: { flexDirection: 'row', gap: 12, marginBottom: 8 },
   metric: { flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 14, backgroundColor: '#818CF815' },
@@ -4240,7 +4635,6 @@ const styles = StyleSheet.create({
   buttonText: { fontSize: 13, fontWeight: '800' },
   buttonTextCompact: { fontSize: 12 },
   cardCarousel: { gap: 10, paddingRight: 10 },
-  cardPanel: { width: 260, minHeight: 170, justifyContent: 'space-between', gap: 10, borderWidth: 0 },
   cardName: { color: '#fff', fontWeight: '800', fontSize: 14 },
   cardNumber: { color: '#ffffffdd', fontSize: 12, fontWeight: '700' },
   cardBalanceBlock: { marginVertical: 5 },
@@ -4295,9 +4689,6 @@ const styles = StyleSheet.create({
   receiptPanel: { alignItems: 'center', paddingVertical: 26, gap: 12 },
   receiptIcon: { width: 62, height: 62, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   centerText: { textAlign: 'center' },
-  tabBar: { minHeight: 62, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', paddingHorizontal: 3, paddingBottom: Platform.OS === 'ios' ? 2 : 5 },
-  tabItem: { minWidth: 46, flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3, paddingVertical: 6 },
-  tabLabel: { fontSize: 10, fontWeight: '700' },
   toast: { position: 'absolute', bottom: 76, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 15, paddingHorizontal: 14, paddingVertical: 11, elevation: 8 },
   toastText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   modalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(9, 9, 11, 0.78)' },
