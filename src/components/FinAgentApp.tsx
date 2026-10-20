@@ -28,6 +28,8 @@ import {
   View,
   type KeyboardTypeOptions,
   type ScrollView as ScrollViewRef,
+  type StyleProp,
+  type ViewStyle,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import api, { getApiErrorMessage } from '../lib/api';
@@ -145,10 +147,10 @@ const defaultBills: UpcomingBill[] = [];
 const categories = ['Groceries', 'Dining', 'Housing', 'Utilities', 'Transportation', 'Entertainment', 'Health', 'Income'];
 const categoryColors = ['#526FC4', '#607ACC', '#6E85D3', '#7D91DA', '#8B9DE0', '#9AA9E6', '#A9B5EC', '#B8C2F1'];
 const cardColors: Record<CardNetwork, string> = {
-  visa: '#354577',
-  mastercard: '#414F7F',
-  amex: '#4D5A87',
-  discover: '#59668F',
+  visa: '#1E1B4B',
+  mastercard: '#0F172A',
+  amex: '#064E3B',
+  discover: '#312E81',
 };
 const storageKeys = ['fin_theme', 'fin_onboarded', 'fin_cards', 'fin_transactions', 'fin_bills', 'fin_monthly_income', 'fin_liquid_cash', 'fin_user_name', 'fin_language'] as const;
 
@@ -180,38 +182,77 @@ interface Palette {
   surface: string;
   elevated: string;
   border: string;
+  borderSubtle: string;
   text: string;
   muted: string;
   accent: string;
+  accentSubtle: string;
+  accentBorder: string;
   green: string;
+  greenSubtle: string;
+  greenBorder: string;
   red: string;
+  redSubtle: string;
+  redBorder: string;
+  amber: string;
+  amberSubtle: string;
+  amberBorder: string;
+  blueSubtle: string;
+  purpleSubtle: string;
+  cyanSubtle: string;
   input: string;
 }
 
 const paletteFor = (isDark: boolean): Palette => isDark
   ? {
-      background: '#0B0E17',
-      surface: '#171C2A',
-      elevated: '#242B3D',
-      border: '#3A435B',
-      text: '#F8F9FC',
-      muted: '#C0C6D6',
-      accent: '#B6C3FF',
-      green: '#A6B5F3',
-      red: '#D0A4B2',
-      input: '#1B2232',
+      background: '#09090B',
+      surface: '#18181B',
+      elevated: '#222226',
+      border: '#27272A',
+      borderSubtle: '#333338',
+      text: '#FAFAFA',
+      muted: '#A1A1AA',
+      accent: '#818CF8',
+      accentSubtle: 'rgba(129, 140, 248, 0.14)',
+      accentBorder: 'rgba(129, 140, 248, 0.3)',
+      green: '#4ADE80',
+      greenSubtle: 'rgba(74, 222, 128, 0.14)',
+      greenBorder: 'rgba(74, 222, 128, 0.3)',
+      red: '#F87171',
+      redSubtle: 'rgba(248, 113, 113, 0.14)',
+      redBorder: 'rgba(248, 113, 113, 0.3)',
+      amber: '#FBBF24',
+      amberSubtle: 'rgba(251, 191, 36, 0.14)',
+      amberBorder: 'rgba(251, 191, 36, 0.3)',
+      blueSubtle: 'rgba(96, 165, 250, 0.14)',
+      purpleSubtle: 'rgba(192, 132, 252, 0.14)',
+      cyanSubtle: 'rgba(56, 189, 248, 0.14)',
+      input: '#141416',
     }
   : {
-      background: '#F7F8FC',
+      background: '#F8FAFC',
       surface: '#FFFFFF',
-      elevated: '#EEF1F8',
-      border: '#C9D1E2',
-      text: '#101828',
-      muted: '#475569',
-      accent: '#526FC4',
-      green: '#526FC4',
-      red: '#8D5C72',
-      input: '#F7F8FC',
+      elevated: '#F1F5F9',
+      border: '#E2E8F0',
+      borderSubtle: '#EEF2F6',
+      text: '#0F172A',
+      muted: '#64748B',
+      accent: '#6366F1',
+      accentSubtle: '#EEF2FF',
+      accentBorder: '#C7D2FE',
+      green: '#10B981',
+      greenSubtle: '#ECFDF5',
+      greenBorder: '#A7F3D0',
+      red: '#EF4444',
+      redSubtle: '#FEF2F2',
+      redBorder: '#FECACA',
+      amber: '#F59E0B',
+      amberSubtle: '#FFFBEB',
+      amberBorder: '#FDE68A',
+      blueSubtle: '#EFF6FF',
+      purpleSubtle: '#F5F3FF',
+      cyanSubtle: '#E0F2FE',
+      input: '#F8FAFC',
     };
 
 function AppButton({
@@ -231,7 +272,7 @@ function AppButton({
   disabled?: boolean;
   compact?: boolean;
 }) {
-  const isDark = palette.background === '#0B0E17';
+  const isDark = palette.background === '#09090B';
   const backgroundColor = variant === 'primary'
     ? palette.accent
     : variant === 'danger'
@@ -277,9 +318,28 @@ function Panel({
 }: {
   children: React.ReactNode;
   palette: Palette;
-  style?: object;
+  style?: StyleProp<ViewStyle>;
 }) {
-  return <View style={[styles.panel, { backgroundColor: palette.surface, borderColor: palette.border }, style]}>{children}</View>;
+  const isDark = palette.background === '#09090B';
+  return (
+    <View
+      style={[
+        styles.panel,
+        {
+          backgroundColor: palette.surface,
+          borderColor: palette.border,
+          shadowColor: isDark ? '#000000' : '#0F172A',
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: isDark ? 0.3 : 0.05,
+          shadowRadius: 16,
+          elevation: isDark ? 1 : 2,
+        },
+        style,
+      ]}
+    >
+      {children}
+    </View>
+  );
 }
 
 function SectionTitle({
@@ -366,16 +426,55 @@ function ChoiceChips<T extends string>({
 
 function TransactionRow({ item, palette }: { item: TransactionItem; palette: Palette }) {
   const income = item.type === 'income';
+  const cat = (item.category || '').toLowerCase();
+
+  let iconName: any = 'receipt-outline';
+  let iconBg = palette.elevated;
+  let iconColor = palette.muted;
+
+  if (income) {
+    iconName = 'arrow-down-outline';
+    iconBg = palette.greenSubtle;
+    iconColor = palette.green;
+  } else if (cat.includes('grocer') || cat.includes('food') || cat.includes('dining')) {
+    iconName = 'restaurant-outline';
+    iconBg = palette.redSubtle;
+    iconColor = palette.red;
+  } else if (cat.includes('shop') || cat.includes('retail')) {
+    iconName = 'bag-handle-outline';
+    iconBg = palette.accentSubtle;
+    iconColor = palette.accent;
+  } else if (cat.includes('transport') || cat.includes('travel') || cat.includes('car') || cat.includes('gas')) {
+    iconName = 'car-outline';
+    iconBg = palette.blueSubtle;
+    iconColor = '#3B82F6';
+  } else if (cat.includes('util') || cat.includes('bill') || cat.includes('rent')) {
+    iconName = 'flash-outline';
+    iconBg = palette.amberSubtle;
+    iconColor = palette.amber;
+  } else if (cat.includes('entertain') || cat.includes('sub')) {
+    iconName = 'film-outline';
+    iconBg = palette.purpleSubtle;
+    iconColor = '#8B5CF6';
+  }
+
   return (
-    <View style={[styles.transactionRow, { borderBottomColor: palette.border }]}>
-      <View style={[styles.transactionIcon, { backgroundColor: income ? '#064e3b' : palette.elevated }]}>
-        <Ionicons name={income ? 'arrow-down-outline' : 'arrow-up-outline'} size={18} color={income ? palette.green : palette.muted} />
+    <View style={[styles.transactionRow, { borderBottomColor: palette.borderSubtle }]}>
+      <View style={[styles.transactionIcon, { backgroundColor: iconBg }]}>
+        <Ionicons name={iconName} size={18} color={iconColor} />
       </View>
       <View style={styles.transactionInfo}>
         <Text numberOfLines={1} style={[styles.bodyStrong, { color: palette.text }]}>{item.title}</Text>
-        <Text numberOfLines={1} style={[styles.caption, { color: palette.muted }]}>{item.category} · {item.source} · {item.date}</Text>
+        <Text numberOfLines={1} style={[styles.caption, { color: palette.muted }]}>
+          {item.category} · {item.source} · {item.date}
+        </Text>
       </View>
-      <Text style={[styles.transactionAmount, { color: income ? palette.green : palette.text }]}>
+      <Text
+        style={[
+          styles.transactionAmount,
+          { color: income ? palette.green : palette.text },
+        ]}
+      >
         {income ? '+' : '-'}{formatCurrency(item.amount)}
       </Text>
     </View>
@@ -1388,23 +1487,44 @@ function FinAgentApp() {
   }, [monthlyIncome, liquidCash, transactions, bills]);
 
   const safeToSpendColors = useMemo(() => {
-    const level = safeToSpendData.status === 'green' ? 0 : safeToSpendData.status === 'amber' ? 1 : 2;
-    const darkBackgrounds = ['#23283D', '#2B3250', '#343D63'];
-    const lightBackgrounds = ['#F1F3FA', '#E9ECF7', '#E1E6F4'];
-    const darkBorders = ['#374263', '#46547F', '#55659A'];
-    const lightBorders = ['#DCE1F1', '#CCD4EC', '#BBC7E7'];
+    if (safeToSpendData.status === 'green') {
+      return {
+        badgeBg: isDark ? 'rgba(74, 222, 128, 0.14)' : '#ECFDF5',
+        badgeBorder: isDark ? 'rgba(74, 222, 128, 0.3)' : '#A7F3D0',
+        badgeText: isDark ? '#4ADE80' : '#059669',
+        heroAmount: isDark ? '#4ADE80' : '#059669',
+        dot: isDark ? '#4ADE80' : '#10B981',
+        cardBorder: isDark ? 'rgba(74, 222, 128, 0.35)' : '#A7F3D0',
+        bannerBg: isDark ? 'rgba(74, 222, 128, 0.08)' : '#ECFDF5',
+        bannerBorder: isDark ? 'rgba(74, 222, 128, 0.22)' : '#A7F3D0',
+        bannerText: isDark ? '#86EFAC' : '#047857',
+      };
+    }
+    if (safeToSpendData.status === 'amber') {
+      return {
+        badgeBg: isDark ? 'rgba(251, 191, 36, 0.14)' : '#FFFBEB',
+        badgeBorder: isDark ? 'rgba(251, 191, 36, 0.3)' : '#FDE68A',
+        badgeText: isDark ? '#FBBF24' : '#D97706',
+        heroAmount: isDark ? '#FBBF24' : '#D97706',
+        dot: isDark ? '#FBBF24' : '#F59E0B',
+        cardBorder: isDark ? 'rgba(251, 191, 36, 0.35)' : '#FDE68A',
+        bannerBg: isDark ? 'rgba(251, 191, 36, 0.08)' : '#FFFBEB',
+        bannerBorder: isDark ? 'rgba(251, 191, 36, 0.22)' : '#FDE68A',
+        bannerText: isDark ? '#FDE68A' : '#B45309',
+      };
+    }
     return {
-      badgeBg: isDark ? darkBackgrounds[level] : lightBackgrounds[level],
-      badgeBorder: isDark ? darkBorders[level] : lightBorders[level],
-      badgeText: palette.accent,
-      heroAmount: palette.accent,
-      dot: palette.accent,
-      cardBorder: isDark ? darkBorders[level] : lightBorders[level],
-      bannerBg: isDark ? darkBackgrounds[level] : lightBackgrounds[level],
-      bannerBorder: isDark ? darkBorders[level] : lightBorders[level],
-      bannerText: isDark ? palette.accent : '#455486',
+      badgeBg: isDark ? 'rgba(248, 113, 113, 0.14)' : '#FEF2F2',
+      badgeBorder: isDark ? 'rgba(248, 113, 113, 0.3)' : '#FECACA',
+      badgeText: isDark ? '#F87171' : '#DC2626',
+      heroAmount: isDark ? '#F87171' : '#DC2626',
+      dot: isDark ? '#F87171' : '#EF4444',
+      cardBorder: isDark ? 'rgba(248, 113, 113, 0.35)' : '#FECACA',
+      bannerBg: isDark ? 'rgba(248, 113, 113, 0.08)' : '#FEF2F2',
+      bannerBorder: isDark ? 'rgba(248, 113, 113, 0.22)' : '#FECACA',
+      bannerText: isDark ? '#FCA5A5' : '#B91C1C',
     };
-  }, [safeToSpendData.status, isDark, palette.accent]);
+  }, [safeToSpendData.status, isDark]);
 
   useEffect(() => {
     let mounted = true;
@@ -2207,26 +2327,81 @@ function FinAgentApp() {
 
   const renderCard = (card: CreditCardItem, actions = false) => {
     const percentage = card.creditLimit > 0 ? Math.min(100, (card.balance / card.creditLimit) * 100) : 0;
+    const seg1Fill = Math.min(1, percentage / 30);
+    const seg2Fill = percentage > 30 ? Math.min(1, (percentage - 30) / 40) : 0;
+    const seg3Fill = percentage > 70 ? Math.min(1, (percentage - 70) / 30) : 0;
+    const isOver = percentage > 70;
+    const isMedium = percentage > 30;
+    const segColor = isOver ? palette.red : isMedium ? palette.amber : palette.green;
+
     return (
-      <Panel key={card.id} palette={palette} style={[styles.cardPanel, { backgroundColor: cardColors[card.network] }]}>
-        <View style={styles.rowBetween}>
+      <View
+        key={card.id}
+        style={[
+          styles.structuredCard,
+          {
+            backgroundColor: cardColors[card.network] || palette.surface,
+            borderColor: palette.border,
+            shadowColor: '#000000',
+            shadowOffset: { width: 0, height: 6 },
+            shadowOpacity: 0.22,
+            shadowRadius: 14,
+            elevation: 4,
+          },
+          !actions && styles.cardCarouselItem,
+        ]}
+      >
+        {/* Card Header Row */}
+        <View style={styles.cardHeaderRow}>
           <View style={styles.flex}>
-            <Text style={styles.eyebrowWhite}>{card.network.toUpperCase()}</Text>
             <Text numberOfLines={1} style={styles.cardName}>{card.cardName}</Text>
+            <Text style={styles.eyebrowWhite}>•••• {card.last4} · {card.network.toUpperCase()}</Text>
           </View>
-          <Text style={styles.cardNumber}>**** {card.last4}</Text>
+          <View style={[styles.cardHeaderIconButton, { borderColor: 'rgba(255,255,255,0.25)', backgroundColor: 'rgba(255,255,255,0.12)' }]}>
+            <Ionicons name="card-outline" size={15} color="#FFFFFF" />
+          </View>
         </View>
-        <View style={styles.cardBalanceBlock}>
-          <Text style={styles.eyebrowWhite}>Outstanding balance</Text>
-          <Text style={styles.cardBalance}>{formatCurrency(card.balance)}</Text>
+
+        {/* 3-Column Data Row */}
+        <View style={styles.threeColumnDataRow}>
+          <View style={[styles.metricColumn, { backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 14, paddingVertical: 10, paddingHorizontal: 8 }]}>
+            <Text style={[styles.metricColumnLabel, { color: '#ffffffaa' }]}>{t('Balance')}</Text>
+            <Text style={[styles.metricColumnValue, { color: '#FFFFFF' }]}>{formatCurrency(card.balance)}</Text>
+          </View>
+          <View style={[styles.metricColumn, styles.metricColumnCenter, { backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 14, paddingVertical: 10, paddingHorizontal: 8 }]}>
+            <Text style={[styles.metricColumnLabel, { color: '#ffffffaa' }]}>{t('Limit')}</Text>
+            <Text style={[styles.metricColumnValue, { color: '#FFFFFF' }]}>{formatCurrency(card.creditLimit, 0)}</Text>
+          </View>
+          <View style={[styles.metricColumn, styles.metricColumnRight, { backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 14, paddingVertical: 10, paddingHorizontal: 8 }]}>
+            <Text style={[styles.metricColumnLabel, { color: '#ffffffaa' }]}>{t('APR')}</Text>
+            <Text style={[styles.metricColumnValue, { color: '#FFFFFF' }]}>{card.apr}%</Text>
+          </View>
         </View>
-        <View style={styles.rowBetween}>
-          <Text style={styles.eyebrowWhite}>Limit {formatCurrency(card.creditLimit, 0)}</Text>
-          <Text style={styles.eyebrowWhite}>{percentage.toFixed(1)}% used</Text>
+
+        {/* Segmented Progress Bar */}
+        <View style={[styles.segmentedTrack, { backgroundColor: 'rgba(255, 255, 255, 0.15)' }]}>
+          <View style={styles.segmentedBarTrack}>
+            <View style={[styles.segmentedBarFill, { width: `${seg1Fill * 100}%`, backgroundColor: segColor }]} />
+          </View>
+          <View style={styles.segmentedBarTrack}>
+            <View style={[styles.segmentedBarFill, { width: `${seg2Fill * 100}%`, backgroundColor: segColor }]} />
+          </View>
+          <View style={styles.segmentedBarTrack}>
+            <View style={[styles.segmentedBarFill, { width: `${seg3Fill * 100}%`, backgroundColor: segColor }]} />
+          </View>
         </View>
-        <View style={styles.progressTrack}>
-          <View style={[styles.progressFill, { width: `${percentage}%`, backgroundColor: percentage > 30 ? palette.accent : palette.green }]} />
+
+        {/* Card Footer Metadata Row */}
+        <View style={styles.cardFooterMetadataRow}>
+          <Text style={[styles.cardFooterText, { color: '#ffffffaa' }]}>Due {card.dueDate}</Text>
+          <View style={[styles.cardFooterBadge, { backgroundColor: 'rgba(255,255,255,0.18)', borderColor: 'rgba(255,255,255,0.3)' }]}>
+            <Text style={[styles.cardFooterBadgeText, { color: isOver ? '#FCA5A5' : '#FFFFFF' }]}>
+              {percentage.toFixed(0)}% used
+            </Text>
+          </View>
+          <Text style={[styles.cardFooterText, { color: '#ffffffaa' }]}>Min {formatCurrency(card.minPayment)}</Text>
         </View>
+
         {actions ? (
           <View style={styles.cardActions}>
             <AppButton label="Pay down" icon="arrow-down-outline" onPress={() => {
@@ -2238,376 +2413,763 @@ function FinAgentApp() {
             <AppButton label="Remove" icon="trash-outline" onPress={() => removeCard(card)} palette={palette} compact variant="quiet" />
           </View>
         ) : null}
-        {actions ? (
-          <View style={styles.cardMetaRow}>
-            <Text style={styles.eyebrowWhite}>APR {card.apr}%</Text>
-            <Text style={styles.eyebrowWhite}>Due {card.dueDate}</Text>
-            <Text style={styles.eyebrowWhite}>Min {formatCurrency(card.minPayment)}</Text>
-          </View>
-        ) : null}
-      </Panel>
+      </View>
     );
   };
 
   const renderHome = () => (
-    <View style={styles.dashboardContent}>
-      <View style={styles.welcomeBlock}>
-        <Text style={[styles.pageTitle, { color: palette.text }]}>
-          {userName ? t('Welcome, {{name}}', { name: userName }) : t('Welcome')}
-        </Text>
-      </View>
-
-      {/* Daily Safe-to-Spend Hero Metric Card */}
-      <Panel
-        palette={palette}
+    <View style={styles.homeContainer}>
+      {/* 1. Hero Header Section (Top Container) */}
+      <View
         style={[
-          styles.safeToSpendCard,
+          styles.heroContainer,
           {
-            borderColor: safeToSpendColors.cardBorder,
-            backgroundColor: palette.surface,
+            backgroundColor: isDark ? palette.surface : '#064E3B',
+            borderColor: isDark ? palette.border : '#065F46',
           },
         ]}
       >
-        <View style={styles.safeToSpendHeader}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <Ionicons name="shield-checkmark" size={17} color={safeToSpendColors.dot} />
-            <Text style={[styles.eyebrow, { color: palette.muted, marginBottom: 0 }]}>
-              DAILY SAFE-TO-SPEND
-            </Text>
-          </View>
-          <View
-            style={[
-              styles.safeToSpendBadge,
-              {
-                backgroundColor: safeToSpendColors.badgeBg,
-                borderColor: safeToSpendColors.badgeBorder,
-                borderWidth: 1,
-              },
-            ]}
-          >
-            <View style={[styles.safeToSpendDot, { backgroundColor: safeToSpendColors.dot }]} />
-            <Text style={[styles.safeToSpendBadgeText, { color: safeToSpendColors.badgeText }]}>
-              {safeToSpendData.statusLabel}
-            </Text>
-          </View>
-        </View>
-
-        {/* Hero Number */}
-        <View style={styles.safeToSpendHeroRow}>
-          <Text style={[styles.safeToSpendHeroAmount, { color: safeToSpendColors.heroAmount }]}>
-            {safeToSpendData.dailyAmount < 0 ? '-' : ''}
-            {formatCurrency(Math.abs(safeToSpendData.dailyAmount))}
-          </Text>
-          <View style={{ marginBottom: 4 }}>
-            <Text style={[styles.safeToSpendHeroUnit, { color: palette.muted }]}>/ day</Text>
-            <Text style={[styles.caption, { color: palette.muted, fontSize: 11 }]}>
-              {safeToSpendData.daysLeft} days left this month
-            </Text>
-          </View>
-        </View>
-
-        {/* Status Message */}
-        <View
-          style={[
-            styles.safeToSpendDetailBanner,
-            {
-              backgroundColor: safeToSpendColors.bannerBg,
-              borderColor: safeToSpendColors.bannerBorder,
-            },
-          ]}
-        >
-          <Text style={[styles.safeToSpendDetailText, { color: safeToSpendColors.bannerText }]}>
-            {safeToSpendData.statusDetail}
-          </Text>
-        </View>
-
-        {/* Formula Breakdown Chips */}
-        <View style={styles.safeToSpendBreakdownGrid}>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => navigateToScreen('budget')}
-            style={({ pressed }) => [
-              styles.safeToSpendBreakdownChip,
-              {
-                backgroundColor: palette.elevated,
-                borderColor: palette.border,
-                opacity: pressed ? 0.75 : 1,
-              },
-            ]}
-          >
-            <Text style={[styles.safeToSpendBreakdownLabel, { color: palette.muted }]}>Budget</Text>
-            <Text style={[styles.safeToSpendBreakdownValue, { color: palette.text }]}>
-              {formatCurrency(safeToSpendData.monthlyBudget, 0)}
-            </Text>
-          </Pressable>
-
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => navigateToScreen('budget')}
-            style={({ pressed }) => [
-              styles.safeToSpendBreakdownChip,
-              {
-                backgroundColor: palette.elevated,
-                borderColor: palette.border,
-                opacity: pressed ? 0.75 : 1,
-              },
-            ]}
-          >
-            <Text style={[styles.safeToSpendBreakdownLabel, { color: palette.muted }]}>Spent</Text>
-            <Text style={[styles.safeToSpendBreakdownValue, { color: palette.accent }]}>
-              -{formatCurrency(safeToSpendData.spentSoFar, 0)}
-            </Text>
-          </Pressable>
-
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => navigateToScreen('bills')}
-            style={({ pressed }) => [
-              styles.safeToSpendBreakdownChip,
-              {
-                backgroundColor: palette.elevated,
-                borderColor: palette.border,
-                opacity: pressed ? 0.75 : 1,
-              },
-            ]}
-          >
-            <Text style={[styles.safeToSpendBreakdownLabel, { color: palette.muted }]}>Bills Due</Text>
-            <Text style={[styles.safeToSpendBreakdownValue, { color: palette.accent }]}>
-              -{formatCurrency(safeToSpendData.upcomingBills, 0)}
-            </Text>
-          </Pressable>
-
-          <View
-            style={[
-              styles.safeToSpendBreakdownChip,
-              {
-                backgroundColor: palette.elevated,
-                borderColor: palette.border,
-              },
-            ]}
-          >
-            <Text style={[styles.safeToSpendBreakdownLabel, { color: palette.muted }]}>Days Left</Text>
-            <Text style={[styles.safeToSpendBreakdownValue, { color: palette.accent }]}>
-              {safeToSpendData.daysLeft}d
-            </Text>
-          </View>
-        </View>
-
-      </Panel>
-
-      {/* Hero Net Worth Card */}
-      <Panel palette={palette} style={styles.heroPanel}>
-        <View style={styles.rowBetween}>
-          <Text style={[styles.eyebrow, { color: palette.muted }]}>Total net worth</Text>
-          <Ionicons name="trending-up" size={18} color={palette.accent} />
-        </View>
-        <Text style={[styles.netWorth, { color: palette.text }]}>{formatCurrency(netWorth)}</Text>
-        <View style={styles.heroStatRow}>
-          <View style={[styles.statChip, { backgroundColor: palette.elevated, borderColor: palette.border }]}>
-            <Text style={[styles.caption, { color: palette.muted }]}>Cash</Text>
-            <Text style={[styles.statChipValue, { color: palette.accent }]}>{formatCurrency(liquidCash, 0)}</Text>
-          </View>
-          <View style={[styles.statChip, { backgroundColor: palette.elevated, borderColor: palette.border }]}>
-            <Text style={[styles.caption, { color: palette.muted }]}>Debt</Text>
-            <Text style={[styles.statChipValue, { color: palette.accent }]}>{formatCurrency(totalCardDebt, 0)}</Text>
-          </View>
-        </View>
-        <NetWorthChart currentValue={netWorth} isDark={isDark} />
-      </Panel>
-
-      {/* Modern Quick Action Pills */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.quickActionsRow}
-      >
-        <Pressable
-          accessibilityRole="button"
-          onPress={openTransactionModal}
-          style={({ pressed }) => [
-            styles.quickActionPill,
-            {
-              backgroundColor: palette.accent,
-              transform: [{ scale: pressed ? 0.94 : 1 }],
-            },
-          ]}
-        >
-          <Ionicons name="add" size={16} color="#ffffff" />
-          <Text style={[styles.quickActionText, { color: '#ffffff' }]}>Expense</Text>
-        </Pressable>
-
-        <Pressable
-          accessibilityRole="button"
-          onPress={openNewCard}
-          style={({ pressed }) => [
-            styles.quickActionPill,
-            {
-              backgroundColor: palette.surface,
-              borderColor: palette.border,
-              borderWidth: 1,
-              transform: [{ scale: pressed ? 0.94 : 1 }],
-            },
-          ]}
-        >
-          <Ionicons name="card-outline" size={16} color={palette.accent} />
-          <Text style={[styles.quickActionText, { color: palette.text }]}>Card</Text>
-        </Pressable>
-
-        <Pressable
-          accessibilityRole="button"
-          onPress={chooseReceiptSource}
-          style={({ pressed }) => [
-            styles.quickActionPill,
-            {
-              backgroundColor: palette.surface,
-              borderColor: palette.border,
-              borderWidth: 1,
-              transform: [{ scale: pressed ? 0.94 : 1 }],
-            },
-          ]}
-        >
-          <Ionicons name="camera-outline" size={16} color={palette.accent} />
-          <Text style={[styles.quickActionText, { color: palette.text }]}>Receipt</Text>
-        </Pressable>
-
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => navigateToScreen('agent')}
-          style={({ pressed }) => [
-            styles.quickActionPill,
-            {
-              backgroundColor: palette.surface,
-              borderColor: palette.border,
-              borderWidth: 1,
-              transform: [{ scale: pressed ? 0.94 : 1 }],
-            },
-          ]}
-        >
-          <Ionicons name="sparkles-outline" size={16} color={palette.accent} />
-          <Text style={[styles.quickActionText, { color: palette.text }]}>Ask AI</Text>
-        </Pressable>
-      </ScrollView>
-
-      {/* Cards Section */}
-      <View style={styles.section}>
-        <View style={styles.rowBetween}>
-          <SectionTitle title="Your cards" subtitle={t('{{count}} connected', { count: cards.length })} palette={palette} />
-          <Pressable onPress={() => navigateToScreen('cards')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Text style={[styles.link, { color: palette.accent }]}>Manage</Text>
-          </Pressable>
-        </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.cardCarousel}>
-          {cards.map(card => renderCard(card))}
-          {!cards.length ? (
-            <Pressable
-              onPress={openNewCard}
-              style={[styles.emptyCardPrompt, { backgroundColor: palette.surface, borderColor: palette.border }]}
+        {/* Top Utility Row */}
+        <View style={styles.topUtilityRow}>
+          <View style={styles.headerLeft}>
+            {screenHistory.length > 1 ? (
+              <Pressable
+                onPress={goBack}
+                accessibilityLabel="Back to previous screen"
+                style={[
+                  styles.backButton,
+                  {
+                    backgroundColor: isDark ? palette.elevated : 'rgba(255, 255, 255, 0.12)',
+                    borderColor: isDark ? palette.border : 'rgba(255, 255, 255, 0.22)',
+                  },
+                ]}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name="chevron-back" size={20} color={isDark ? palette.text : '#FFFFFF'} />
+              </Pressable>
+            ) : null}
+            <View
+              style={[
+                styles.avatarBadge,
+                {
+                  borderColor: isDark ? palette.borderSubtle : 'rgba(255, 255, 255, 0.25)',
+                  backgroundColor: isDark ? palette.accentSubtle : 'rgba(255, 255, 255, 0.15)',
+                },
+              ]}
             >
-              <Ionicons name="card-outline" size={24} color={palette.accent} />
-              <Text style={[styles.bodyStrong, { color: palette.text, marginTop: 6 }]}>Add your first card</Text>
-              <Text style={[styles.caption, { color: palette.muted, textAlign: 'center', marginTop: 2 }]}>Track limits & payoff progress</Text>
+              <Text
+                style={[
+                  styles.avatarBadgeText,
+                  { color: isDark ? palette.accent : '#A7F3D0' },
+                ]}
+              >
+                {userName ? userName.charAt(0).toUpperCase() : 'F'}
+              </Text>
+            </View>
+            <View style={styles.greetingStack}>
+              <Text
+                numberOfLines={1}
+                style={[
+                  styles.greetingSubtitle,
+                  { color: isDark ? palette.muted : '#A7F3D0' },
+                ]}
+              >
+                {userName ? t('Welcome back,') : t('PERSONAL FINANCE OVERVIEW')}
+              </Text>
+              <Text
+                numberOfLines={1}
+                style={[
+                  styles.greetingTitle,
+                  { color: isDark ? palette.text : '#FFFFFF' },
+                ]}
+              >
+                {userName || 'FinAgent'}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.headerUtilityButtons}>
+            <Pressable
+              onPress={() => setModal('language')}
+              accessibilityRole="button"
+              accessibilityLabel={t('Choose language')}
+              style={[
+                styles.headerIconButton,
+                {
+                  borderColor: isDark ? palette.border : 'rgba(255, 255, 255, 0.22)',
+                  backgroundColor: isDark ? palette.elevated : 'rgba(255, 255, 255, 0.12)',
+                },
+              ]}
+              hitSlop={6}
+            >
+              <Ionicons name="globe-outline" size={18} color={isDark ? palette.accent : '#FFFFFF'} />
             </Pressable>
-          ) : null}
-        </ScrollView>
+            <Pressable
+              onPress={() => setTheme(isDark ? 'light' : 'dark')}
+              accessibilityLabel="Toggle color theme"
+              style={[
+                styles.headerIconButton,
+                {
+                  borderColor: isDark ? palette.border : 'rgba(255, 255, 255, 0.22)',
+                  backgroundColor: isDark ? palette.elevated : 'rgba(255, 255, 255, 0.12)',
+                },
+              ]}
+              hitSlop={6}
+            >
+              <Ionicons
+                name={isDark ? 'sunny-outline' : 'moon-outline'}
+                size={18}
+                color={isDark ? palette.amber : '#FDE047'}
+              />
+            </Pressable>
+          </View>
+        </View>
+
+        {/* Primary Balance / Hero Metric Display */}
+        <View style={styles.heroBalanceContainer}>
+          <Text
+            style={[
+              styles.heroBalanceLabel,
+              { color: isDark ? palette.muted : '#A7F3D0' },
+            ]}
+          >
+            {t('TOTAL NET WORTH')}
+          </Text>
+          <View style={styles.heroBalanceRow}>
+            <Text
+              style={[
+                styles.heroBalanceAmount,
+                { color: isDark ? palette.text : '#FFFFFF' },
+              ]}
+            >
+              {formatCurrency(netWorth)}
+            </Text>
+            <View
+              style={[
+                styles.heroStatusBadge,
+                {
+                  backgroundColor: isDark ? palette.greenSubtle : 'rgba(16, 185, 129, 0.22)',
+                  borderColor: isDark ? palette.greenBorder : 'rgba(52, 211, 153, 0.38)',
+                },
+              ]}
+            >
+              <Ionicons name="trending-up" size={13} color={isDark ? palette.green : '#6EE7B7'} />
+              <Text
+                style={[
+                  styles.heroStatusBadgeText,
+                  { color: isDark ? palette.green : '#6EE7B7' },
+                ]}
+              >
+                +4.8% USD
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Quick Action Pill Row */}
+        <View style={styles.quickActionPillRow}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={openNewCard}
+            style={({ pressed }) => [
+              styles.quickActionSecondaryPill,
+              {
+                borderColor: isDark ? palette.border : 'rgba(255, 255, 255, 0.22)',
+                backgroundColor: isDark ? palette.elevated : 'rgba(255, 255, 255, 0.14)',
+                opacity: pressed ? 0.75 : 1,
+              },
+            ]}
+          >
+            <Ionicons name="card-outline" size={16} color={isDark ? palette.accent : '#A7F3D0'} />
+            <Text
+              style={[
+                styles.quickActionSecondaryText,
+                { color: isDark ? palette.text : '#FFFFFF' },
+              ]}
+            >
+              {t('Card')}
+            </Text>
+          </Pressable>
+
+          <Pressable
+            accessibilityRole="button"
+            onPress={openTransactionModal}
+            style={({ pressed }) => [
+              styles.quickActionPrimaryPill,
+              {
+                backgroundColor: isDark ? palette.accent : '#10B981',
+                opacity: pressed ? 0.85 : 1,
+              },
+            ]}
+          >
+            <Ionicons name="add" size={18} color={isDark ? '#09090B' : '#064E3B'} />
+            <Text
+              style={[
+                styles.quickActionPrimaryText,
+                { color: isDark ? '#09090B' : '#064E3B' },
+              ]}
+            >
+              {t('Expense')}
+            </Text>
+          </Pressable>
+
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => navigateToScreen('agent')}
+            accessibilityLabel="Ask AI"
+            style={({ pressed }) => [
+              styles.quickActionTertiaryButton,
+              {
+                borderColor: isDark ? palette.border : 'rgba(255, 255, 255, 0.22)',
+                backgroundColor: isDark ? palette.elevated : 'rgba(255, 255, 255, 0.14)',
+                opacity: pressed ? 0.75 : 1,
+              },
+            ]}
+          >
+            <Ionicons name="sparkles-outline" size={18} color={isDark ? palette.accent : '#FDE047'} />
+          </Pressable>
+        </View>
       </View>
 
-      {/* 50 / 30 / 20 Budget Section */}
-      <Panel palette={palette}>
-        <View style={styles.rowBetween}>
-          <SectionTitle
-            title="50 / 30 / 20 budget"
-            subtitle={monthlyIncome > 0
-              ? t('Based on {{amount}} monthly income', { amount: formatCurrency(monthlyIncome, 0) })
-              : 'Track spending targets & pacing'}
-            palette={palette}
-          />
-          {monthlyIncome > 0 ? (
-            <Pressable onPress={() => navigateToScreen('budget')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Text style={[styles.link, { color: palette.accent }]}>Adjust</Text>
-            </Pressable>
-          ) : null}
-        </View>
-
-        {monthlyIncome === 0 ? (
-          <View style={styles.emptyBudgetContainer}>
-            <Text style={[styles.caption, { color: palette.muted, textAlign: 'center', marginBottom: 10 }]}>
-              Set your monthly take-home income in the Budget tab to activate live Needs, Wants, and Savings tracking.
-            </Text>
-            <AppButton
-              label="Set Monthly Income"
-              icon="pie-chart-outline"
-              onPress={() => navigateToScreen('budget')}
-              palette={palette}
-              compact
-            />
-          </View>
-        ) : (
-          <>
+      {/* 2. Overlapping Main Content Sheet */}
+      <View style={[styles.mainSheetWrapper, { backgroundColor: palette.background }]}>
+        {/* Categories / Quick-Triggers Grid Card */}
+        <View style={[styles.quickTriggersCard, { backgroundColor: palette.surface, borderColor: palette.border }]}>
+          <Text style={[styles.quickTriggersTitle, { color: palette.text }]}>
+            {t('Quick Actions & Hub')}
+          </Text>
+          <View style={styles.quickTriggersGrid}>
             {[
-              {
-                label: 'Needs (50%)',
-                spent: budgetBreakdown.needsSpent,
-                target: budgetBreakdown.needsTarget,
-                pct: budgetBreakdown.needsPct,
-                color: palette.accent,
-              },
-              {
-                label: 'Wants (30%)',
-                spent: budgetBreakdown.wantsSpent,
-                target: budgetBreakdown.wantsTarget,
-                pct: budgetBreakdown.wantsPct,
-                color: isDark ? '#8796D2' : '#7888BE',
-              },
-              {
-                label: 'Savings & debt (20%)',
-                spent: budgetBreakdown.savingsSpent,
-                target: budgetBreakdown.savingsTarget,
-                pct: budgetBreakdown.savingsPct,
-                color: isDark ? '#6D7FB8' : '#98A6D2',
-              },
+              { id: 'cards', label: 'Cards', icon: 'card-outline' as const, bg: palette.accentSubtle, color: palette.accent, action: () => navigateToScreen('cards') },
+              { id: 'budget', label: 'Budget', icon: 'pie-chart-outline' as const, bg: palette.purpleSubtle, color: '#8B5CF6', action: () => navigateToScreen('budget') },
+              { id: 'bills', label: 'Bills', icon: 'calendar-outline' as const, bg: palette.amberSubtle, color: palette.amber, action: () => navigateToScreen('bills') },
+              { id: 'receipts', label: 'Receipts', icon: 'camera-outline' as const, bg: palette.greenSubtle, color: palette.green, action: () => chooseReceiptSource() },
+              { id: 'agent', label: 'AI Advice', icon: 'sparkles-outline' as const, bg: palette.cyanSubtle, color: '#0EA5E9', action: () => navigateToScreen('agent') },
+              { id: 'add_card', label: 'Add Card', icon: 'add-circle-outline' as const, bg: palette.blueSubtle, color: '#3B82F6', action: openNewCard },
+              { id: 'add_bill', label: 'Add Bill', icon: 'receipt-outline' as const, bg: palette.redSubtle, color: palette.red, action: () => setModal('bill') },
+              { id: 'add_txn', label: 'Add Txn', icon: 'add-circle-outline' as const, bg: palette.accentSubtle, color: palette.accent, action: openTransactionModal },
             ].map(item => (
-              <View key={item.label} style={styles.budgetMeter}>
-                <View style={styles.rowBetween}>
-                  <Text style={[styles.bodyStrong, { color: palette.text }]}>{item.label}</Text>
-                  <Text style={[styles.caption, { color: palette.muted }]}>
-                    {formatCurrency(item.spent, 0)} / {formatCurrency(item.target, 0)} ({item.pct.toFixed(0)}%)
-                  </Text>
+              <Pressable
+                key={item.id}
+                accessibilityRole="button"
+                accessibilityLabel={t(item.label)}
+                onPress={item.action}
+                style={({ pressed }) => [
+                  styles.quickTriggerGridItem,
+                  {
+                    opacity: pressed ? 0.75 : 1,
+                    transform: [{ scale: pressed ? 0.93 : 1 }],
+                  },
+                ]}
+              >
+                <View style={[styles.quickTriggerIconContainer, { backgroundColor: item.bg }]}>
+                  <Ionicons name={item.icon} size={22} color={item.color} />
                 </View>
-                <View style={[styles.progressTrack, { backgroundColor: palette.elevated }]}>
-                  <View
-                    style={[
-                      styles.progressFill,
-                      {
-                        width: `${item.pct}%`,
-                        backgroundColor: item.color,
-                      },
-                    ]}
-                  />
-                </View>
-              </View>
+                <Text numberOfLines={1} style={[styles.quickTriggerLabel, { color: palette.text }]}>
+                  {t(item.label)}
+                </Text>
+              </Pressable>
             ))}
-            <AppButton
-              label="Open budget & activity"
-              icon="pie-chart-outline"
-              onPress={() => navigateToScreen('budget')}
-              palette={palette}
-              variant="quiet"
-              compact
-            />
-          </>
-        )}
-      </Panel>
-
-      {/* Recent Activity Section */}
-      <Panel palette={palette}>
-        <View style={styles.rowBetween}>
-          <SectionTitle title="Recent activity" subtitle="Latest account entries" palette={palette} />
-          <Pressable onPress={() => navigateToScreen('budget')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Text style={[styles.link, { color: palette.accent }]}>See all</Text>
-          </Pressable>
+          </View>
         </View>
-        {renderTransactionList(transactions.slice(0, 5))}
-      </Panel>
+
+        {/* 3. Structured 3-Column Metric & Budget Cards */}
+        {/* Daily Safe-to-Spend Structured Card */}
+        <View style={[styles.structuredCard, { backgroundColor: palette.surface, borderColor: safeToSpendColors.cardBorder }]}>
+          <View style={styles.cardHeaderRow}>
+            <View style={styles.flex}>
+              <Text style={[styles.cardTitle, { color: palette.text }]}>{t('Daily Safe-to-Spend')}</Text>
+              <Text style={[styles.cardSubtitle, { color: palette.muted }]}>
+                {t('{{count}} days left this month', { count: safeToSpendData.daysLeft })}
+              </Text>
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Safe to spend audit"
+              onPress={() => navigateToScreen('budget')}
+              style={[styles.cardHeaderIconButton, { borderColor: palette.border, backgroundColor: palette.elevated }]}
+            >
+              <Ionicons name="shield-checkmark" size={16} color={safeToSpendColors.dot} />
+            </Pressable>
+          </View>
+
+          <View style={styles.threeColumnDataRow}>
+            <View
+              style={[
+                styles.metricColumn,
+                {
+                  backgroundColor: isDark ? 'transparent' : palette.greenSubtle,
+                  borderColor: isDark ? 'transparent' : palette.greenBorder,
+                  borderWidth: isDark ? 0 : 1,
+                  borderRadius: 14,
+                  paddingVertical: 10,
+                  paddingHorizontal: 8,
+                },
+              ]}
+            >
+              <Text style={[styles.metricColumnLabel, { color: isDark ? palette.muted : '#047857' }]}>{t('Safe / Day')}</Text>
+              <Text style={[styles.metricColumnValue, { color: safeToSpendColors.heroAmount }]}>
+                {safeToSpendData.dailyAmount < 0 ? '-' : ''}{formatCurrency(Math.abs(safeToSpendData.dailyAmount))}
+              </Text>
+            </View>
+            <View
+              style={[
+                styles.metricColumn,
+                styles.metricColumnCenter,
+                {
+                  backgroundColor: isDark ? 'transparent' : palette.redSubtle,
+                  borderColor: isDark ? 'transparent' : palette.redBorder,
+                  borderWidth: isDark ? 0 : 1,
+                  borderRadius: 14,
+                  paddingVertical: 10,
+                  paddingHorizontal: 8,
+                },
+              ]}
+            >
+              <Text style={[styles.metricColumnLabel, { color: isDark ? palette.muted : '#B91C1C' }]}>{t('Spent')}</Text>
+              <Text style={[styles.metricColumnValue, { color: palette.red }]}>
+                -{formatCurrency(safeToSpendData.spentSoFar, 0)}
+              </Text>
+            </View>
+            <View
+              style={[
+                styles.metricColumn,
+                styles.metricColumnRight,
+                {
+                  backgroundColor: isDark ? 'transparent' : palette.amberSubtle,
+                  borderColor: isDark ? 'transparent' : palette.amberBorder,
+                  borderWidth: isDark ? 0 : 1,
+                  borderRadius: 14,
+                  paddingVertical: 10,
+                  paddingHorizontal: 8,
+                },
+              ]}
+            >
+              <Text style={[styles.metricColumnLabel, { color: isDark ? palette.muted : '#B45309' }]}>{t('Bills Due')}</Text>
+              <Text style={[styles.metricColumnValue, { color: palette.amber }]}>
+                -{formatCurrency(safeToSpendData.upcomingBills, 0)}
+              </Text>
+            </View>
+          </View>
+
+          <View style={[styles.segmentedTrack, { backgroundColor: palette.elevated }]}>
+            <View style={styles.segmentedBarTrack}>
+              <View
+                style={[
+                  styles.segmentedBarFill,
+                  {
+                    width: `${Math.min(100, Math.max(0, safeToSpendData.monthlyBudget > 0 ? (safeToSpendData.spentSoFar / safeToSpendData.monthlyBudget) * 100 : 0))}%`,
+                    backgroundColor: safeToSpendColors.dot,
+                  },
+                ]}
+              />
+            </View>
+            <View style={styles.segmentedBarTrack}>
+              <View
+                style={[
+                  styles.segmentedBarFill,
+                  {
+                    width: `${Math.min(100, Math.max(0, safeToSpendData.monthlyBudget > 0 ? (safeToSpendData.upcomingBills / safeToSpendData.monthlyBudget) * 100 : 0))}%`,
+                    backgroundColor: palette.amber,
+                  },
+                ]}
+              />
+            </View>
+            <View style={styles.segmentedBarTrack}>
+              <View
+                style={[
+                  styles.segmentedBarFill,
+                  {
+                    width: `${Math.min(100, Math.max(0, safeToSpendData.monthlyBudget > 0 ? (Math.max(0, safeToSpendData.monthlyBudget - safeToSpendData.spentSoFar - safeToSpendData.upcomingBills) / safeToSpendData.monthlyBudget) * 100 : 100))}%`,
+                    backgroundColor: palette.green,
+                  },
+                ]}
+              />
+            </View>
+          </View>
+
+          <View style={styles.cardFooterMetadataRow}>
+            <Text style={[styles.cardFooterText, { color: palette.muted }]}>
+              {formatCurrency(safeToSpendData.monthlyBudget, 0)} budget
+            </Text>
+            <View
+              style={[
+                styles.cardFooterBadge,
+                {
+                  backgroundColor: safeToSpendColors.badgeBg,
+                  borderColor: safeToSpendColors.badgeBorder,
+                },
+              ]}
+            >
+              <Text style={[styles.cardFooterBadgeText, { color: safeToSpendColors.badgeText }]}>
+                {safeToSpendData.statusLabel}
+              </Text>
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => navigateToScreen('budget')}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={[styles.cardFooterText, { color: palette.accent, fontWeight: '700' }]}>
+                {safeToSpendData.daysLeft}d left &rarr;
+              </Text>
+            </Pressable>
+          </View>
+
+          <View
+            style={[
+              styles.safeToSpendDetailBanner,
+              {
+                backgroundColor: safeToSpendColors.bannerBg,
+                borderColor: safeToSpendColors.bannerBorder,
+              },
+            ]}
+          >
+            <Text style={[styles.safeToSpendDetailText, { color: safeToSpendColors.bannerText }]}>
+              {safeToSpendData.statusDetail}
+            </Text>
+          </View>
+
+          <View style={[styles.safeToSpendFormulaRow, { borderTopColor: palette.border }]}>
+            <Text style={[styles.safeToSpendFormulaText, { color: palette.muted }]} numberOfLines={1}>
+              Formula: (${formatCurrency(safeToSpendData.monthlyBudget, 0)} - ${formatCurrency(safeToSpendData.spentSoFar, 0)} - ${formatCurrency(safeToSpendData.upcomingBills, 0)}) ÷ {safeToSpendData.daysLeft}d
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => navigateToScreen('budget')}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={[styles.caption, { color: palette.accent, fontWeight: '700' }]}>
+                Audit &rarr;
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+
+        {/* Net Worth & Cash vs Debt Structured Card */}
+        <View style={[styles.structuredCard, { backgroundColor: palette.surface, borderColor: isDark ? palette.border : '#C7D2FE' }]}>
+          <View style={styles.cardHeaderRow}>
+            <View style={styles.flex}>
+              <Text style={[styles.cardTitle, { color: palette.text }]}>{t('Liquidity & Net Worth')}</Text>
+              <Text style={[styles.cardSubtitle, { color: palette.muted }]}>{t('Cash reserves vs credit card debt')}</Text>
+            </View>
+            <View style={[styles.cardHeaderIconButton, { borderColor: isDark ? palette.border : palette.greenBorder, backgroundColor: isDark ? palette.elevated : palette.greenSubtle }]}>
+              <Ionicons name="trending-up" size={16} color={palette.green} />
+            </View>
+          </View>
+
+          <View style={styles.threeColumnDataRow}>
+            <View
+              style={[
+                styles.metricColumn,
+                {
+                  backgroundColor: isDark ? 'transparent' : palette.greenSubtle,
+                  borderColor: isDark ? 'transparent' : palette.greenBorder,
+                  borderWidth: isDark ? 0 : 1,
+                  borderRadius: 14,
+                  paddingVertical: 10,
+                  paddingHorizontal: 8,
+                },
+              ]}
+            >
+              <Text style={[styles.metricColumnLabel, { color: isDark ? palette.muted : '#047857' }]}>{t('Cash')}</Text>
+              <Text style={[styles.metricColumnValue, { color: palette.green }]}>{formatCurrency(liquidCash, 0)}</Text>
+            </View>
+            <View
+              style={[
+                styles.metricColumn,
+                styles.metricColumnCenter,
+                {
+                  backgroundColor: isDark ? 'transparent' : palette.redSubtle,
+                  borderColor: isDark ? 'transparent' : palette.redBorder,
+                  borderWidth: isDark ? 0 : 1,
+                  borderRadius: 14,
+                  paddingVertical: 10,
+                  paddingHorizontal: 8,
+                },
+              ]}
+            >
+              <Text style={[styles.metricColumnLabel, { color: isDark ? palette.muted : '#B91C1C' }]}>{t('Debt')}</Text>
+              <Text style={[styles.metricColumnValue, { color: totalCardDebt > 0 ? palette.red : palette.text }]}>{formatCurrency(totalCardDebt, 0)}</Text>
+            </View>
+            <View
+              style={[
+                styles.metricColumn,
+                styles.metricColumnRight,
+                {
+                  backgroundColor: isDark ? 'transparent' : palette.accentSubtle,
+                  borderColor: isDark ? 'transparent' : palette.accentBorder,
+                  borderWidth: isDark ? 0 : 1,
+                  borderRadius: 14,
+                  paddingVertical: 10,
+                  paddingHorizontal: 8,
+                },
+              ]}
+            >
+              <Text style={[styles.metricColumnLabel, { color: isDark ? palette.muted : '#4338CA' }]}>{t('Net Worth')}</Text>
+              <Text style={[styles.metricColumnValue, { color: palette.accent }]}>{formatCurrency(netWorth, 0)}</Text>
+            </View>
+          </View>
+
+          <View style={[styles.segmentedTrack, { backgroundColor: palette.elevated }]}>
+            <View style={styles.segmentedBarTrack}>
+              <View
+                style={[
+                  styles.segmentedBarFill,
+                  {
+                    width: `${Math.min(100, (liquidCash + totalCardDebt) > 0 ? (liquidCash / (liquidCash + totalCardDebt)) * 100 : 100)}%`,
+                    backgroundColor: palette.green,
+                  },
+                ]}
+              />
+            </View>
+            <View style={styles.segmentedBarTrack}>
+              <View
+                style={[
+                  styles.segmentedBarFill,
+                  {
+                    width: `${Math.min(100, (liquidCash + totalCardDebt) > 0 ? (totalCardDebt / (liquidCash + totalCardDebt)) * 100 : 0)}%`,
+                    backgroundColor: totalCardDebt > 0 ? palette.red : palette.muted,
+                  },
+                ]}
+              />
+            </View>
+          </View>
+
+          <View style={styles.cardFooterMetadataRow}>
+            <Text style={[styles.cardFooterText, { color: palette.muted }]}>+4.8% trend</Text>
+            <View style={[styles.cardFooterBadge, { backgroundColor: palette.greenSubtle, borderColor: palette.greenBorder }]}>
+              <Text style={[styles.cardFooterBadgeText, { color: palette.green }]}>Healthy</Text>
+            </View>
+            <Text style={[styles.cardFooterText, { color: palette.muted }]}>{cards.length} cards connected</Text>
+          </View>
+
+          <NetWorthChart currentValue={netWorth} isDark={isDark} />
+        </View>
+
+        {/* Cards Section */}
+        <View style={styles.section}>
+          <View style={styles.rowBetween}>
+            <SectionTitle title="Your cards" subtitle={t('{{count}} connected', { count: cards.length })} palette={palette} />
+            <Pressable onPress={() => navigateToScreen('cards')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Text style={[styles.link, { color: palette.accent }]}>Manage</Text>
+            </Pressable>
+          </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.cardCarousel}>
+            {cards.map(card => renderCard(card))}
+            {!cards.length ? (
+              <Pressable
+                onPress={openNewCard}
+                style={[styles.emptyCardPrompt, { backgroundColor: palette.surface, borderColor: palette.border }]}
+              >
+                <Ionicons name="card-outline" size={24} color={palette.accent} />
+                <Text style={[styles.bodyStrong, { color: palette.text, marginTop: 6 }]}>Add your first card</Text>
+                <Text style={[styles.caption, { color: palette.muted, textAlign: 'center', marginTop: 2 }]}>Track limits & payoff progress</Text>
+              </Pressable>
+            ) : null}
+          </ScrollView>
+        </View>
+
+        {/* 50 / 30 / 20 Budget Section */}
+        <View style={styles.section}>
+          <View style={styles.rowBetween}>
+            <SectionTitle
+              title="50 / 30 / 20 budget"
+              subtitle={monthlyIncome > 0
+                ? t('Based on {{amount}} monthly income', { amount: formatCurrency(monthlyIncome, 0) })
+                : 'Track spending targets & pacing'}
+              palette={palette}
+            />
+            {monthlyIncome > 0 ? (
+              <Pressable onPress={() => navigateToScreen('budget')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Text style={[styles.link, { color: palette.accent }]}>Adjust</Text>
+              </Pressable>
+            ) : null}
+          </View>
+
+          {monthlyIncome === 0 ? (
+            <Panel palette={palette}>
+              <View style={styles.emptyBudgetContainer}>
+                <Text style={[styles.caption, { color: palette.muted, textAlign: 'center', marginBottom: 10 }]}>
+                  Set your monthly take-home income in the Budget tab to activate live Needs, Wants, and Savings tracking.
+                </Text>
+                <AppButton
+                  label="Set Monthly Income"
+                  icon="pie-chart-outline"
+                  onPress={() => navigateToScreen('budget')}
+                  palette={palette}
+                  compact
+                />
+              </View>
+            </Panel>
+          ) : (
+            <>
+              {[
+                {
+                  label: 'Needs (50%)',
+                  spent: budgetBreakdown.needsSpent,
+                  target: budgetBreakdown.needsTarget,
+                  pct: budgetBreakdown.needsPct,
+                  color: '#2563EB',
+                  bgSubtle: palette.blueSubtle,
+                  borderSubtle: '#BFDBFE',
+                  cardBg: isDark ? palette.surface : '#FAFCFF',
+                  tag: 'Essential',
+                },
+                {
+                  label: 'Wants (30%)',
+                  spent: budgetBreakdown.wantsSpent,
+                  target: budgetBreakdown.wantsTarget,
+                  pct: budgetBreakdown.wantsPct,
+                  color: '#7C3AED',
+                  bgSubtle: palette.purpleSubtle,
+                  borderSubtle: '#DDD6FE',
+                  cardBg: isDark ? palette.surface : '#FAF8FF',
+                  tag: 'Flexible',
+                },
+                {
+                  label: 'Savings & debt (20%)',
+                  spent: budgetBreakdown.savingsSpent,
+                  target: budgetBreakdown.savingsTarget,
+                  pct: budgetBreakdown.savingsPct,
+                  color: '#059669',
+                  bgSubtle: palette.greenSubtle,
+                  borderSubtle: '#A7F3D0',
+                  cardBg: isDark ? palette.surface : '#F0FDF4',
+                  tag: 'Growth',
+                },
+              ].map(item => {
+                const seg1 = Math.min(1, item.pct / 33.33);
+                const seg2 = item.pct > 33.33 ? Math.min(1, (item.pct - 33.33) / 33.33) : 0;
+                const seg3 = item.pct > 66.66 ? Math.min(1, (item.pct - 66.66) / 33.34) : 0;
+                const isOver = item.pct > 100;
+
+                return (
+                  <View key={item.label} style={[styles.structuredCard, { backgroundColor: item.cardBg, borderColor: isDark ? palette.border : item.borderSubtle }]}>
+                    {/* Card Header Row */}
+                    <View style={styles.cardHeaderRow}>
+                      <View style={styles.flex}>
+                        <Text style={[styles.cardTitle, { color: palette.text }]}>{item.label}</Text>
+                        <Text style={[styles.cardSubtitle, { color: palette.muted }]}>{item.tag} budget target</Text>
+                      </View>
+                      <Pressable
+                        accessibilityRole="button"
+                        onPress={() => navigateToScreen('budget')}
+                        style={[styles.cardHeaderIconButton, { borderColor: isDark ? palette.border : item.borderSubtle, backgroundColor: isDark ? palette.elevated : item.bgSubtle }]}
+                      >
+                        <Ionicons name="pie-chart-outline" size={16} color={item.color} />
+                      </Pressable>
+                    </View>
+
+                    {/* 3-Column Data Row */}
+                    <View style={styles.threeColumnDataRow}>
+                      <View
+                        style={[
+                          styles.metricColumn,
+                          {
+                            backgroundColor: isDark ? 'transparent' : item.bgSubtle,
+                            borderColor: isDark ? 'transparent' : item.borderSubtle,
+                            borderWidth: isDark ? 0 : 1,
+                            borderRadius: 14,
+                            paddingVertical: 10,
+                            paddingHorizontal: 8,
+                          },
+                        ]}
+                      >
+                        <Text style={[styles.metricColumnLabel, { color: isDark ? palette.muted : item.color }]}>{t('Spent')}</Text>
+                        <Text style={[styles.metricColumnValue, { color: item.color }]}>{formatCurrency(item.spent, 0)}</Text>
+                      </View>
+                      <View
+                        style={[
+                          styles.metricColumn,
+                          styles.metricColumnCenter,
+                          {
+                            backgroundColor: isDark ? 'transparent' : (isDark ? palette.elevated : '#FFFFFF'),
+                            borderColor: isDark ? 'transparent' : palette.border,
+                            borderWidth: isDark ? 0 : 1,
+                            borderRadius: 14,
+                            paddingVertical: 10,
+                            paddingHorizontal: 8,
+                          },
+                        ]}
+                      >
+                        <Text style={[styles.metricColumnLabel, { color: palette.muted }]}>{t('Target')}</Text>
+                        <Text style={[styles.metricColumnValue, { color: palette.text }]}>{formatCurrency(item.target, 0)}</Text>
+                      </View>
+                      <View
+                        style={[
+                          styles.metricColumn,
+                          styles.metricColumnRight,
+                          {
+                            backgroundColor: isDark ? 'transparent' : (isOver ? palette.redSubtle : palette.greenSubtle),
+                            borderColor: isDark ? 'transparent' : (isOver ? palette.redBorder : palette.greenBorder),
+                            borderWidth: isDark ? 0 : 1,
+                            borderRadius: 14,
+                            paddingVertical: 10,
+                            paddingHorizontal: 8,
+                          },
+                        ]}
+                      >
+                        <Text style={[styles.metricColumnLabel, { color: isDark ? palette.muted : (isOver ? '#B91C1C' : '#047857') }]}>{t('Remaining')}</Text>
+                        <Text style={[styles.metricColumnValue, { color: isOver ? palette.red : palette.green }]}>
+                          {formatCurrency(Math.max(0, item.target - item.spent), 0)}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* Segmented Progress Bar */}
+                    <View style={[styles.segmentedTrack, { backgroundColor: isDark ? palette.elevated : '#E2E8F0' }]}>
+                      <View style={[styles.segmentedBarTrack, { backgroundColor: isDark ? item.bgSubtle : '#E2E8F0' }]}>
+                        <View style={[styles.segmentedBarFill, { width: `${seg1 * 100}%`, backgroundColor: isOver ? palette.amber : item.color }]} />
+                      </View>
+                      <View style={[styles.segmentedBarTrack, { backgroundColor: isDark ? item.bgSubtle : '#E2E8F0' }]}>
+                        <View style={[styles.segmentedBarFill, { width: `${seg2 * 100}%`, backgroundColor: isOver ? palette.amber : item.color }]} />
+                      </View>
+                      <View style={[styles.segmentedBarTrack, { backgroundColor: isDark ? item.bgSubtle : '#E2E8F0' }]}>
+                        <View style={[styles.segmentedBarFill, { width: `${seg3 * 100}%`, backgroundColor: isOver ? palette.amber : item.color }]} />
+                      </View>
+                    </View>
+
+                    {/* Card Footer Metadata Row */}
+                    <View style={styles.cardFooterMetadataRow}>
+                      <Text style={[styles.cardFooterText, { color: palette.muted }]}>
+                        {item.pct.toFixed(0)}% utilized
+                      </Text>
+                      <View style={[styles.cardFooterBadge, { backgroundColor: item.bgSubtle, borderColor: isDark ? palette.border : item.borderSubtle }]}>
+                        <Text style={[styles.cardFooterBadgeText, { color: item.color }]}>
+                          {item.tag}
+                        </Text>
+                      </View>
+                      <Text style={[styles.cardFooterText, { color: isOver ? palette.red : palette.muted }]}>
+                        {isOver ? t('Over target') : t('On track')}
+                      </Text>
+                    </View>
+                  </View>
+                );
+              })}
+              <AppButton
+                label="Open budget & activity"
+                icon="pie-chart-outline"
+                onPress={() => navigateToScreen('budget')}
+                palette={palette}
+                variant="quiet"
+                compact
+              />
+            </>
+          )}
+        </View>
+
+        {/* Recent Activity Section */}
+        <Panel palette={palette}>
+          <View style={styles.rowBetween}>
+            <SectionTitle title="Recent activity" subtitle="Latest account entries" palette={palette} />
+            <Pressable onPress={() => navigateToScreen('budget')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Text style={[styles.link, { color: palette.accent }]}>See all</Text>
+            </Pressable>
+          </View>
+          {renderTransactionList(transactions.slice(0, 5))}
+        </Panel>
+      </View>
     </View>
   );
 
@@ -2620,15 +3182,116 @@ function FinAgentApp() {
         </View>
         <AppButton label="Add card" icon="add" onPress={openNewCard} palette={palette} compact />
       </View>
-      <Panel palette={palette}>
-        <Text style={[styles.eyebrow, { color: palette.muted }]}>Total credit utilization</Text>
-        <Text style={[styles.netWorth, { color: palette.accent }]}>{utilization.toFixed(1)}%</Text>
-        <Text style={[styles.caption, { color: palette.muted }]}>{formatCurrency(totalCardDebt, 0)} debt across {formatCurrency(totalCreditLimit, 0)} available credit</Text>
-        <View style={[styles.progressTrack, { height: 10, backgroundColor: palette.elevated }]}>
-          <View style={[styles.progressFill, { width: `${Math.min(100, utilization)}%`, backgroundColor: utilization > 30 ? palette.accent : palette.green }]} />
+      <View style={[styles.structuredCard, { backgroundColor: isDark ? palette.surface : '#F8FAFC', borderColor: isDark ? palette.border : '#C7D2FE' }]}>
+        <View style={styles.cardHeaderRow}>
+          <View style={styles.flex}>
+            <Text style={[styles.cardTitle, { color: palette.text }]}>{t('Total credit utilization')}</Text>
+            <Text style={[styles.cardSubtitle, { color: palette.muted }]}>{t('Across {{count}} connected cards', { count: cards.length })}</Text>
+          </View>
+          <View style={[styles.cardHeaderIconButton, { borderColor: isDark ? palette.border : palette.accentBorder, backgroundColor: isDark ? palette.elevated : palette.accentSubtle }]}>
+            <Ionicons name="pie-chart-outline" size={16} color={palette.accent} />
+          </View>
         </View>
-        <Text style={[styles.caption, styles.topGap, { color: palette.muted }]}>Keeping utilization below 30% can support a healthy credit profile.</Text>
-      </Panel>
+
+        <View style={styles.threeColumnDataRow}>
+          <View
+            style={[
+              styles.metricColumn,
+              {
+                backgroundColor: isDark ? 'transparent' : palette.redSubtle,
+                borderColor: isDark ? 'transparent' : palette.redBorder,
+                borderWidth: isDark ? 0 : 1,
+                borderRadius: 14,
+                paddingVertical: 10,
+                paddingHorizontal: 8,
+              },
+            ]}
+          >
+            <Text style={[styles.metricColumnLabel, { color: isDark ? palette.muted : '#B91C1C' }]}>{t('Total Debt')}</Text>
+            <Text style={[styles.metricColumnValue, { color: totalCardDebt > 0 ? palette.red : palette.text }]}>{formatCurrency(totalCardDebt, 0)}</Text>
+          </View>
+          <View
+            style={[
+              styles.metricColumn,
+              styles.metricColumnCenter,
+              {
+                backgroundColor: isDark ? 'transparent' : palette.greenSubtle,
+                borderColor: isDark ? 'transparent' : palette.greenBorder,
+                borderWidth: isDark ? 0 : 1,
+                borderRadius: 14,
+                paddingVertical: 10,
+                paddingHorizontal: 8,
+              },
+            ]}
+          >
+            <Text style={[styles.metricColumnLabel, { color: isDark ? palette.muted : '#047857' }]}>{t('Available')}</Text>
+            <Text style={[styles.metricColumnValue, { color: palette.green }]}>{formatCurrency(Math.max(0, totalCreditLimit - totalCardDebt), 0)}</Text>
+          </View>
+          <View
+            style={[
+              styles.metricColumn,
+              styles.metricColumnRight,
+              {
+                backgroundColor: isDark ? 'transparent' : palette.accentSubtle,
+                borderColor: isDark ? 'transparent' : palette.accentBorder,
+                borderWidth: isDark ? 0 : 1,
+                borderRadius: 14,
+                paddingVertical: 10,
+                paddingHorizontal: 8,
+              },
+            ]}
+          >
+            <Text style={[styles.metricColumnLabel, { color: isDark ? palette.muted : '#4338CA' }]}>{t('Total Limit')}</Text>
+            <Text style={[styles.metricColumnValue, { color: palette.accent }]}>{formatCurrency(totalCreditLimit, 0)}</Text>
+          </View>
+        </View>
+
+        <View style={[styles.segmentedTrack, { backgroundColor: palette.elevated }]}>
+          <View style={styles.segmentedBarTrack}>
+            <View
+              style={[
+                styles.segmentedBarFill,
+                {
+                  width: `${Math.min(100, Math.min(100, (utilization / 30) * 100))}%`,
+                  backgroundColor: utilization > 30 ? palette.accent : palette.green,
+                },
+              ]}
+            />
+          </View>
+          <View style={styles.segmentedBarTrack}>
+            <View
+              style={[
+                styles.segmentedBarFill,
+                {
+                  width: `${Math.min(100, Math.max(0, ((utilization - 30) / 40) * 100))}%`,
+                  backgroundColor: palette.amber,
+                },
+              ]}
+            />
+          </View>
+          <View style={styles.segmentedBarTrack}>
+            <View
+              style={[
+                styles.segmentedBarFill,
+                {
+                  width: `${Math.min(100, Math.max(0, ((utilization - 70) / 30) * 100))}%`,
+                  backgroundColor: palette.red,
+                },
+              ]}
+            />
+          </View>
+        </View>
+
+        <View style={styles.cardFooterMetadataRow}>
+          <Text style={[styles.cardFooterText, { color: palette.muted }]}>Recommended &lt; 30%</Text>
+          <View style={[styles.cardFooterBadge, { backgroundColor: utilization > 30 ? palette.accentSubtle : palette.greenSubtle, borderColor: utilization > 30 ? palette.accentBorder : palette.greenBorder }]}>
+            <Text style={[styles.cardFooterBadgeText, { color: utilization > 30 ? palette.accent : palette.green }]}>
+              {utilization.toFixed(1)}% {utilization <= 30 ? 'Optimal' : 'High'}
+            </Text>
+          </View>
+          <Text style={[styles.cardFooterText, { color: palette.muted }]}>Payoff order active</Text>
+        </View>
+      </View>
       <Panel palette={palette}>
         <SectionTitle title="Payoff order" subtitle="Choose a strategy for prioritizing debt." palette={palette} />
         <ChoiceChips values={['Avalanche', 'Snowball'] as const} selected={debtStrategy} onSelect={setDebtStrategy} palette={palette} />
@@ -2916,10 +3579,105 @@ function FinAgentApp() {
           </View>
         )}
       </Panel>
-      <Panel palette={palette} style={styles.summaryPanel}>
-        <Text style={[styles.caption, { color: palette.muted }]}>Unpaid upcoming bills</Text>
-        <Text style={[styles.netWorth, { color: palette.text }]}>{formatCurrency(bills.filter(bill => !bill.paid).reduce((sum, bill) => sum + bill.amount, 0))}</Text>
-      </Panel>
+      <View style={[styles.structuredCard, { backgroundColor: isDark ? palette.surface : '#F8FAFC', borderColor: isDark ? palette.border : '#FDE68A' }]}>
+        <View style={styles.cardHeaderRow}>
+          <View style={styles.flex}>
+            <Text style={[styles.cardTitle, { color: palette.text }]}>{t('Unpaid upcoming bills')}</Text>
+            <Text style={[styles.cardSubtitle, { color: palette.muted }]}>{t('Pending scheduled disbursements')}</Text>
+          </View>
+          <View style={[styles.cardHeaderIconButton, { borderColor: isDark ? palette.border : palette.amberBorder, backgroundColor: isDark ? palette.elevated : palette.amberSubtle }]}>
+            <Ionicons name="calendar-outline" size={16} color={palette.amber} />
+          </View>
+        </View>
+
+        <View style={styles.threeColumnDataRow}>
+          <View
+            style={[
+              styles.metricColumn,
+              {
+                backgroundColor: isDark ? 'transparent' : palette.redSubtle,
+                borderColor: isDark ? 'transparent' : palette.redBorder,
+                borderWidth: isDark ? 0 : 1,
+                borderRadius: 14,
+                paddingVertical: 10,
+                paddingHorizontal: 8,
+              },
+            ]}
+          >
+            <Text style={[styles.metricColumnLabel, { color: isDark ? palette.muted : '#B91C1C' }]}>{t('Due Total')}</Text>
+            <Text style={[styles.metricColumnValue, { color: palette.red }]}>{formatCurrency(bills.filter(bill => !bill.paid).reduce((sum, bill) => sum + bill.amount, 0))}</Text>
+          </View>
+          <View
+            style={[
+              styles.metricColumn,
+              styles.metricColumnCenter,
+              {
+                backgroundColor: isDark ? 'transparent' : palette.greenSubtle,
+                borderColor: isDark ? 'transparent' : palette.greenBorder,
+                borderWidth: isDark ? 0 : 1,
+                borderRadius: 14,
+                paddingVertical: 10,
+                paddingHorizontal: 8,
+              },
+            ]}
+          >
+            <Text style={[styles.metricColumnLabel, { color: isDark ? palette.muted : '#047857' }]}>{t('Paid')}</Text>
+            <Text style={[styles.metricColumnValue, { color: palette.green }]}>{formatCurrency(bills.filter(bill => bill.paid).reduce((sum, bill) => sum + bill.amount, 0))}</Text>
+          </View>
+          <View
+            style={[
+              styles.metricColumn,
+              styles.metricColumnRight,
+              {
+                backgroundColor: isDark ? 'transparent' : palette.amberSubtle,
+                borderColor: isDark ? 'transparent' : palette.amberBorder,
+                borderWidth: isDark ? 0 : 1,
+                borderRadius: 14,
+                paddingVertical: 10,
+                paddingHorizontal: 8,
+              },
+            ]}
+          >
+            <Text style={[styles.metricColumnLabel, { color: isDark ? palette.muted : '#B45309' }]}>{t('Pending')}</Text>
+            <Text style={[styles.metricColumnValue, { color: palette.amber }]}>{bills.filter(bill => !bill.paid).length} bills</Text>
+          </View>
+        </View>
+
+        <View style={[styles.segmentedTrack, { backgroundColor: palette.elevated }]}>
+          <View style={styles.segmentedBarTrack}>
+            <View
+              style={[
+                styles.segmentedBarFill,
+                {
+                  width: `${bills.length > 0 ? (bills.filter(b => b.paid).length / bills.length) * 100 : 0}%`,
+                  backgroundColor: palette.green,
+                },
+              ]}
+            />
+          </View>
+          <View style={styles.segmentedBarTrack}>
+            <View
+              style={[
+                styles.segmentedBarFill,
+                {
+                  width: `${bills.length > 0 ? (bills.filter(b => !b.paid).length / bills.length) * 100 : 0}%`,
+                  backgroundColor: palette.amber,
+                },
+              ]}
+            />
+          </View>
+        </View>
+
+        <View style={styles.cardFooterMetadataRow}>
+          <Text style={[styles.cardFooterText, { color: palette.muted }]}>{bills.filter(b => b.paid).length} of {bills.length} paid</Text>
+          <View style={[styles.cardFooterBadge, { backgroundColor: palette.amberSubtle, borderColor: palette.amberBorder }]}>
+            <Text style={[styles.cardFooterBadgeText, { color: palette.amber }]}>
+              {bills.filter(b => !b.paid).length === 0 ? 'All Settled' : 'Due Soon'}
+            </Text>
+          </View>
+          <Text style={[styles.cardFooterText, { color: palette.muted }]}>Due this month</Text>
+        </View>
+      </View>
     </>
   );
 
@@ -3906,31 +4664,63 @@ function FinAgentApp() {
     <SafeAreaView style={[styles.safeArea, { backgroundColor: palette.background }]} edges={['top', 'left', 'right']}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <View style={styles.app} {...panResponder.panHandlers}>
-        <View style={[styles.header, { backgroundColor: palette.background, borderBottomColor: palette.border }]}>
-          {screenHistory.length > 1 ? (
-            <Pressable
-              onPress={goBack}
-              accessibilityLabel="Back to previous screen"
-              style={[styles.backButton, { backgroundColor: palette.elevated, borderColor: palette.border }]}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <Ionicons name="chevron-back" size={20} color={palette.text} />
-            </Pressable>
-          ) : null}
-          <View style={styles.headerSpacer} />
-          <Pressable onPress={() => setModal('language')} accessibilityRole="button" accessibilityLabel={t('Choose language')} style={[styles.themeButton, { borderColor: palette.border }]}>
-            <Ionicons name="globe-outline" size={19} color={palette.accent} />
-          </Pressable>
-          <Pressable onPress={() => setTheme(isDark ? 'light' : 'dark')} accessibilityLabel="Toggle color theme" style={[styles.themeButton, { borderColor: palette.border }]}>
-            <Ionicons name={isDark ? 'sunny-outline' : 'moon-outline'} size={20} color={isDark ? '#fbbf24' : palette.accent} />
-          </Pressable>
-          <Pressable onPress={handleResetData} accessibilityLabel="Reset all data" style={[styles.themeButton, { borderColor: palette.border }]}>
-            <Ionicons name="refresh-outline" size={19} color={palette.red} />
-          </Pressable>
-          <Pressable onPress={openTransactionModal} accessibilityLabel="Add transaction" style={[styles.headerAdd, { backgroundColor: palette.accent }]}>
-            <Ionicons name="add" size={23} color={isDark ? '#09090B' : '#FFFFFF'} />
-          </Pressable>
-        </View>
+        {screen !== 'home' ? (
+          <View style={[styles.header, { backgroundColor: palette.surface, borderBottomColor: palette.border }]}>
+            <View style={styles.headerLeft}>
+              {screenHistory.length > 1 ? (
+                <Pressable
+                  onPress={goBack}
+                  accessibilityLabel="Back to previous screen"
+                  style={[styles.backButton, { backgroundColor: palette.elevated, borderColor: palette.border }]}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Ionicons name="chevron-back" size={20} color={palette.text} />
+                </Pressable>
+              ) : null}
+              <View style={[styles.avatarBadge, { borderColor: palette.borderSubtle, backgroundColor: palette.accentSubtle }]}>
+                <Text style={[styles.avatarBadgeText, { color: palette.accent }]}>
+                  {userName ? userName.charAt(0).toUpperCase() : 'F'}
+                </Text>
+              </View>
+              <View style={styles.greetingStack}>
+                <Text numberOfLines={1} style={[styles.greetingSubtitle, { color: palette.muted }]}>
+                  FinAgent
+                </Text>
+                <Text numberOfLines={1} style={[styles.greetingTitle, { color: palette.text }]}>
+                  {screen === 'cards'
+                    ? t('Cards & Debt')
+                    : screen === 'budget'
+                      ? t('Budget & Activity')
+                      : screen === 'bills'
+                        ? t('Upcoming Bills')
+                        : screen === 'receipts'
+                          ? t('Receipt Scanner')
+                          : t('FinAgent AI')}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.headerUtilityButtons}>
+              <Pressable
+                onPress={() => setModal('language')}
+                accessibilityRole="button"
+                accessibilityLabel={t('Choose language')}
+                style={[styles.headerIconButton, { borderColor: palette.border, backgroundColor: palette.elevated }]}
+                hitSlop={6}
+              >
+                <Ionicons name="globe-outline" size={18} color={palette.accent} />
+              </Pressable>
+              <Pressable
+                onPress={() => setTheme(isDark ? 'light' : 'dark')}
+                accessibilityLabel="Toggle color theme"
+                style={[styles.headerIconButton, { borderColor: palette.border, backgroundColor: palette.elevated }]}
+                hitSlop={6}
+              >
+                <Ionicons name={isDark ? 'sunny-outline' : 'moon-outline'} size={18} color={isDark ? palette.amber : palette.accent} />
+              </Pressable>
+            </View>
+          </View>
+        ) : null}
 
         {storageStatus === 'failed' ? (
           <View style={[styles.storageWarning, { backgroundColor: '#7f1d1d' }]}>
@@ -3957,7 +4747,7 @@ function FinAgentApp() {
               <ScrollView
                 key={screen}
                 style={styles.mainScroll}
-                contentContainerStyle={styles.pageContent}
+                contentContainerStyle={[styles.pageContent, screen === 'home' && styles.homePageContent]}
                 keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator={false}
                 refreshControl={screen === 'home' ? (
@@ -3977,7 +4767,20 @@ function FinAgentApp() {
         </Animated.View>
 
         {(!keyboardVisible || screen !== 'agent') ? (
-          <View style={[styles.tabBar, { backgroundColor: palette.surface, borderTopColor: palette.border }]}>
+          <View
+            style={[
+              styles.tabBar,
+              {
+                backgroundColor: isDark ? '#18181B' : '#F0FDF4',
+                borderColor: isDark ? '#27272A' : '#BBF7D0',
+                shadowColor: isDark ? '#000000' : '#047857',
+                shadowOpacity: isDark ? 0.25 : 0.08,
+                shadowRadius: 18,
+                shadowOffset: { width: 0, height: 4 },
+                elevation: isDark ? 12 : 6,
+              },
+            ]}
+          >
             {tabs.map(tab => {
               const active = tab.id === screen;
               return (
@@ -3989,13 +4792,41 @@ function FinAgentApp() {
                   style={({ pressed }) => [
                     styles.tabItem,
                     {
-                      opacity: pressed ? 0.7 : 1,
-                      transform: [{ scale: pressed ? 0.93 : 1 }],
+                      opacity: pressed ? 0.75 : 1,
+                      transform: [{ scale: pressed ? 0.92 : 1 }],
                     },
                   ]}
                 >
-                  <Ionicons name={tab.icon} size={20} color={active ? palette.accent : palette.muted} />
-                  <Text style={[styles.tabLabel, { color: active ? palette.accent : palette.muted }]}>{tab.label}</Text>
+                  <View
+                    style={[
+                      styles.tabIconBadge,
+                      active
+                        ? {
+                            backgroundColor: isDark ? palette.accentSubtle : '#DCFCE7',
+                            borderColor: isDark ? palette.accentBorder : '#86EFAC',
+                            borderWidth: 1.5,
+                          }
+                        : styles.tabIconUnboxed,
+                    ]}
+                  >
+                    <Ionicons
+                      name={tab.icon}
+                      size={active ? 20 : 19}
+                      color={active ? (isDark ? palette.accent : '#059669') : (isDark ? palette.muted : '#52796F')}
+                    />
+                  </View>
+                  <Text
+                    numberOfLines={1}
+                    style={[
+                      styles.tabLabel,
+                      {
+                        color: active ? (isDark ? palette.text : '#065F46') : (isDark ? palette.muted : '#52796F'),
+                        fontWeight: active ? '700' : '500',
+                      },
+                    ]}
+                  >
+                    {tab.label}
+                  </Text>
                 </Pressable>
               );
             })}
@@ -4096,31 +4927,318 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   app: { flex: 1 },
   loadingScreen: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  header: { minHeight: 56, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth },
-  headerSpacer: { flex: 1 },
-  brandMark: { width: 38, height: 38, borderRadius: 13, backgroundColor: '#4F46E5', alignItems: 'center', justifyContent: 'center' },
-  brandMarkText: { color: '#fff', fontSize: 19, fontWeight: '900' },
-  brandCopy: { marginLeft: 10, flex: 1 },
-  brandName: { fontSize: 17, fontWeight: '800' },
-  brandTagline: { fontSize: 11, marginTop: 1 },
-  themeButton: { width: 40, height: 40, borderRadius: 13, borderWidth: 1, alignItems: 'center', justifyContent: 'center', marginRight: 8 },
-  headerAdd: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  header: { minHeight: 64, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomLeftRadius: 24, borderBottomRightRadius: 24 },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', flexShrink: 1, marginRight: 8 },
+  brandMark: { width: 36, height: 36, borderRadius: 12, backgroundColor: '#4F46E5', alignItems: 'center', justifyContent: 'center' },
+  brandMarkText: { color: '#fff', fontSize: 18, fontWeight: '900' },
+  brandCopy: { marginLeft: 9, flexShrink: 1, justifyContent: 'center' },
+  brandName: { fontSize: 17, fontWeight: '800', letterSpacing: -0.3 },
+  brandTagline: { fontSize: 10.5, marginTop: 1 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 0 },
+  headerIconBtn: { width: 36, height: 36, borderRadius: 11, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  headerAddBtn: { width: 36, height: 36, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  themeButton: { width: 36, height: 36, borderRadius: 11, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  headerAdd: { width: 36, height: 36, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  heroContainer: {
+    borderBottomLeftRadius: 32,
+    borderBottomRightRadius: 32,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 28,
+    borderWidth: 1,
+    borderTopWidth: 0,
+    width: '100%',
+    maxWidth: 600,
+    alignSelf: 'center',
+  },
+  topUtilityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 18,
+  },
+  avatarBadge: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarBadgeText: {
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  greetingStack: {
+    justifyContent: 'center',
+    marginLeft: 10,
+    flexShrink: 1,
+  },
+  greetingSubtitle: {
+    fontSize: 12,
+    fontWeight: '500',
+    marginBottom: 2,
+  },
+  greetingTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  headerUtilityButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexShrink: 0,
+  },
+  headerIconButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroBalanceContainer: {
+    marginTop: 4,
+  },
+  heroBalanceLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 4,
+    letterSpacing: 0.5,
+  },
+  heroBalanceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  heroBalanceAmount: {
+    fontSize: 34,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+  },
+  heroStatusBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  heroStatusBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  quickActionPillRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 18,
+    alignItems: 'center',
+  },
+  quickActionSecondaryPill: {
+    borderRadius: 999,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  quickActionSecondaryText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  quickActionPrimaryPill: {
+    borderRadius: 999,
+    paddingVertical: 12,
+    paddingHorizontal: 22,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    flex: 1,
+  },
+  quickActionPrimaryText: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  quickActionTertiaryButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mainSheetWrapper: {
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    marginTop: -16,
+    paddingHorizontal: 16,
+    paddingTop: 20,
+    gap: 16,
+    width: '100%',
+    maxWidth: 600,
+    alignSelf: 'center',
+  },
+  quickTriggersCard: {
+    backgroundColor: 'transparent',
+    borderRadius: 24,
+    padding: 18,
+    borderWidth: 1,
+    marginBottom: 14,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  quickTriggersTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 16,
+  },
+  quickTriggersGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    rowGap: 18,
+  },
+  quickTriggerGridItem: {
+    width: '23%',
+    alignItems: 'center',
+  },
+  quickTriggerIconContainer: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  quickTriggerLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  structuredCard: {
+    borderRadius: 22,
+    padding: 18,
+    borderWidth: 1,
+    marginBottom: 14,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  cardHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  cardTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  cardSubtitle: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  cardHeaderIconButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  threeColumnDataRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginVertical: 14,
+  },
+  metricColumn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  metricColumnCenter: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  metricColumnRight: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  metricColumnLabel: {
+    fontSize: 11,
+    marginBottom: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  metricColumnValue: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  segmentedTrack: {
+    height: 8,
+    borderRadius: 999,
+    flexDirection: 'row',
+    gap: 4,
+    overflow: 'hidden',
+    marginVertical: 4,
+  },
+  cardFooterMetadataRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  cardFooterText: {
+    fontSize: 12,
+  },
+  cardFooterBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderWidth: 1,
+  },
+  cardFooterBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  homeContainer: {
+    width: '100%',
+  },
+  homePageContent: {
+    paddingHorizontal: 0,
+    paddingTop: 0,
+    paddingBottom: 100,
+  },
+  cardCarouselItem: {
+    width: 280,
+    marginRight: 12,
+  },
   storageWarning: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 8 },
   storageWarningText: { color: '#fff', fontSize: 12, flex: 1 },
   mainScroll: { flex: 1 },
-  pageContent: { paddingHorizontal: 14, paddingTop: 14, paddingBottom: 28, gap: 14, maxWidth: 760, width: '100%', alignSelf: 'center' },
-  dashboardContent: { width: '100%', maxWidth: 520, alignSelf: 'center', gap: 12 },
+  pageContent: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 100, gap: 16, maxWidth: 760, width: '100%', alignSelf: 'center' },
+  dashboardContent: { width: '100%', maxWidth: 560, alignSelf: 'center', gap: 16 },
   welcomeBlock: { marginBottom: 0 },
-  pageTitle: { fontSize: 23, fontWeight: '800', letterSpacing: -0.4 },
+  pageTitle: { fontSize: 24, fontWeight: '800', letterSpacing: -0.4 },
   eyebrow: { fontSize: 11, fontWeight: '800', letterSpacing: 1.1, marginBottom: 6 },
   eyebrowWhite: { color: '#ffffffbb', fontSize: 10, fontWeight: '800', letterSpacing: 0.8, marginBottom: 4 },
-  netWorth: { fontSize: 32, fontWeight: '900', letterSpacing: -0.7, marginTop: 5, marginBottom: 10 },
-  panel: { borderRadius: 20, borderWidth: 1, padding: 16, gap: 12 },
+  netWorth: { fontSize: 34, fontWeight: '900', letterSpacing: -0.8, marginTop: 4, marginBottom: 8 },
+  panel: { borderRadius: 22, borderWidth: 1, padding: 18, gap: 14, marginBottom: 14 },
   safeToSpendCard: {
-    borderRadius: 20,
+    borderRadius: 24,
     borderWidth: 1.5,
-    padding: 16,
-    gap: 10,
+    padding: 18,
+    gap: 12,
   },
   safeToSpendHeader: {
     flexDirection: 'row',
@@ -4130,8 +5248,8 @@ const styles = StyleSheet.create({
   safeToSpendBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 9,
-    paddingVertical: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     borderRadius: 20,
     gap: 5,
   },
@@ -4162,14 +5280,14 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   safeToSpendDetailBanner: {
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     borderWidth: 1,
   },
   safeToSpendDetailText: {
-    fontSize: 12,
-    lineHeight: 17,
+    fontSize: 12.5,
+    lineHeight: 18,
     fontWeight: '600',
   },
   safeToSpendBreakdownGrid: {
@@ -4180,46 +5298,162 @@ const styles = StyleSheet.create({
   safeToSpendBreakdownChip: {
     flexBasis: '48%',
     flexGrow: 1,
-    minHeight: 54,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: 12,
+    minHeight: 56,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 14,
     borderWidth: 1,
     alignItems: 'center',
   },
   safeToSpendBreakdownLabel: {
-    fontSize: 10,
+    fontSize: 10.5,
     fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 0.4,
     marginBottom: 2,
   },
   safeToSpendBreakdownValue: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '800',
   },
   safeToSpendFormulaRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: 8,
+    paddingTop: 10,
     borderTopWidth: StyleSheet.hairlineWidth,
     marginTop: 2,
   },
   safeToSpendFormulaText: {
-    fontSize: 10,
+    fontSize: 10.5,
     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
     fontWeight: '600',
     flex: 1,
     marginRight: 6,
   },
-  heroPanel: { padding: 18, gap: 12 },
+  heroPanel: { padding: 20, gap: 12 },
   heroStatRow: { flexDirection: 'row', gap: 10, marginBottom: 4 },
+  splitBarContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginTop: 4,
+    marginBottom: 6,
+  },
+  splitBarSection: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 6,
+  },
+  splitBarDivider: {
+    width: 1,
+    height: 24,
+    marginHorizontal: 8,
+  },
+  statusDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+  },
+  trendBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  trendBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
   statChip: { flex: 1, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 12, borderWidth: 1, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   statChipValue: { fontSize: 14, fontWeight: '800' },
-  quickActionsRow: { flexDirection: 'row', gap: 8, paddingRight: 14 },
-  quickActionPill: { width: 100, minHeight: 44, borderRadius: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 8 },
+  quickActionsRow: { flexDirection: 'row', gap: 8, paddingVertical: 2, justifyContent: 'space-between' },
+  quickActionPill: { flex: 1, minHeight: 44, borderRadius: 22, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 6, paddingVertical: 8 },
+  quickActionPrimary: {
+    shadowColor: '#4F46E5',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 4,
+  },
   quickActionText: { fontSize: 12, fontWeight: '800' },
+  categoriesHubContainer: { paddingVertical: 4 },
+  categoriesRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4 },
+  categoryHubItem: { alignItems: 'center', gap: 6, flex: 1 },
+  categoryCircle: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
+  categoryHubLabel: { fontSize: 11, fontWeight: '700' },
+  cardPanel: { width: 270, minHeight: 175, borderRadius: 22, padding: 18, justifyContent: 'space-between', gap: 10, borderWidth: 0 },
+  cardChipPill: { backgroundColor: 'rgba(255, 255, 255, 0.15)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+  segmentedProgressRow: { flexDirection: 'row', gap: 6, height: 7, marginTop: 6 },
+  segmentedBarTrack: { flex: 1, height: '100%', borderRadius: 4, overflow: 'hidden', backgroundColor: 'rgba(255, 255, 255, 0.2)' },
+  segmentedBarFill: { height: '100%', borderRadius: 4 },
+  budgetTagPill: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 8 },
+  budgetTagPillText: { fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
+  floatingTabBarWrapper: {
+    position: 'absolute',
+    bottom: 20,
+    left: 20,
+    right: 20,
+    alignItems: 'center',
+    zIndex: 99,
+  },
+  tabBar: {
+    position: 'absolute',
+    left: 20,
+    right: 20,
+    bottom: 20,
+    height: 64,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    borderWidth: 1,
+    maxWidth: 520,
+    alignSelf: 'center',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 20,
+    elevation: 12,
+    zIndex: 99,
+  },
+  tabItem: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 4,
+  },
+  tabIconBadge: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tabIconUnboxed: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+  },
+  tabItemActiveLight: {
+    borderRadius: 21,
+  },
+  tabItemActiveDark: {
+    borderRadius: 21,
+  },
+  tabLabel: { fontSize: 10, marginTop: 2, letterSpacing: 0.2 },
   emptyBudgetContainer: { alignItems: 'center', paddingVertical: 14, paddingHorizontal: 8 },
   metricRow: { flexDirection: 'row', gap: 12, marginBottom: 8 },
   metric: { flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 14, backgroundColor: '#818CF815' },
@@ -4240,7 +5474,6 @@ const styles = StyleSheet.create({
   buttonText: { fontSize: 13, fontWeight: '800' },
   buttonTextCompact: { fontSize: 12 },
   cardCarousel: { gap: 10, paddingRight: 10 },
-  cardPanel: { width: 260, minHeight: 170, justifyContent: 'space-between', gap: 10, borderWidth: 0 },
   cardName: { color: '#fff', fontWeight: '800', fontSize: 14 },
   cardNumber: { color: '#ffffffdd', fontSize: 12, fontWeight: '700' },
   cardBalanceBlock: { marginVertical: 5 },
@@ -4295,9 +5528,6 @@ const styles = StyleSheet.create({
   receiptPanel: { alignItems: 'center', paddingVertical: 26, gap: 12 },
   receiptIcon: { width: 62, height: 62, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   centerText: { textAlign: 'center' },
-  tabBar: { minHeight: 62, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', paddingHorizontal: 3, paddingBottom: Platform.OS === 'ios' ? 2 : 5 },
-  tabItem: { minWidth: 46, flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3, paddingVertical: 6 },
-  tabLabel: { fontSize: 10, fontWeight: '700' },
   toast: { position: 'absolute', bottom: 76, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 15, paddingHorizontal: 14, paddingVertical: 11, elevation: 8 },
   toastText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   modalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(9, 9, 11, 0.78)' },
@@ -4323,10 +5553,11 @@ const styles = StyleSheet.create({
   quickPromptChipText: { fontSize: 12, fontWeight: '700' },
   chatWidgetCard: {
     marginTop: 10,
-    borderRadius: 16,
+    borderRadius: 22,
     borderWidth: 1,
-    padding: 12,
-    gap: 8,
+    padding: 18,
+    marginBottom: 14,
+    gap: 12,
   },
   chatWidgetHeader: {
     flexDirection: 'row',
